@@ -52,13 +52,8 @@ clustering = [
 bertopic = [
     "bertopic>=0.16.0",
 ]
-ui = [
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.32.0",
-    "python-multipart>=0.0.9",
-]
 all = [
-    "ddharmon[embeddings,llm,viz,clustering,bertopic,ui]",
+    "ddharmon[embeddings,llm,viz,clustering,bertopic]",
     "nest-asyncio>=1.6.0",
 ]
 dev = [
@@ -100,8 +95,6 @@ ignore = ["E501"]
 [tool.ruff.lint.per-file-ignores]
 "tests/test_*_integration.py" = ["E402"]
 "tests/test_visualization.py" = ["E402"]
-# The GUI API mirrors the JS frontend's camelCase request bodies on purpose.
-"ui/backend/app.py" = ["N815"]
 
 [tool.black]
 line-length = 120

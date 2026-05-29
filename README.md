@@ -49,18 +49,14 @@ per-sub-cluster CDE anchoring · adopt/refine/novel classify → EITL.
 granularity-loss detection, CDE common data model, the pairwise 1:1 matching surface, standards
 mapping, and the CLI orchestrator. See [`CHANGELOG.md`](CHANGELOG.md).
 
-## Web GUI
+## Two ways to use ddharmon
 
-A FastAPI + React GUI wraps the pipeline: upload dictionaries → map columns → run with live
-progress → review recommendations → export the EITL queue.
-
-```bash
-./ui/dev.sh      # dev: Vite (:5173) + FastAPI (:8000)
-./ui/serve.sh    # prod-ish: build the SPA, then serve it + the API on :8000
-```
-
-See [`ui/README.md`](ui/README.md) to run it locally and [`deploy/README.md`](deploy/README.md) to
-deploy it (systemd + nginx).
+- **Programmatically** (this repo) — run the pipeline in a Jupyter notebook or via the Python API
+  (examples above). Best when you want to script, batch, or customize.
+- **Point-and-click** — a web GUI (upload dictionaries → map columns → run with live progress →
+  review recommendations → export the EITL queue) lives in its own repo,
+  **[Phenome-Health/ddharmon-ui](https://github.com/Phenome-Health/ddharmon-ui)**, built on top of
+  this library. Best when you'd rather not write code.
 
 ## Installation
 
@@ -73,7 +69,6 @@ The core install is lightweight; optional extras unlock additional capabilities.
 | `clustering` | scikit-learn, UMAP, plotly |
 | `bertopic` | BERTopic topic modeling |
 | `llm` | openai, anthropic — LLM classify / rerank |
-| `ui` | FastAPI + uvicorn — the web GUI |
 | `all` | everything above (required to run the full pipeline + notebook) |
 | `dev` | `all` + pytest, ruff, black, pyright |
 
@@ -94,7 +89,8 @@ uv sync --extra all
 cp .env.example .env        # set ANTHROPIC_API_KEY for the classify pass (sync/batch)
 ```
 
-Then open `notebooks/clustering/v1_harmonization_pipeline.ipynb`, or use the Python API / GUI above.
+Then open `notebooks/clustering/v1_harmonization_pipeline.ipynb`, or use the Python API above.
+(Prefer a UI? See [ddharmon-ui](https://github.com/Phenome-Health/ddharmon-ui).)
 
 > The NIH CDE catalog is not bundled. To anchor against CDEs, flatten the CDE repository locally with
 > `scripts/flatten_cde_repo.py <All-CDEs.json> <out.tsv>`; without it, the pipeline still clusters
@@ -121,8 +117,6 @@ src/ddharmon/
 ├── llm/             # LLM clients + Anthropic Batch API
 ├── values/          # value-encoding parsing
 └── export/          # visualization (dendrograms, UMAP, Plotly)
-ui/                  # FastAPI + React web GUI
-deploy/              # systemd + nginx deployment artifacts
 notebooks/clustering/v1_harmonization_pipeline.ipynb
 scripts/             # flatten_cde_repo, build_clsa_csv, prompt runners, check/fix
 tests/
