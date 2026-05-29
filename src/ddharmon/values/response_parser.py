@@ -1,10 +1,10 @@
 """Parse value_encoding_raw strings into ResponseOption lists.
 
-Handles multiple formats found across cohort data dictionaries:
+Handles multiple formats found across data dictionaries:
 
-    Arivale:   (1) Less than once per month|(2) 1-3 times per month|...
-    All of Us: Birthplace_USA, USA | PMI_Other, Other
-    Simple:    Yes/No, Male/Female, 1=Yes|2=No
+    Parenthesized: (1) Less than once per month|(2) 1-3 times per month|...
+    Code, Label:   code_1, Label one | code_2, Label two
+    Simple:        Yes/No, Male/Female, 1=Yes|2=No
 """
 
 from __future__ import annotations
@@ -21,8 +21,8 @@ def parse_value_encoding(raw: str) -> list[ResponseOption]:
     """Parse a value_encoding_raw string into ResponseOption objects.
 
     Tries formats in order of specificity:
-    1. Parenthesized code: (1) Label|(2) Label  (Arivale)
-    2. Code-comma-label:   Code, Label | Code, Label  (REDCap/All of Us)
+    1. Parenthesized code: (1) Label|(2) Label
+    2. Code-comma-label:   Code, Label | Code, Label  (REDCap-style)
     3. Code-equals-label:  1=Yes|2=No
     4. Slash-delimited:    Yes/No, Male/Female (2-3 options only)
 
@@ -115,11 +115,11 @@ def _parse_code_equals_label(raw: str) -> list[ResponseOption] | None:
 
 
 def _parse_code_comma_label(raw: str) -> list[ResponseOption] | None:
-    """Parse Code, Label | Code, Label format (REDCap/All of Us).
+    """Parse Code, Label | Code, Label format (REDCap-style).
 
     Examples:
-        Birthplace_USA, USA | PMI_Other, Other
-        WhatRaceEthnicity_AIAN, American Indian or Alaska Native | WhatRaceEthnicity_Asian, Asian
+        code_1, Label one | code_2, Label two
+        race_aian, American Indian or Alaska Native | race_asian, Asian
     """
     if "|" not in raw:
         return None

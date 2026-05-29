@@ -96,7 +96,7 @@ def load_dictionary(
 
     Args:
         path: Path to the CSV or TSV file (delimiter auto-detected from extension).
-        cohort_name: Optional cohort name (e.g., "TwinsUK", "Arivale").
+        cohort_name: Optional cohort/study name (e.g., "study_a").
         embed_variable_name: Whether to include variable_name in semantic embedding
             text. Set to False when variable names are opaque IDs (e.g., row numbers,
             internal codes) that would add noise to the embedding. Default: True.
@@ -112,7 +112,7 @@ def load_dictionary(
     Examples:
         # Explicit mapping (recommended):
         dd = load_dictionary(
-            "data/arivale_questionnaire.tsv",
+            "data/questionnaire.tsv",
             variable_name="Column Name",
             description="Description",
             category="Category",

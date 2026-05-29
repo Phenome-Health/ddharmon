@@ -118,7 +118,7 @@ def preprocess_dictionary(
         1. Unicode normalization (ftfy) — fix mojibake, curly quotes, encoding artifacts
         2. Placeholder description replacement — if the same description appears in
            >= placeholder_min_count fields, it's uninformative (e.g., "Field description
-           available on UK Biobank website"). Replace with the variable name so the
+           available on the registry website"). Replace with the variable name so the
            embedding captures the field identity rather than boilerplate.
         3. Common prefix stripping — detect and remove shared variable name prefixes
         4. Stopword removal — remove user-configured substrings from variable names
@@ -239,7 +239,7 @@ def _replace_placeholder_descriptions(fields: list[Field], min_count: int) -> tu
     """Replace high-frequency duplicate descriptions with the variable name.
 
     If the same exact description appears in >= min_count fields, it's likely a
-    placeholder (e.g., "Field description available on UK Biobank website") rather
+    placeholder (e.g., "Field description available on the registry website") rather
     than a real definition. Replace it with the variable name so the embedding
     captures field identity instead of boilerplate.
 

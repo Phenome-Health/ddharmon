@@ -42,8 +42,8 @@ class SchemaMapping:
 ROLE_PATTERNS: dict[FieldRole, list[tuple[str, float]]] = {
     FieldRole.VARIABLE_NAME: [
         ("variable_name", 1.0),
-        ("column_name", 0.95),  # Arivale "Column Name"
-        ("field_name", 0.95),  # HPP "field_name"
+        ("column_name", 0.95),  # e.g. "Column Name"
+        ("field_name", 0.95),  # e.g. "field_name"
         ("historical_id", 0.9),
         ("var_name", 0.9),
         ("name", 0.6),
@@ -75,9 +75,9 @@ ROLE_PATTERNS: dict[FieldRole, list[tuple[str, float]]] = {
         ("data_type", 1.0),
         ("valuetype", 1.0),
         ("value_type", 1.0),
-        ("field_type", 0.95),  # HPP "field_type"
-        ("variable_type", 0.9),  # Arivale "Variable Type"
-        ("data_type_pandas", 0.8),  # HPP "data_type_pandas"
+        ("field_type", 0.95),  # e.g. "field_type"
+        ("variable_type", 0.9),  # e.g. "Variable Type"
+        ("data_type_pandas", 0.8),  # e.g. "data_type_pandas"
         ("type", 0.7),
         ("itemtype", 0.7),
     ],
@@ -97,11 +97,11 @@ ROLE_PATTERNS: dict[FieldRole, list[tuple[str, float]]] = {
         ("subcategory", 0.7),
         ("path", 0.6),
         ("group", 0.5),
-        # TwinsUK "Data_Type" as category is handled via cohort hint, not pattern
+        # A "Data_Type" column as category is handled via cohort hint, not pattern
     ],
     FieldRole.VALUE_ENCODING: [
         ("value_encoding", 1.0),
-        ("data_coding", 0.95),  # HPP "data_coding"
+        ("data_coding", 0.95),  # e.g. "data_coding"
         ("permissible_values", 1.0),
         ("allowed_values", 0.95),
         ("choices", 0.9),  # REDCap "Choices, Calculations, OR Slider Labels"
@@ -142,9 +142,9 @@ ROLE_PATTERNS: dict[FieldRole, list[tuple[str, float]]] = {
 class SchemaRegistry:
     """Detects column roles in CSV data dictionaries using scored heuristics.
 
-    Supports multiple column naming conventions across TwinsUK, UKBB, Arivale,
-    HPP, and generic CSV formats. Uses substring matching against known patterns
-    with context-aware disambiguation when multiple columns compete for the same role.
+    Supports multiple column naming conventions across common data-dictionary and
+    registry CSV/TSV formats (including REDCap). Uses substring matching against known
+    patterns with context-aware disambiguation when multiple columns compete for the same role.
     """
 
     def __init__(self, patterns: dict[FieldRole, list[tuple[str, float]]] | None = None) -> None:

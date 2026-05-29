@@ -1,7 +1,8 @@
 # ddharmon — Data Dictionary Harmonization Tool
 
-Part of **ARPA-H Activity 2**: multi-omics data harmonization across biomedical cohorts
-(Arivale, HPP, UKBB, TwinsUK, All of Us, CLSA).
+Part of **ARPA-H Activity 2**. ddharmon harmonizes biomedical **data dictionaries**: it
+identifies clusters of equivalent variables across studies and recommends a Common Data
+Element (CDE) anchor for each — routing every recommendation to expert review.
 
 ## v1 — Sub-cluster-anchored CDE harmonization
 

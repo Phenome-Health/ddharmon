@@ -125,10 +125,8 @@ data/*
 !data/fixtures/
 !data/benchmarks/
 
-# Cohort data directories (keep local, not on remote)
-data/examples/arivale/
-data/examples/HPP/
-data/examples/UKBB/
+# Local study/cohort data directories (keep local, not on remote)
+data/examples/*/
 
 # CDE data (large JSON, keep local)
 data/examples/cde/

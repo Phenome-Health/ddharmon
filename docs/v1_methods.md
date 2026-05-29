@@ -24,7 +24,7 @@ ingest (cohorts + CDE catalog)
 
 | Stage | Method | Notes |
 |-------|--------|-------|
-| **Ingest** | Generic CSV/TSV loader with role-mapped columns | Arivale, HPP, UKBB, TwinsUK, All of Us, CLSA, **and the NIH CDE repository** (loaded as cohort `NIH_CDE` so CDEs participate in clustering). |
+| **Ingest** | Generic CSV/TSV loader with role-mapped columns | Any study data dictionaries **and the NIH CDE repository** (loaded as cohort `NIH_CDE` so CDEs participate in clustering). |
 | **Embed (dual vectors)** | sentence-transformers (`all-mpnet-base-v2`, 768-d), L2-normalized, SQLite-cached | Each field gets a **semantic** vector (question/description) *and* a **value** vector (response-option / encoding structure). The two axes are kept separate — semantic for concept clustering, value for sub-clustering. |
 | **Semantic cluster** | BERTopic (UMAP → HDBSCAN → c-TF-IDF) on the semantic vectors | Clusters reflect cohort/CDE *concepts*; response options are excluded from this axis. |
 | **Value sub-cluster** | HDBSCAN (Euclidean) on value vectors, within each topic | Splits a concept by *how it is answered* (encoding shape). `min_cluster_size = max(3, n // 20)`, gated at ≥ 8 value-vector members. |
@@ -75,6 +75,19 @@ Related approaches that frame harmonization through embeddings / clustering / si
   literature* (J. Biomed. Inform.,
   [S153204642500187X](https://www.sciencedirect.com/science/article/abs/pii/S153204642500187X)).
   Relevant to the deferred recursive/hierarchical clustering direction.
+
+Related open-source harmonization tools (positioning siblings rather than direct antecedents):
+
+- **datastew** — a Python library for embedding-based data harmonization, mapping variables across
+  data dictionaries and terminologies by LLM/embedding similarity
+  (doi:[10.5281/zenodo.16871713](https://doi.org/10.5281/zenodo.16871713)). Closest in approach;
+  ddharmon adds value-aware sub-clustering and a recommended CDE anchor per sub-cluster.
+- **BDI-Kit** — *An AI-Powered Toolkit for Biomedical Data Harmonization* (Lopez et al., *Patterns*
+  2026): schema matching, value matching, and transformation to a target schema / data model —
+  oriented to table → target-schema mapping rather than multi-source cluster discovery.
+- **Harmony** — NLP / generative-AI harmonization of questionnaire items across instruments and
+  languages (McElroy et al., *BMC Psychiatry* **24**:530, 2024,
+  doi:[10.1186/s12888-024-05954-2](https://doi.org/10.1186/s12888-024-05954-2)).
 
 > Citation metadata above is drawn from the publishers' records.
 

@@ -314,10 +314,10 @@ class TestDataDictionary:
             name="test",
             fields={"f1": Field(variable_name="f1", description="Test field")},
             source_path=Path("/data/test.csv"),
-            cohort_name="TwinsUK",
+            cohort_name="study_a",
         )
         assert dd.source_path == Path("/data/test.csv")
-        assert dd.cohort_name == "TwinsUK"
+        assert dd.cohort_name == "study_a"
 
 
 class TestModelsReExport:

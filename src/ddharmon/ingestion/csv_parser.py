@@ -44,7 +44,7 @@ class GenericCSVParser:
         5. Apply hierarchy detection.
         Args:
             path: Path to the CSV or TSV file.
-            cohort_name: Optional cohort name (e.g., "TwinsUK").
+            cohort_name: Optional cohort/study name (e.g., "study_a").
             column_map: Dict mapping column name -> FieldRole. Only mapped
                         columns are used; unmapped columns go to Field.metadata.
 
@@ -257,7 +257,7 @@ class GenericCSVParser:
     ) -> dict[str, list[str]]:
         """Extract SNOMED codes from pipe-delimited standard code columns.
 
-        TwinsUK format: "1002561000000109 | Serum cystatin C level (observable entity) |"
+        Pipe-delimited format: "1002561000000109 | Serum cystatin C level (observable entity) |"
         Extracts the numeric code before the first pipe.
         """
         codes: list[str] = []
