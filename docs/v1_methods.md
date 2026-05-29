@@ -89,6 +89,23 @@ Related open-source harmonization tools (positioning siblings rather than direct
   languages (McElroy et al., *BMC Psychiatry* **24**:530, 2024,
   doi:[10.1186/s12888-024-05954-2](https://doi.org/10.1186/s12888-024-05954-2)).
 
+CDE mapping and generation (most directly comparable — v1 anchors variables to CDEs and, in the
+deferred path, generates novel CDEs):
+
+- **CDEMapper** (Wang et al., *JAMIA* **32**(7):1130–1139, 2025,
+  doi:[10.1093/jamia/ocaf064](https://doi.org/10.1093/jamia/ocaf064); preprint
+  arXiv:[2412.00491](https://arxiv.org/abs/2412.00491)) — an LLM-powered tool that maps local data
+  elements to NIH CDEs via semantic indexing, BM25 + GPT candidate recommendation, and human review.
+  ddharmon differs by clustering source variables *and* CDEs together and recommending one CDE per
+  value sub-cluster rather than per-element lookup.
+- **DataTecnica — DIVER / RoP** — DIVER applies LLMs to generate and audit CDEs at scale (Long et al.,
+  *A new AI-assisted data standard accelerates interoperability in biomedical research*, medRxiv 2024,
+  doi:[10.1101/2024.10.17.24315618](https://doi.org/10.1101/2024.10.17.24315618) — 43k+ generative
+  CDEs (**GenCDEs**) across 31 studies, 94% needing no manual revision). The companion open-source
+  **RoP** release ships ~1.33M harmonized CDEs with semantic embeddings, value sets, and governance
+  parameters (Hugging Face, doi:[10.57967/hf/8781](https://doi.org/10.57967/hf/8781)). Closest to
+  v1's GenCDE / novel-CDE direction (deferred in v1).
+
 > Citation metadata above is drawn from the publishers' records.
 
 ### How v1 differs
