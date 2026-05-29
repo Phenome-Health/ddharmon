@@ -46,8 +46,7 @@ LLM-labeling pattern, applied to biomedical variable/CDE harmonization. The clos
   Elements (CDE) Using Embeddings and Clustering.* arXiv:[2506.02160](https://arxiv.org/abs/2506.02160).
   Embeds ~24k NIH CDEs (OpenAI `text-embedding-3-small`), clusters with **HDBSCAN**, labels clusters
   with an LLM, and trains a classifier to assign new CDEs to clusters; validates against the Gravity
-  Project SDOH domains. **Clusters the *target* (the CDE repository itself).** (PDF + notebook in
-  `docs/references/Krishnamurthy 2025/`.)
+  Project SDOH domains. **Clusters the *target* (the CDE repository itself).**
 - **Salimi Y, Adams T, Ay MC, Balabin H, Jacobs M, Hofmann-Apitius M (2025)** — *Evaluating
   language model embeddings for Parkinson's disease cohort harmonization using a novel manually
   curated variable mapping schema.* *Sci Rep* **15**:20210,
@@ -57,7 +56,7 @@ LLM-labeling pattern, applied to biomedical variable/CDE harmonization. The clos
   neighborhood). Its discussion explicitly frames *the matching of embeddings as inherently a
   clustering task* — variables a small embedding distance apart form semantic clusters describing a
   common concept — but stops at t-SNE visualization (no clustering implemented). (Earlier preprint:
-  Research Square rs-4108029, AD + PD.) See `competitive_landscape.md` obs. #9–#10.
+  Research Square rs-4108029, AD + PD.)
 
 Related approaches that frame harmonization through embeddings / clustering / similarity:
 
@@ -71,15 +70,13 @@ Related approaches that frame harmonization through embeddings / clustering / si
   doi:[10.2196/75608](https://formative.jmir.org/2025/1/e75608). BioBERT embeddings of variable
   descriptions to harmonize CVD-risk variables across FHS / MESA / ARIC.
 - **Gottfried et al., 2025** — *Semantic search helper: embeddings in multi-item questionnaires as a
-  harmonization tool* (PDF in `docs/references/`). Clusters *source* questionnaire items.
+  harmonization tool*. Clusters *source* questionnaire items.
 - **TopicForest** — *embedding-driven hierarchical clustering and labeling for biomedical
   literature* (J. Biomed. Inform.,
   [S153204642500187X](https://www.sciencedirect.com/science/article/abs/pii/S153204642500187X)).
   Relevant to the deferred recursive/hierarchical clustering direction.
 
-> Citation metadata above is drawn from the publishers' records; PDFs for several are kept under
-> `docs/references/`. The broader competitive map (CDEMapper, DIVER, BDI-Kit, FAIRkit/GenCDE,
-> Harmony, Monarch `cde-harmonization`) lives in [`competitive_landscape.md`](competitive_landscape.md).
+> Citation metadata above is drawn from the publishers' records.
 
 ### How v1 differs
 
@@ -98,13 +95,10 @@ Related approaches that frame harmonization through embeddings / clustering / si
 v1 intentionally ships the engineering core and holds the research contributions for a forthcoming
 paper. Not in v1:
 
-- **LLM coherence judging** (the dual-sample "j-signal" that judges whether a cluster is one
-  concept) and **LLM concept-labeling** — v1 uses deterministic gates and derived c-TF-IDF labels.
+- **LLM coherence judging** — a dual-sample pass that judges whether a cluster is one concept —
+  and **LLM concept-labeling**; v1 uses deterministic gates and derived c-TF-IDF labels.
 - **LLM spec authoring** / per-variable transformation specs — v1 stops at the adopt/refine/novel
   recommendation and hands off to EITL.
-- **Granularity-loss detection** (the "g-signal").
+- **Granularity-loss detection**.
 - **Deep recursive clustering** — v1 is topic → semantic split → value sub-cluster (bounded depth).
 - **CDE common data model (CDM)** output.
-
-See the research notebook `notebooks/clustering/05_dual_sample_j_signal.ipynb` for prototypes of the
-deferred LLM-judging layers.

@@ -4,9 +4,6 @@ Phase 1b of the ddharmon architecture: a semantic cluster groups fields by
 *what concept* they measure; this step splits each cluster by *how the concept
 is answered* (response-option / encoding structure), using the value embedding
 vectors that are deliberately held out of semantic clustering.
-
-Extracted from ``notebooks/clustering/02_bertopic_clustering.ipynb`` (the
-``value_subcluster`` helper) so the pipeline is reproducible outside the notebook.
 """
 
 from __future__ import annotations

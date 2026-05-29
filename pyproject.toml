@@ -86,9 +86,8 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/ddharmon"]
 
-# NOTE: We use the Biomapper2 API (not the library) for entity resolution.
-# This keeps ddharmon focused on data dictionary harmonization while
-# treating biomapper2 as an external service.
+# NOTE: Entity resolution is treated as an external service rather than a library
+# dependency, keeping ddharmon focused on data-dictionary harmonization.
 
 [tool.ruff]
 line-length = 120

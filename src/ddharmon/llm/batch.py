@@ -44,9 +44,8 @@ def _safe_custom_id(original: str, used: set[str]) -> str:
 
 # Default schema instruction for prompts that don't carry their own ``schema``
 # field (back-compat with pairwise-reranker exports from before per-prompt
-# schemas existed). Per-prompt schemas — used by nb 05's four-pass pipeline
-# (j-signal, labels, harmonize-classify, harmonize-spec) — supersede this when
-# the record sets a ``schema`` field. Mirrors ``scripts/process_prompts.sh``.
+# schemas existed). Per-prompt schemas supersede this when the record sets a
+# ``schema`` field. Mirrors ``scripts/process_prompts.sh``.
 _DEFAULT_PAIRWISE_SCHEMA = """{
   "judgments": [
     {
@@ -87,8 +86,8 @@ def submit_batch(
     Args:
         prompts_path: Path to JSONL file with records ``{id, system_prompt,
             user_prompt, schema?, model_tag?}``. Compatible with both
-            ``export_reranking_prompts()`` (no schema/model_tag) and nb 05's
-            four-pass pipeline (per-record schema + model_tag).
+            ``export_reranking_prompts()`` (no schema/model_tag) and the
+            multi-pass pipeline (per-record schema + model_tag).
         model: Optional override applied to every request. When ``None`` (the
             default), each request uses its own ``model_tag``.
         max_tokens: Max response tokens per request.

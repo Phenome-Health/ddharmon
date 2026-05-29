@@ -1,9 +1,7 @@
 # ddharmon GUI
 
-A simple web GUI for the ddharmon v1 harmonization pipeline, modeled on the
-[biomapper-ui](https://github.com/trentleslie/biomapper-ui) ("Entity Linker Dashboard"):
-React + Vite + Tailwind + shadcn/ui frontend talking to a FastAPI backend that wraps
-`ddharmon.harmonization`.
+A simple web GUI for the ddharmon v1 harmonization pipeline: a React + Vite + Tailwind +
+shadcn/ui frontend talking to a FastAPI backend that wraps `ddharmon.harmonization`.
 
 **Workflow:** upload cohort data dictionaries → map columns → run the pipeline (cluster →
 value sub-cluster → CDE anchor → adopt/refine/novel) with live progress → review the

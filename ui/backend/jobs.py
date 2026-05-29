@@ -1,4 +1,4 @@
-"""In-memory job store for harmonization runs (mirrors biomapper-ui services/jobs.py).
+"""In-memory job store for harmonization runs.
 
 A run is a long, mostly-CPU-bound pipeline (embed → BERTopic → sub-cluster → anchor
 → classify), so it executes in a daemon thread and reports progress by mutating its

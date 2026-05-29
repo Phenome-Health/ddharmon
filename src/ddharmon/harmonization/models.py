@@ -1,6 +1,6 @@
 """Data models for sub-cluster-anchored CDE harmonization (v1).
 
-Dataclasses following biomapper2 conventions. The v1 pipeline:
+Plain dataclasses (not Pydantic), with __post_init__ validation. The v1 pipeline:
 
     semantic cluster  ->  value sub-cluster  ->  CDE anchor  ->  adopt/refine/novel
 

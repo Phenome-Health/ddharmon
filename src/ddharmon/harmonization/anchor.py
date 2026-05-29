@@ -8,8 +8,6 @@ center, and CDE members are ranked by similarity-to-medoid, then *canonicalness*
 
 When no CDE is present in the sub-cluster, ``has_cde`` is False — the caller
 should generate a GenCDE (or, in v1, classify the sub-cluster as ``novel``).
-
-Extracted from ``notebooks/clustering/02_bertopic_clustering.ipynb`` (cell 20).
 """
 
 from __future__ import annotations

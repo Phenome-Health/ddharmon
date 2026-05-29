@@ -1,6 +1,6 @@
 // SSE hook for live harmonization-run progress.
-// Adapted from biomapper-ui's use-mapping-stream.ts (same EventSource + exponential-backoff
-// retry + terminal-status close), pointed at /api/harmonize/stream and typed to JobResult.
+// EventSource + exponential-backoff retry + terminal-status close, pointed at
+// /api/harmonize/stream and typed to JobResult.
 import { useEffect, useRef, useState } from "react";
 import type { JobResult } from "@/types";
 

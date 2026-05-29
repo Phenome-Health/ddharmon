@@ -1,10 +1,10 @@
 # ddharmon GUI Deployment (internal VM — systemd + nginx)
 
 Step-by-step guide for deploying the ddharmon harmonization GUI to a single always-on VM
-(e.g. AWS Lightsail / an internal Ubuntu host), mirroring the biomapper-ui deploy pattern.
+(e.g. AWS Lightsail / an internal Ubuntu host).
 
 Replace `$DEPLOY_DIR` (e.g. `/home/ubuntu/ddharmon`) and `$DOMAIN`
-(e.g. `harmonize.expertintheloop.io`) throughout.
+(e.g. `harmonize.example.org`) throughout.
 
 ## Architecture (read first)
 

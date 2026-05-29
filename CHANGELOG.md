@@ -41,11 +41,11 @@ pipeline — an extension of the embedding-clustering-for-variable-harmonization
 
 ### Deferred (publication-pending / future)
 
-- LLM **coherence judging** (the "j-signal" dual-sample pass).
+- LLM **coherence judging** (a dual-sample coherence pass).
 - LLM **concept-labeling** (v1 uses derived c-TF-IDF labels) and **spec authoring** / transformation specs.
-- **Granularity-loss** detection (the "g-signal").
+- **Granularity-loss** detection.
 - **Deep recursive clustering** (v1 is topic → semantic split → value sub-cluster, bounded depth).
 - Pairwise 1:1 matching (built, not in the v1 release surface), standards/KG mapping, and the
   Click CLI orchestrator (`ddharmon.cli:main` is declared but unimplemented).
 
-[1.0.0]: https://github.com/Phenome-Health/ph-arpa-data-harmonization/releases/tag/v1.0.0
+[1.0.0]: https://github.com/Phenome-Health/ddharmon/releases/tag/v1.0.0

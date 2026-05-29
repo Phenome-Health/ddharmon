@@ -30,10 +30,10 @@ case "$MODE" in
     *) echo "Error: unknown mode '$MODE'. Use --submit or --retrieve, or omit for blocking." >&2; exit 2 ;;
 esac
 
-# Sidecar lives next to the prompts file so multi-pass workflows (nb 05's four
+# Sidecar lives next to the prompts file so multi-pass workflows (multiple
 # JSONLs) each get their own batch_id without collision. The manifest (written
 # by submit_batch) holds the custom_id→original-id map retrieve_batch needs to
-# restore the notebook's ids (e.g. "cluster:5").
+# restore the original ids (e.g. "cluster:5").
 SIDECAR="${PROMPTS_FILE}.batch_id"
 MANIFEST="${PROMPTS_FILE}.batch_manifest.json"
 
