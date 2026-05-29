@@ -4,6 +4,11 @@ ddharmon harmonizes biomedical **data dictionaries**: it identifies clusters of 
 variables across studies and recommends a Common Data Element (CDE) anchor for each — routing
 every recommendation to expert review.
 
+![ddharmon in the Phenome Health data-harmonization ecosystem](docs/ph-ecosystem-v1.png)
+
+*Where ddharmon sits: cluster variables + CDEs → anchor a CDE per sub-cluster (or generate a novel
+one) → expert review — alongside related public tools and the broader Phenome Health stack.*
+
 ## v1 — Sub-cluster-anchored CDE harmonization
 
 **ddharmon v1** clusters cohort variables *and* NIH Common Data Elements (CDEs) together using

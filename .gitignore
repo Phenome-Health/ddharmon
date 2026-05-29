@@ -166,6 +166,7 @@ logs/
 *.png
 *.pdf
 !docs/**/*.pdf
+!docs/**/*.png
 
 # ddharmon GUI
 ui/frontend/node_modules/
