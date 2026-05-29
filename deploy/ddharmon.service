@@ -1,0 +1,44 @@
+[Unit]
+Description=ddharmon Harmonization GUI (FastAPI + built SPA, single process)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=$DEPLOY_DIR
+
+# --- environment ---
+Environment="PATH=$DEPLOY_DIR/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+# Keep the HuggingFace / sentence-transformers model cache inside the deploy dir so
+# ProtectSystem=strict does not block the first-run model download (~420MB, all-mpnet-base-v2).
+Environment="HF_HOME=$DEPLOY_DIR/.cache/huggingface"
+Environment="SENTENCE_TRANSFORMERS_HOME=$DEPLOY_DIR/.cache/sentence-transformers"
+EnvironmentFile=$DEPLOY_DIR/.env
+
+# --- process ---
+# SINGLE worker, SINGLE process — the job store is in-memory and SSE streams are stateful.
+# Do NOT add --workers >1 or a process manager that forks: jobs would be invisible across workers.
+# Bound to localhost; nginx terminates TLS and reverse-proxies (see deploy/nginx-ddharmon.conf).
+ExecStart=$DEPLOY_DIR/.venv/bin/python -m uvicorn ui.backend.app:app --host 127.0.0.1 --port 8000
+
+# --- restart policy ---
+Restart=always
+RestartSec=10
+# Embedding + clustering is memory-hungry; allow a generous startup window.
+TimeoutStartSec=120
+
+# --- logging ---
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ddharmon
+
+# --- security hardening (mirrors biomapper-ui) ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# Writable: SQLite embedding cache (.ddharmon/), per-job scratch (.ddharmon_ui/), model cache (.cache/).
+ReadWritePaths=$DEPLOY_DIR
+
+[Install]
+WantedBy=multi-user.target

@@ -15,7 +15,9 @@ React+Vite (ui/frontend, :5173)  →  /api proxy  →  FastAPI (ui/backend, :800
 
 ## Prerequisites
 
-- Python env with the `ui` extra: `uv sync --extra dev` (or `pip install -e ".[ui]"`)
+- Python env with the full stack: `uv sync --extra dev` (or `pip install -e ".[all]"`).
+  The pipeline runner imports sentence-transformers + BERTopic/UMAP/HDBSCAN, so the `ui`
+  extra alone is **not** enough — `[all]` (which `dev` includes) pulls those in.
 - Node 20+ and npm (or pnpm)
 - CDE catalog flattened locally (for `cdeSet` = endorsed/full):
   `python scripts/flatten_cde_repo.py data/examples/cde/All-CDEs.json data/examples/cde/all_cdes_flat.tsv`

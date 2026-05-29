@@ -58,6 +58,19 @@ def test_detect_suggests_roles():
     assert roles.get("description") == "Description"
 
 
+# ── health ─────────────────────────────────────────────────────
+
+
+def test_health_ok():
+    resp = client.get("/api/health")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["version"] == "1.0.0"
+    assert set(body["cde"]) == {"endorsed", "full"}
+    assert "frontendBuilt" in body
+
+
 # ── JobStore ───────────────────────────────────────────────────
 
 

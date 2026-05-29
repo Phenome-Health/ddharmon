@@ -271,6 +271,23 @@ def export(job_id: str, format: str = "eitl_tsv") -> Any:
     )
 
 
+# --- health ----------------------------------------------------------------------------------
+@app.get("/api/health")
+def health() -> dict[str, Any]:
+    """Liveness/readiness probe: process is up, plus which optional server-side assets are present.
+
+    Used by the deploy runbook (systemd/nginx verification) and any future uptime check. Returns
+    200 as soon as the app imports; ``cde``/``frontendBuilt`` flag whether the catalog TSVs and the
+    built SPA are in place (a run with ``cdeSet != none`` needs the matching CDE file).
+    """
+    return {
+        "status": "ok",
+        "version": app.version,
+        "cde": {name: path.exists() for name, path in CDE_FILES.items()},
+        "frontendBuilt": _DIST.exists(),
+    }
+
+
 # --- static frontend (prod) ------------------------------------------------------------------
 _DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 if _DIST.exists():
