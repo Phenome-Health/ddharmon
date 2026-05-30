@@ -168,10 +168,5 @@ logs/
 !docs/**/*.pdf
 !docs/**/*.png
 
-# ddharmon GUI
-ui/frontend/node_modules/
-ui/frontend/dist/
-.ddharmon_ui/
-
 # Local agent/session state
 .claude/
