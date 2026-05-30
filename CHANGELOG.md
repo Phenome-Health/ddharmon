@@ -3,10 +3,11 @@
 All notable changes to ddharmon are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
-## [1.0.0] — 2026-05-28
+## [0.5.0] — 2026-05-29
 
-First public release. v1 is a deliberately-scoped **sub-cluster-anchored CDE harmonization**
-pipeline — an extension of the embedding-clustering-for-variable-harmonization line of work
+First public release of the v1 harmonization pipeline (supersedes the early 0.x placeholder
+releases). v1 is a deliberately-scoped **sub-cluster-anchored CDE harmonization** pipeline — an
+extension of the embedding-clustering-for-variable-harmonization line of work
 (see [`docs/v1_methods.md`](docs/v1_methods.md)).
 
 ### Added
