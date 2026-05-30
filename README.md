@@ -9,6 +9,25 @@ every recommendation to expert review.
 *Where ddharmon sits: cluster variables + CDEs → anchor a CDE per sub-cluster (or generate a novel
 one) → expert review — alongside related public tools and the broader Phenome Health stack.*
 
+## Quick start
+
+Requirements: **Python 3.12+** and [uv](https://github.com/astral-sh/uv).
+
+```bash
+git clone https://github.com/Phenome-Health/ddharmon.git
+cd ddharmon
+uv sync --extra all
+cp .env.example .env        # set ANTHROPIC_API_KEY for the classify pass (sync/batch)
+```
+
+Then open the end-to-end notebook **`notebooks/clustering/v1_harmonization_pipeline.ipynb`** — it
+runs the full pipeline (ingest → embed → cluster → value sub-cluster → CDE anchor → adopt/refine/novel
+→ review) on example data and is the best place to start.
+
+> The NIH CDE catalog is not bundled. To anchor against CDEs, flatten the CDE repository locally with
+> `scripts/flatten_cde_repo.py <All-CDEs.json> <out.tsv>`; without it, the pipeline still clusters and
+> sub-clusters cohort variables (`cdeSet = none`).
+
 ## Related work
 
 Framing biomedical variable/CDE harmonization as an **embedding → clustering → optional LLM**
@@ -67,37 +86,7 @@ research contributions held for a pending publication — LLM coherence judging,
 transformation-spec authoring, granularity-loss detection, deep recursive clustering, and a CDE
 common data model — are **not in v1**; see [`CHANGELOG.md`](CHANGELOG.md).
 
-## How to use
-
-### Quick start
-
-Requirements: **Python 3.12+** and [uv](https://github.com/astral-sh/uv).
-
-```bash
-git clone https://github.com/Phenome-Health/ddharmon.git
-cd ddharmon
-uv sync --extra all
-cp .env.example .env        # set ANTHROPIC_API_KEY for the classify pass (sync/batch)
-```
-
-Then open the end-to-end notebook **`notebooks/clustering/v1_harmonization_pipeline.ipynb`**, or call
-the Python API directly:
-
-```python
-from ddharmon.embedding import SentenceTransformerProvider, embed_dictionary
-from ddharmon.harmonization import harmonize_dictionaries, export_eitl_queue
-
-provider = SentenceTransformerProvider()
-embedded = [embed_dictionary(dd, provider=provider) for dd in dictionaries]  # cohorts + NIH_CDE
-result = harmonize_dictionaries(embedded, classify=classify_via_batch)        # batch-backed LLM
-export_eitl_queue(result, "eitl_queue.tsv")
-```
-
-> The NIH CDE catalog is not bundled. To anchor against CDEs, flatten the CDE repository locally with
-> `scripts/flatten_cde_repo.py <All-CDEs.json> <out.tsv>`; without it, the pipeline still clusters and
-> sub-clusters cohort variables (`cdeSet = none`).
-
-### Installation
+## Installation
 
 The core install is lightweight; optional extras unlock additional capabilities.
 
