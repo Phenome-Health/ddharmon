@@ -9,12 +9,48 @@ every recommendation to expert review.
 *Where ddharmon sits: cluster variables + CDEs → anchor a CDE per sub-cluster (or generate a novel
 one) → expert review — alongside related public tools and the broader Phenome Health stack.*
 
-## v1 — Sub-cluster-anchored CDE harmonization
+## Related work
 
-**ddharmon v1** clusters cohort variables *and* NIH Common Data Elements (CDEs) together using
-**dual vectors** (separate semantic + value-encoding embeddings), **sub-clusters by value
-vectors**, **recommends a CDE per sub-cluster**, and emits an **LLM adopt / refine / novel**
-recommendation per sub-cluster — routed to expert-in-the-loop (EITL) review.
+Framing biomedical variable/CDE harmonization as an **embedding → clustering → optional LLM**
+problem is an active line of work; ddharmon builds directly on it. The closest tools (full lineage
+and citations in [`docs/v1_methods.md`](docs/v1_methods.md)):
+
+- **CDEMapper** (Wang et al., *JAMIA* 2025) — LLM-powered mapping of local data elements to NIH CDEs
+  via semantic indexing + BM25 + GPT candidates + human review. *Per-element lookup.*
+- **Krishnamurthy et al., 2025** (arXiv:2506.02160) — embeds ~24k NIH CDEs and clusters them with
+  HDBSCAN, then LLM-labels the clusters. *Clusters the target CDE repository.*
+- **Salimi et al., 2025** (*Sci Rep*) — the **PASSIONATE** Parkinson's variable-mapping ground truth;
+  shows language-model embeddings beat fuzzy string matching for **pairwise** cohort harmonization
+  (frames matching as a clustering task, but stops at t-SNE visualization).
+- **DataTecnica — DIVER / RoP** (Long et al., medRxiv 2024) — LLMs generate and audit CDEs at scale
+  (**GenCDEs**); the RoP release ships ~1.33M harmonized CDEs with embeddings. *Closest to generating
+  novel CDEs.*
+- **Harmony** (McElroy et al., *BMC Psychiatry* 2024), **Semantic Search Helper** (Gottfried 2025),
+  **datastew**, and **BDI-Kit** (Lopez et al., *Patterns* 2026) — embedding/LLM harmonization and
+  schema/value-matching siblings.
+
+## What ddharmon adds
+
+These tools tend to cluster *either* a CDE repository *or* a single cohort, use a single semantic
+vector, and map element-by-element. ddharmon targets the gaps that matter for harmonizing **many
+studies at once**:
+
+- **Multi-cohort, source *and* target together.** Cohort variables and the NIH CDE catalog are
+  embedded and clustered in one space, so equivalent variables across many studies surface as a
+  single cluster — not one pairwise lookup at a time.
+- **Dual-vector, value-aware sub-clustering.** Each field gets a **semantic** vector (what it
+  measures) *and* a **value** vector (how it is answered). Semantic vectors cluster the concept;
+  **value vectors sub-cluster within a concept by encoding shape** — so "age in years" and "age
+  bracket" land in different sub-clusters. Antecedents use a single vector and flat clusters.
+- **A recommended CDE anchor per sub-cluster — with a novel-CDE path.** Each value sub-cluster is
+  anchored to the best in-cluster CDE (medoid → canonicalness → metadata richness). When **no
+  existing CDE fits**, the sub-cluster is flagged for a **generated (GenCDE) novel CDE** instead of
+  being forced onto a poor match.
+- **adopt / refine / novel → expert review.** One classify-only LLM call per sub-cluster proposes
+  adopt / refine / novel against the anchor and routes every recommendation to **expert-in-the-loop
+  (EITL)** review — nothing is auto-applied.
+
+## How it works
 
 ```
 ingest (cohorts + CDE)
@@ -26,7 +62,26 @@ ingest (cohorts + CDE)
             → EITL review queue
 ```
 
-Run it end-to-end in **`notebooks/clustering/v1_harmonization_pipeline.ipynb`**, or call the API:
+Full algorithm, parameters, and lineage are in [`docs/v1_methods.md`](docs/v1_methods.md). The
+research contributions held for a pending publication — LLM coherence judging, concept labeling,
+transformation-spec authoring, granularity-loss detection, deep recursive clustering, and a CDE
+common data model — are **not in v1**; see [`CHANGELOG.md`](CHANGELOG.md).
+
+## How to use
+
+### Quick start
+
+Requirements: **Python 3.12+** and [uv](https://github.com/astral-sh/uv).
+
+```bash
+git clone https://github.com/Phenome-Health/ddharmon.git
+cd ddharmon
+uv sync --extra all
+cp .env.example .env        # set ANTHROPIC_API_KEY for the classify pass (sync/batch)
+```
+
+Then open the end-to-end notebook **`notebooks/clustering/v1_harmonization_pipeline.ipynb`**, or call
+the Python API directly:
 
 ```python
 from ddharmon.embedding import SentenceTransformerProvider, embed_dictionary
@@ -38,18 +93,11 @@ result = harmonize_dictionaries(embedded, classify=classify_via_batch)        # 
 export_eitl_queue(result, "eitl_queue.tsv")
 ```
 
-**Lineage.** v1 extends the embedding-clustering-for-variable-harmonization line of work — see
-[`docs/v1_methods.md`](docs/v1_methods.md) for methods and citations (Krishnamurthy 2025; Salimi
-2025; and related). We cluster the *source* (cohort variables), sub-cluster by value encoding, and
-anchor each sub-cluster to a CDE.
+> The NIH CDE catalog is not bundled. To anchor against CDEs, flatten the CDE repository locally with
+> `scripts/flatten_cde_repo.py <All-CDEs.json> <out.tsv>`; without it, the pipeline still clusters and
+> sub-clusters cohort variables (`cdeSet = none`).
 
-**In v1:** multi-cohort + CDE ingestion · dual-vector embedding · BERTopic · value sub-clustering ·
-per-sub-cluster CDE anchoring · adopt/refine/novel classify → EITL.
-**Deferred (publication-pending):** LLM coherence judging, recursive clustering, LLM spec authoring,
-granularity-loss detection, CDE common data model, the pairwise 1:1 matching surface, standards
-mapping, and the CLI orchestrator. See [`CHANGELOG.md`](CHANGELOG.md).
-
-## Installation
+### Installation
 
 The core install is lightweight; optional extras unlock additional capabilities.
 
@@ -68,23 +116,6 @@ pip install "ddharmon[all]"          # full pipeline
 # or, with uv (recommended for development):
 uv sync --extra all
 ```
-
-## Quick start
-
-Requirements: **Python 3.12+** and [uv](https://github.com/astral-sh/uv).
-
-```bash
-git clone https://github.com/Phenome-Health/ddharmon.git
-cd ddharmon
-uv sync --extra all
-cp .env.example .env        # set ANTHROPIC_API_KEY for the classify pass (sync/batch)
-```
-
-Then open `notebooks/clustering/v1_harmonization_pipeline.ipynb`, or use the Python API above.
-
-> The NIH CDE catalog is not bundled. To anchor against CDEs, flatten the CDE repository locally with
-> `scripts/flatten_cde_repo.py <All-CDEs.json> <out.tsv>`; without it, the pipeline still clusters
-> and sub-clusters cohort variables (`cdeSet = none`).
 
 ## Development
 
