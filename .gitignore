@@ -170,3 +170,4 @@ logs/
 
 # Local agent/session state
 .claude/
+!data/examples/*.xlsx
