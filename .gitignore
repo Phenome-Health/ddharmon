@@ -175,3 +175,4 @@ ui/frontend/dist/
 
 # Local agent/session state
 .claude/
+!data/examples/*.xlsx
