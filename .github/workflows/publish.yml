@@ -3,15 +3,20 @@ name: Publish to PyPI
 # Builds the sdist + wheel and uploads them to PyPI when a GitHub Release is
 # published. Uses PyPI Trusted Publishing (OIDC) — NO API token is stored.
 #
+# Releases are cut from the publishing mirror `trentleslie/ddharmon` (Trent owns
+# the `ddharmon` PyPI name). Development is canonical in `Phenome-Health/ddharmon`;
+# its content is mirrored into the publishing repo before each release.
+#
 # One-time setup (by a PyPI *owner* of the `ddharmon` project, i.e. Trent):
 #   PyPI → project `ddharmon` → Settings → Publishing → Add a trusted publisher:
-#     Owner:           Phenome-Health
+#     Owner:           trentleslie
 #     Repository:      ddharmon
 #     Workflow name:   publish.yml
 #     Environment:     pypi
 #
 # Then cut a release: bump the version in pyproject.toml, tag it, and publish a
-# GitHub Release (e.g. v0.5.0). This workflow does the rest.
+# GitHub Release (e.g. v0.5.0). This workflow does the rest. See the
+# .claude/skills/publish-to-pypi skill for the full procedure.
 
 on:
   release:

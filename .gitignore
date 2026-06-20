@@ -168,5 +168,6 @@ logs/
 !docs/**/*.pdf
 !docs/**/*.png
 
-# Local agent/session state
-.claude/
+# Local agent/session state (keep local config out of git, but share skills)
+.claude/*
+!.claude/skills/
