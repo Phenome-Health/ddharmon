@@ -1,9 +1,35 @@
 [project]
 name = "ddharmon"
-version = "1.0.0"
+version = "0.5.0"
 description = "Data Dictionary Harmonization Tool: cluster equivalent variables across data dictionaries and anchor them to Common Data Elements (CDEs)"
 readme = "README.md"
 requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "Trent Leslie", email = "trent.leslie@phenomehealth.org" },
+    { name = "Bhargav Vemuri", email = "bhargav.vemuri@phenomehealth.org" },
+]
+keywords = [
+    "data harmonization",
+    "common data elements",
+    "CDE",
+    "data dictionary",
+    "biomedical",
+    "embeddings",
+    "clustering",
+    "metadata",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Healthcare Industry",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
 dependencies = [
     # Core data processing
     "pandas>=2.1.0",
@@ -73,6 +99,13 @@ notebooks = [
 
 [project.scripts]
 ddharmon = "ddharmon.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Phenome-Health/ddharmon"
+Repository = "https://github.com/Phenome-Health/ddharmon"
+Documentation = "https://github.com/Phenome-Health/ddharmon#readme"
+Issues = "https://github.com/Phenome-Health/ddharmon/issues"
+Changelog = "https://github.com/Phenome-Health/ddharmon/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]
