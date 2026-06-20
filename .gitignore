@@ -171,3 +171,4 @@ logs/
 # Local agent/session state (keep local config out of git, but share skills)
 .claude/*
 !.claude/skills/
+!data/examples/*.xlsx

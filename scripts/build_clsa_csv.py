@@ -1,5 +1,9 @@
 """Build CLSA flat CSV from the multi-sheet baseline Excel file.
 
+Source (public): the *Canadian Longitudinal Study on Aging* (CLSA) data dictionaries:
+    https://www.clsa-elcv.ca/resource-types/data-dictionaries/
+Download the baseline data dictionary workbook and save it as the `--xlsx` input below.
+
 CLSA ships as `clsa_baseline.xlsx` with two sheets:
   - Variables  — one row per field (name, label:en, question:en, comment:en, ...)
   - Categories — one row per (variable, value_code) pair with display label
@@ -27,8 +31,8 @@ from pathlib import Path
 
 import pandas as pd
 
-DEFAULT_XLSX = Path("data/final combined responses/clsa_baseline.xlsx")
-DEFAULT_OUT = Path("data/final combined responses/clsa_baseline.csv")
+DEFAULT_XLSX = Path("data/examples/clsa_baseline.xlsx")
+DEFAULT_OUT = Path("data/examples/clsa_baseline.csv")
 
 
 def build_clsa_csv(xlsx_path: Path, out_path: Path) -> None:
@@ -41,11 +45,7 @@ def build_clsa_csv(xlsx_path: Path, out_path: Path) -> None:
     real = cat_df[(cat_df["missing"] == 0) & cat_df["label:en"].notna()].copy()
     print(f"Real categories after dropping sentinels + NaN labels: {len(real)} rows")
 
-    real["pair"] = (
-        real["name"].astype(str).str.strip()
-        + "="
-        + real["label:en"].astype(str).str.strip()
-    )
+    real["pair"] = real["name"].astype(str).str.strip() + "=" + real["label:en"].astype(str).str.strip()
     agg = (
         real.groupby(["table", "variable"], sort=False)["pair"]
         .apply(lambda s: "|".join(s))
