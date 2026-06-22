@@ -3,6 +3,14 @@
 All notable changes to ddharmon are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
+## [0.6.1] — 2026-06-22
+
+### Changed
+
+- **`publish-to-pypi` skill docs** — auto-suggest the next semver version, document the
+  PR → merge → prune → local-sync release flow, and clarify the canonical-vs-mirror remote
+  split. Documentation only; no changes to the `ddharmon` package itself.
+
 ## [0.6.0] — 2026-06-22
 
 ### Added
