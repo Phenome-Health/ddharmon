@@ -15,20 +15,6 @@ description: Use when cutting a new ddharmon release to PyPI — bumping the ver
   when a **GitHub Release is published**, it builds the sdist + wheel and uploads them
   to PyPI using **Trusted Publishing (OIDC)** — no API token is stored anywhere.
 
-## One-time setup (PyPI owner only — Trent)
-
-Do this once on PyPI before the first OIDC release; it cannot be done by anyone except a
-project owner, and the publish job fails auth until it exists:
-
-PyPI → project `ddharmon` → **Settings → Publishing → Add a trusted publisher**:
-
-| Field         | Value             |
-|---------------|-------------------|
-| Owner         | `Phenome-Health`  |
-| Repository    | `ddharmon`        |
-| Workflow name | `publish.yml`     |
-| Environment   | `pypi`            |
-
 ## Cutting a release
 
 Run from a clean, up-to-date checkout of the canonical repo's `main`
