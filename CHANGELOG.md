@@ -3,6 +3,30 @@
 All notable changes to ddharmon are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
+## [0.6.0] — 2026-06-22
+
+### Added
+
+- **`ddharmon` CLI entry point** — a minimal `click` console script (`src/ddharmon/cli.py`)
+  wired up as the `ddharmon` command; shows help when invoked bare and reports the version.
+- **Post-publish release verification** (`scripts/verify_release.py` + `scripts/smoke_test.py`)
+  — an automated three-stage gate that polls PyPI for propagation, installs the exact pinned
+  version into an ephemeral `uv` venv, and runs a self-contained smoke test (version,
+  value-encoding parsing, ingestion/preprocessing, CLI) against the installed wheel; `--full`
+  additionally exercises the `[all]` embedding stack. Driven from the `publish-to-pypi` skill.
+
+### Changed
+
+- **`__version__` is now single-sourced** from installed distribution metadata
+  (`importlib.metadata`), so the package and distribution versions can never drift.
+- **Dependencies bumped** — pyarrow 23.0.1 → 24.0.0 and the python-minor-and-patch group
+  (18 updates); added Dependabot config and patched dev/notebook vulnerabilities.
+- **CI:** publish workflow actions bumped to Node 24 versions.
+
+### Fixed
+
+- `scripts/check.sh` now quotes venv paths so repositories whose path contains spaces work.
+
 ## [0.5.0] — 2026-05-29
 
 First public release of the v1 harmonization pipeline (supersedes the early 0.x placeholder
