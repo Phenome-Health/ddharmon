@@ -35,6 +35,9 @@ recommendation to expert review. Full pipeline in `README.md`; algorithm + linea
   are plain dataclasses.
 - Entity resolution is intentionally an *external service*, not a dependency — keep ddharmon
   focused on data-dictionary harmonization.
+- `docs/solutions/` — documented solutions to past problems (bugs, workflow patterns), organized
+  by category with YAML frontmatter (`module`, `tags`, `problem_type`); relevant when debugging or
+  implementing in documented areas.
 
 ## Releasing to PyPI
 
