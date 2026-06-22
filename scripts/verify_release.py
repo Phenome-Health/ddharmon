@@ -83,7 +83,15 @@ def install_into_venv(venv_dir: Path, spec: str, retries: int = 3, sleep: float 
     py = venv_dir / "bin" / "python"
     last = None
     for attempt in range(1, retries + 1):
-        result = _run(["uv", "pip", "install", "--python", str(py), spec])
+        cmd = ["uv", "pip", "install", "--python", str(py)]
+        # On retry, bypass uv's index cache. The first attempt can cache a negative
+        # simple-index response (the just-published version not visible yet); without
+        # --refresh every retry reuses that stale "not found" and keeps failing even
+        # after the index propagates, defeating the whole point of the retry loop.
+        if attempt > 1:
+            cmd.append("--refresh")
+        cmd.append(spec)
+        result = _run(cmd)
         if result.returncode == 0:
             return py
         last = result
