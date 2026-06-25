@@ -20,9 +20,11 @@ uv sync --extra all
 cp .env.example .env        # set ANTHROPIC_API_KEY for the classify pass (sync/batch)
 ```
 
-Then open the end-to-end notebook **`notebooks/clustering/v1_harmonization_pipeline.ipynb`** — it
-runs the full pipeline (ingest → embed → cluster → value sub-cluster → CDE anchor → adopt/refine/novel
-→ review) on example data and is the best place to start.
+Then open the end-to-end notebook **`notebooks/clustering/v2_harmonization_pipeline.ipynb`** — it runs
+the v2 split-aware pipeline (ingest → embed → cluster → hybrid retrieve → generate-ideal → split into
+concept-groups → per-group assign → route adopt/refine/novel → review) on example data and is the best
+place to start. The earlier **`v1_harmonization_pipeline.ipynb`** (sub-cluster-anchored pipeline) is kept
+for reference. See [`docs/v2_methods.md`](docs/v2_methods.md) for what changed and why.
 
 > The NIH CDE catalog is not bundled. To anchor against CDEs, flatten the CDE repository locally with
 > `scripts/flatten_cde_repo.py <All-CDEs.json> <out.tsv>`; without it, the pipeline still clusters and
