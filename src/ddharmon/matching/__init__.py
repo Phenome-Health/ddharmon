@@ -2,18 +2,23 @@
 
 from ddharmon.matching.candidate_retrieval import build_field_context, retrieve_candidates
 from ddharmon.matching.confidence import ConfidenceConfig, score_mapping, triage_mapping
+from ddharmon.matching.lexical import BM25, hybrid_topk, reciprocal_rank_fusion, tokenize
 from ddharmon.matching.pairwise_mapper import MatchingConfig, match_dictionaries
 from ddharmon.matching.prompt_export import export_reranking_prompts
 from ddharmon.matching.reranker import rerank_candidates
 
 __all__ = [
+    "BM25",
     "ConfidenceConfig",
     "MatchingConfig",
     "build_field_context",
     "export_reranking_prompts",
+    "hybrid_topk",
     "match_dictionaries",
+    "reciprocal_rank_fusion",
     "rerank_candidates",
     "retrieve_candidates",
     "score_mapping",
+    "tokenize",
     "triage_mapping",
 ]

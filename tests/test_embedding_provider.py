@@ -70,11 +70,11 @@ class TestSentenceTransformerProvider:
         return SentenceTransformerProvider(model_name="all-MiniLM-L6-v2")
 
     def test_model_name_returns_configured_string(self, provider) -> None:
-        """SentenceTransformerProvider.model_name returns the configured model string."""
-        assert provider.model_name == "all-mpnet-base-v2"
+        """SentenceTransformerProvider.model_name returns the configured default (BioLORD-2023)."""
+        assert provider.model_name == "FremyCompany/BioLORD-2023"
 
     def test_dimension_returns_768(self, provider) -> None:
-        """SentenceTransformerProvider.dimension returns 768 for all-mpnet-base-v2."""
+        """SentenceTransformerProvider.dimension returns 768 for the default BioLORD-2023 encoder."""
         assert provider.dimension == 768
 
     def test_embed_returns_correct_shape(self, provider) -> None:

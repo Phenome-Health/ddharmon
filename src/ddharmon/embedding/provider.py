@@ -28,7 +28,7 @@ class EmbeddingProvider(ABC):
     @property
     @abstractmethod
     def dimension(self) -> int:
-        """Embedding vector dimension (e.g., 768 for all-mpnet-base-v2)."""
+        """Embedding vector dimension (e.g., 768 for BioLORD-2023)."""
         ...
 
     @abstractmethod
@@ -48,27 +48,32 @@ class EmbeddingProvider(ABC):
 class SentenceTransformerProvider(EmbeddingProvider):
     """Local sentence-transformers provider.
 
-    Uses CPU-only inference with all-mpnet-base-v2 (768d) as default.
+    Uses CPU-only inference with FremyCompany/BioLORD-2023 (768d) as default.
     Model is loaded once on construction and reused for all embed() calls.
 
-    Note: First use downloads the model from HuggingFace Hub (~420MB).
+    Note: First use downloads the model from HuggingFace Hub (~440MB).
+
+    Default — FremyCompany/BioLORD-2023 (768d): a concept<->definition contrastive encoder. Selected over
+    mpnet because survey-field-description<->CDE-definition matching is exactly its training objective. It
+    is the only encoder of seven swept (mpnet, BioLORD, MedEmbed, PubMedBERT, E5, BGE-large) that wins BOTH
+    the CDEMapper retrieval benchmark (hybrid recall@5 0.637->0.679) AND the held-out PhenX cross-cohort
+    co-clustering separability (Δ 0.536->0.611) — retrieval-contrastive encoders top dense recall but
+    collapse held-out separability. Pair with BM25+RRF (ddharmon.matching.hybrid_topk); do NOT ensemble with
+    mpnet (it dilutes the better ranking). See benchmarks/README.md.
 
     Model options (pass as model_name):
+        Biomedical-specialized:
+            FremyCompany/BioLORD-2023           768d, concept<->definition contrastive (default)
+            pritamdeka/S-PubMedBert-MS-MARCO    768d, PubMedBERT fine-tuned for retrieval
+
         General-purpose:
-            all-mpnet-base-v2       768d, best general-purpose (default)
+            all-mpnet-base-v2       768d, prior default; strong general-purpose baseline
             all-MiniLM-L6-v2        384d, 5x faster, good for prototyping
 
-        Biomedical-specialized:
-            pritamdeka/S-PubMedBert-MS-MARCO    768d, PubMedBERT fine-tuned for retrieval
-            BAAI/bge-base-en-v1.5               768d, strong general + bio (good compromise)
-            nomic-ai/nomic-embed-text-v1.5      768d, strong biomedical performance
-
-        For survey/questionnaire text (plain language, not clinical), the general-purpose
-        default performs comparably to biomedical models. Validate on your data before
-        switching — if within 5% of default, prefer simplicity.
+        Validate any swap on BOTH standing benchmarks (held-out PhenX, not just DEV recall) before adopting.
     """
 
-    def __init__(self, model_name: str = "all-mpnet-base-v2") -> None:
+    def __init__(self, model_name: str = "FremyCompany/BioLORD-2023") -> None:
         # Lazy import so the module can be imported without sentence-transformers installed
         from sentence_transformers import SentenceTransformer
 
