@@ -3,6 +3,52 @@
 All notable changes to ddharmon are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
+## [0.7.0] — 2026-06-24
+
+The **v2 split-aware harmonization pipeline** — a new architecture that leads with *assignment to the
+given CDE backbone* for the covered head and routes only the uncovered tail to generation/clustering.
+The earlier sub-cluster-anchored pipeline (`harmonization/pipeline.py` + `anchor.py`) is retained for
+reference. See [`docs/v2_methods.md`](docs/v2_methods.md).
+
+### Added
+
+- **v2 lean head/tail pipeline** (`ddharmon.harmonization.leanb`) — `harmonize_leanb()` runs
+  cluster → hybrid retrieve → generate-ideal → split into concept-groups → per-group re-retrieve +
+  assign → route adopt/refine/novel. Emits one `LeanBRecord` per distinct concept-group within a
+  cluster (split-aware "adopt-with-context"), never silently pooling distinct concepts. Helpers:
+  `prepare_leanb`, `prepare_split`, `prepare_group_assign`, `assemble_leanb`, `CdeBackbone`,
+  `LeanBResult`, `export_leanb_eitl_queue`, `write_records_json`.
+- **Hybrid lexical+dense retrieval** (`ddharmon.matching.lexical`) — a self-contained `BM25`,
+  `reciprocal_rank_fusion`, and `hybrid_topk` (RRF of BM25 + dense cosine), the adopted candidate
+  generator. No new dependencies. Unit-tested.
+- **EITL campaign export** (`ddharmon.export.eitl`) — `export_split_eitl_campaign` / `build_cde_lookup`
+  emit reviewer-ready campaigns honoring the import contract (U+2028-escaped source text, no raw
+  newlines, `QUOTE_ALL`, csv-module chunking under the single-file size limit).
+- **Residual (tail) re-clustering** (`ddharmon.clustering.recluster_residual`) — re-clusters the
+  uncovered tail in isolation to feed the split-aware stage. Recall-favoring and **off by default**
+  (it over-merges standalone — see the docstring for the measured precision/recall tradeoff).
+- **Standing evaluation benchmarks** (`benchmarks/`) — reproducible, $0, no-proprietary-data gates:
+  CDEMapper (var→CDE retrieval recall), PhenX (cross-cohort co-clustering), and ATHLOS (value-recode
+  correctness), plus `benchmarks/gate.py` asserting hard floors on the deterministic signals. See
+  [`benchmarks/README.md`](benchmarks/README.md).
+- **v2 end-to-end notebook** — `notebooks/clustering/v2_harmonization_pipeline.ipynb`, the new default
+  entry point, runs the full v2 flow on the bundled AoU + CLSA + CDE example data.
+
+### Changed
+
+- **Default embedding encoder → `FremyCompany/BioLORD-2023`** (was `all-mpnet-base-v2`). A
+  concept↔definition contrastive encoder; the only model of seven evaluated that wins **both** the
+  CDEMapper retrieval benchmark (hybrid recall@5 0.637→0.679) and held-out PhenX cross-cohort
+  separability (Δ 0.536→0.611). Still 768-d; first use downloads ~440 MB from HuggingFace. Pair with
+  `hybrid_topk`; do not ensemble with mpnet. This changes embedding/clustering output vs prior releases.
+- **c-TF-IDF cluster labels** now mirror the embedded semantic text (`Field.to_embedding_text`) instead
+  of the raw `name: description` string, so top terms reflect the clustered concept.
+
+### Fixed
+
+- A latent crash in `topic_model_dictionaries` when `nr_topics` is set (`reduce_topics` mutates the model
+  in place and returns `self`; the reduced assignments are now read off the model).
+
 ## [0.6.1] — 2026-06-22
 
 ### Changed
