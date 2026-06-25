@@ -150,6 +150,10 @@ logs/
 *.sqlite
 *.sqlite3
 
+# ddharmon runtime caches + pipeline run outputs (created by the notebooks)
+.ddharmon/
+harmonization_artifacts/
+
 # Exported files
 *.xlsx
 *.csv
