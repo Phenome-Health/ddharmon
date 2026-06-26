@@ -475,7 +475,7 @@ class TestUnmappedField:
 class TestMappingResult:
     """Tests for MappingResult dataclass."""
 
-    def _make_result(self) -> "MappingResult":  # noqa: F821
+    def _make_result(self) -> MappingResult:  # noqa: F821
         from ddharmon.models.enums import Relation, ReviewStatus
         from ddharmon.models.mapping import FieldMapping, MappingResult
 

@@ -149,4 +149,3 @@ class TestMinimumRoleValidation:
             # Will produce no fields since description column is not mapped and no fallback
             load_dictionary(p, variable_name="variable_name")
             assert any("description" in record.message.lower() for record in caplog.records)
-

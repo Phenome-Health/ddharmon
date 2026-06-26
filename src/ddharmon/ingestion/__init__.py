@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ddharmon.ingestion.csv_parser import GenericCSVParser
 from ddharmon.ingestion.hierarchy import detect_hierarchy
-from ddharmon.ingestion.preprocessor import PreprocessingReport, preprocessing_diff, preprocess_dictionary
+from ddharmon.ingestion.preprocessor import PreprocessingReport, preprocess_dictionary, preprocessing_diff
 from ddharmon.models.data_dictionary import DataDictionary
 from ddharmon.models.enums import FieldRole
 

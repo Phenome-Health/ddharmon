@@ -128,6 +128,8 @@ ignore = ["E501"]
 [tool.ruff.lint.per-file-ignores]
 "tests/test_*_integration.py" = ["E402"]
 "tests/test_visualization.py" = ["E402"]
+# `Z` is the scipy linkage-matrix convention (scipy.cluster.hierarchy) — keep it uppercase.
+"tests/test_clustering.py" = ["N806"]
 
 [tool.black]
 line-length = 120

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import logging
 
-import pytest
-
 from ddharmon.embedding.composer import (
     compose_embedding_text,
     compose_value_content_hash,

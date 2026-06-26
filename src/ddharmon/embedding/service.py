@@ -175,9 +175,7 @@ def _embed_with_cache(
 
     short_text_count = sum(1 for t in sem_texts.values() if len(t) < 20)
 
-    embeddings = _embed_pass(
-        dictionary, provider, cache, sem_texts, sem_hashes, vector_type="semantic"
-    )
+    embeddings = _embed_pass(dictionary, provider, cache, sem_texts, sem_hashes, vector_type="semantic")
 
     # --- Pass 2: Value embeddings (only with default composer) ---
     value_embeddings: dict[str, NDArray[np.float32]] = {}
@@ -196,12 +194,9 @@ def _embed_with_cache(
             val_hashes[var_name] = compose_value_content_hash(fld)
 
         if val_texts:
-            value_embeddings = _embed_pass(
-                dictionary, provider, cache, val_texts, val_hashes, vector_type="value"
-            )
+            value_embeddings = _embed_pass(dictionary, provider, cache, val_texts, val_hashes, vector_type="value")
 
     total = len(dictionary.fields)
-    sem_cached = total - sum(1 for v in embeddings.values() if v is not None) + len(embeddings)
     val_total = len(value_embeddings)
     if short_text_count > 0:
         logger.warning(

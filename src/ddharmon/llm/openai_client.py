@@ -4,11 +4,22 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import TYPE_CHECKING, cast
 
 from ddharmon.llm.base import BaseLLMClient
 from ddharmon.llm.prompts import RERANKER_SYSTEM_PROMPT, RerankerResponse, build_reranker_prompt
 
+if TYPE_CHECKING:
+    from openai.types.chat import ChatCompletionMessageParam
+
 logger = logging.getLogger(__name__)
+
+
+def _require_content(content: str | None) -> str:
+    """Return message content, raising if the API returned none."""
+    if content is None:
+        raise ValueError("OpenAI returned no message content")
+    return content
 
 _JSON_INSTRUCTION = """
 
@@ -81,11 +92,14 @@ class OpenAIClient(BaseLLMClient):
                 response = self._client.beta.chat.completions.parse(
                     model=self._model_name,
                     max_tokens=self._max_tokens,
-                    messages=messages,
+                    messages=cast("list[ChatCompletionMessageParam]", messages),
                     response_format=RerankerResponse,
                 )
                 self._use_structured = True
-                return response.choices[0].message.parsed
+                parsed = response.choices[0].message.parsed
+                if parsed is None:
+                    raise ValueError("structured output returned no parsed result")
+                return parsed
             except Exception as e:
                 err_msg = str(e).lower()
                 if "response_format" not in err_msg and "response format" not in err_msg:
@@ -101,9 +115,9 @@ class OpenAIClient(BaseLLMClient):
         response = self._client.chat.completions.create(
             model=self._model_name,
             max_tokens=self._max_tokens,
-            messages=messages,
+            messages=cast("list[ChatCompletionMessageParam]", messages),
         )
-        return _parse_json_response(response.choices[0].message.content)
+        return _parse_json_response(_require_content(response.choices[0].message.content))
 
     def complete(self, prompt: str, *, system: str | None = None, max_tokens: int = 512) -> str:
         """Send a plain text prompt and return a plain text response."""
@@ -114,6 +128,6 @@ class OpenAIClient(BaseLLMClient):
         response = self._client.chat.completions.create(
             model=self._model_name,
             max_tokens=max_tokens,
-            messages=messages,
+            messages=cast("list[ChatCompletionMessageParam]", messages),
         )
-        return response.choices[0].message.content
+        return _require_content(response.choices[0].message.content)

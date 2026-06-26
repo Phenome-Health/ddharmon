@@ -126,7 +126,7 @@ def create_scatter_plot(
     else:
         raise ValueError(f"Unknown method: {method!r}. Use 'umap' or 'tsne'.")
 
-    coords = reducer.fit_transform(vectors)
+    coords = np.asarray(reducer.fit_transform(vectors))
 
     cohorts = [fr.dictionary_name for fr in field_refs]
     hover_names = [fr.variable_name for fr in field_refs]
@@ -237,7 +237,7 @@ def compute_umap_coords(
         random_state=random_state,
         n_neighbors=min(n_neighbors, len(vectors) - 1),
     )
-    return reducer.fit_transform(vectors)
+    return np.asarray(reducer.fit_transform(vectors))
 
 
 def _shared_umap_layout(
@@ -322,26 +322,28 @@ def create_cohort_umap(
 
     for cohort in cohort_names:
         mask = [i for i, ref in enumerate(field_refs) if ref.dictionary_name == cohort]
-        fig.add_trace(go.Scatter(
-            x=coords[mask, 0],
-            y=coords[mask, 1],
-            mode="markers",
-            marker={"size": marker_size, "opacity": marker_opacity, "color": cohort_color_map[cohort]},
-            name=cohort,
-            text=[
-                f"<b>{field_refs[i].variable_name}</b><br>{field_refs[i].description}"
-                for i in mask
-            ],
-            hoverinfo="text+name",
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=coords[mask, 0],
+                y=coords[mask, 1],
+                mode="markers",
+                marker={"size": marker_size, "opacity": marker_opacity, "color": cohort_color_map[cohort]},
+                name=cohort,
+                text=[f"<b>{field_refs[i].variable_name}</b><br>{field_refs[i].description}" for i in mask],
+                hoverinfo="text+name",
+            )
+        )
 
     # Grid-based cluster label placement
     centroids = []
     for c in clusters:
         if len(c.members) < min_label_members:
             continue
-        indices = [ref_index[(m.dictionary_name, m.variable_name)] for m in c.members
-                   if (m.dictionary_name, m.variable_name) in ref_index]
+        indices = [
+            ref_index[(m.dictionary_name, m.variable_name)]
+            for m in c.members
+            if (m.dictionary_name, m.variable_name) in ref_index
+        ]
         if not indices:
             continue
         cx = float(np.mean(coords[indices, 0]))
@@ -364,13 +366,19 @@ def create_cohort_umap(
     for cx, cy, c, size in grid.values():
         font_size = max(8, min(12, size // 3))
         fig.add_annotation(
-            x=cx, y=cy,
+            x=cx,
+            y=cy,
             text=f"<b>{c.label}</b> ({size})",
-            showarrow=True, arrowhead=0, arrowcolor="gray",
-            ax=0, ay=-20,
+            showarrow=True,
+            arrowhead=0,
+            arrowcolor="gray",
+            ax=0,
+            ay=-20,
             font={"size": font_size, "color": "black"},
             bgcolor="rgba(255,255,255,0.85)",
-            bordercolor="gray", borderwidth=1, borderpad=3,
+            bordercolor="gray",
+            borderwidth=1,
+            borderpad=3,
         )
 
     n_labels = len(grid)
@@ -433,31 +441,34 @@ def create_cluster_umap(
     top_n_point_set: set[int] = set()
 
     for rank, c in enumerate(sorted_clusters[:top_n]):
-        indices = [ref_index[(m.dictionary_name, m.variable_name)] for m in c.members
-                   if (m.dictionary_name, m.variable_name) in ref_index]
+        indices = [
+            ref_index[(m.dictionary_name, m.variable_name)]
+            for m in c.members
+            if (m.dictionary_name, m.variable_name) in ref_index
+        ]
         if not indices:
             continue
         top_n_point_set.update(indices)
         color = palette[rank % len(palette)]
 
-        fig.add_trace(go.Scatter(
-            x=coords[indices, 0],
-            y=coords[indices, 1],
-            mode="markers",
-            marker={"size": marker_size, "opacity": marker_opacity, "color": color},
-            name=f"{rank}: {c.label} ({len(c.members)})",
-            text=[
-                f"<b>{field_refs[i].variable_name}</b><br>{field_refs[i].description}"
-                for i in indices
-            ],
-            hoverinfo="text+name",
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=coords[indices, 0],
+                y=coords[indices, 1],
+                mode="markers",
+                marker={"size": marker_size, "opacity": marker_opacity, "color": color},
+                name=f"{rank}: {c.label} ({len(c.members)})",
+                text=[f"<b>{field_refs[i].variable_name}</b><br>{field_refs[i].description}" for i in indices],
+                hoverinfo="text+name",
+            )
+        )
 
         # Number at centroid
         cx = float(np.mean(coords[indices, 0]))
         cy = float(np.mean(coords[indices, 1]))
         fig.add_annotation(
-            x=cx, y=cy,
+            x=cx,
+            y=cy,
             text=f"<b>{rank}</b>",
             showarrow=False,
             font={"size": 11, "color": "black", "family": "Arial Black"},
@@ -468,18 +479,17 @@ def create_cluster_umap(
     # Remaining points in gray
     remaining = [i for i in range(len(field_refs)) if i not in top_n_point_set]
     if remaining:
-        fig.add_trace(go.Scatter(
-            x=coords[remaining, 0],
-            y=coords[remaining, 1],
-            mode="markers",
-            marker={"size": other_marker_size, "opacity": other_marker_opacity, "color": "gray"},
-            name=f"Other ({len(remaining)} fields)",
-            text=[
-                f"<b>{field_refs[i].variable_name}</b><br>{field_refs[i].description}"
-                for i in remaining
-            ],
-            hoverinfo="text",
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=coords[remaining, 0],
+                y=coords[remaining, 1],
+                mode="markers",
+                marker={"size": other_marker_size, "opacity": other_marker_opacity, "color": "gray"},
+                name=f"Other ({len(remaining)} fields)",
+                text=[f"<b>{field_refs[i].variable_name}</b><br>{field_refs[i].description}" for i in remaining],
+                hoverinfo="text",
+            )
+        )
 
     n_shown = min(top_n, len(sorted_clusters))
     auto_title = f"Semantic Clusters (UMAP) — top {n_shown} of {len(clusters)} clusters"
@@ -488,7 +498,10 @@ def create_cluster_umap(
         legend={
             "title": "Clusters (by size)",
             "font": {"size": 9},
-            "yanchor": "top", "y": 1, "xanchor": "left", "x": 1.02,
+            "yanchor": "top",
+            "y": 1,
+            "xanchor": "left",
+            "x": 1.02,
             "bgcolor": "rgba(255,255,255,0.9)",
         },
     )
@@ -645,10 +658,7 @@ def create_combined_umap(
 
     # Cohort shapes
     if cohort_shape_map is None:
-        cohort_shape_map = {
-            name: _COHORT_SHAPES[i % len(_COHORT_SHAPES)]
-            for i, name in enumerate(cohort_names)
-        }
+        cohort_shape_map = {name: _COHORT_SHAPES[i % len(_COHORT_SHAPES)] for i, name in enumerate(cohort_names)}
 
     # Data-type border colors (auto-assign per distinct value if no explicit map)
     use_data_type = data_type_map is not None
@@ -747,8 +757,11 @@ def create_combined_umap(
     top_n_point_set: set[int] = set()
 
     for rank, c in enumerate(sorted_clusters[:top_n]):
-        indices = [ref_index[(m.dictionary_name, m.variable_name)] for m in c.members
-                   if (m.dictionary_name, m.variable_name) in ref_index]
+        indices = [
+            ref_index[(m.dictionary_name, m.variable_name)]
+            for m in c.members
+            if (m.dictionary_name, m.variable_name) in ref_index
+        ]
         if not indices:
             continue
         top_n_point_set.update(indices)
@@ -759,15 +772,18 @@ def create_combined_umap(
         # which cohort shapes appear in the cluster's data traces.
         cx = float(np.mean(coords[indices, 0]))
         cy = float(np.mean(coords[indices, 1]))
-        fig.add_trace(go.Scatter(
-            x=[cx], y=[cy],
-            mode="markers",
-            marker={"size": 8, "color": color, "symbol": "circle"},
-            name=f"{rank}: {c.label} ({len(c.members)})",
-            legendgroup=f"cluster_{rank}",
-            showlegend=True,
-            hoverinfo="skip",
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=[cx],
+                y=[cy],
+                mode="markers",
+                marker={"size": 8, "color": color, "symbol": "circle"},
+                name=f"{rank}: {c.label} ({len(c.members)})",
+                legendgroup=f"cluster_{rank}",
+                showlegend=True,
+                hoverinfo="skip",
+            )
+        )
 
         # Data traces per cohort for shape differentiation (hidden from legend)
         for cohort in cohort_names:
@@ -779,29 +795,35 @@ def create_combined_umap(
                 "width": _border_width(),
                 "color": [_border_color(i) for i in cohort_indices] if use_data_type else "white",
             }
-            fig.add_trace(go.Scatter(
-                x=coords[cohort_indices, 0],
-                y=coords[cohort_indices, 1],
-                mode="markers",
-                marker={
-                    "size": marker_size, "opacity": marker_opacity, "color": color,
-                    "symbol": shape, "line": border_line,
-                },
-                name=f"{rank}: {c.label} ({len(c.members)})",
-                legendgroup=f"cluster_{rank}",
-                showlegend=False,
-                text=[
-                    f"<b>{field_refs[i].variable_name}</b> ({cohort})<br>{field_refs[i].description}{_cluster_hover(i)}{_value_label(i)}{_encoding_label(i)}"
-                    for i in cohort_indices
-                ],
-                hoverinfo="text",
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=coords[cohort_indices, 0],
+                    y=coords[cohort_indices, 1],
+                    mode="markers",
+                    marker={
+                        "size": marker_size,
+                        "opacity": marker_opacity,
+                        "color": color,
+                        "symbol": shape,
+                        "line": border_line,
+                    },
+                    name=f"{rank}: {c.label} ({len(c.members)})",
+                    legendgroup=f"cluster_{rank}",
+                    showlegend=False,
+                    text=[
+                        f"<b>{field_refs[i].variable_name}</b> ({cohort})<br>{field_refs[i].description}{_cluster_hover(i)}{_value_label(i)}{_encoding_label(i)}"
+                        for i in cohort_indices
+                    ],
+                    hoverinfo="text",
+                )
+            )
 
         # Number at centroid
         cx = float(np.mean(coords[indices, 0]))
         cy = float(np.mean(coords[indices, 1]))
         fig.add_annotation(
-            x=cx, y=cy,
+            x=cx,
+            y=cy,
             text=f"<b>{rank}</b>",
             showarrow=False,
             font={"size": 11, "color": "black", "family": "Arial Black"},
@@ -814,16 +836,18 @@ def create_combined_umap(
     if remaining:
         n_remaining = len(remaining)
         # Legend-only trace for "Other" with circle symbol
-        fig.add_trace(go.Scatter(
-            x=[float(np.mean(coords[remaining, 0]))],
-            y=[float(np.mean(coords[remaining, 1]))],
-            mode="markers",
-            marker={"size": 8, "color": "gray", "symbol": "circle"},
-            name=f"Other ({n_remaining} fields)",
-            legendgroup="other",
-            showlegend=True,
-            hoverinfo="skip",
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=[float(np.mean(coords[remaining, 0]))],
+                y=[float(np.mean(coords[remaining, 1]))],
+                mode="markers",
+                marker={"size": 8, "color": "gray", "symbol": "circle"},
+                name=f"Other ({n_remaining} fields)",
+                legendgroup="other",
+                showlegend=True,
+                hoverinfo="skip",
+            )
+        )
         for cohort in cohort_names:
             cohort_remaining = [i for i in remaining if field_refs[i].dictionary_name == cohort]
             if not cohort_remaining:
@@ -833,35 +857,40 @@ def create_combined_umap(
                 "width": _border_width(),
                 "color": [_border_color(i) for i in cohort_remaining] if use_data_type else "white",
             }
-            fig.add_trace(go.Scatter(
-                x=coords[cohort_remaining, 0],
-                y=coords[cohort_remaining, 1],
-                mode="markers",
-                marker={
-                    "size": other_marker_size, "opacity": other_marker_opacity,
-                    "color": "gray", "symbol": shape, "line": other_border,
-                },
-                name=f"Other ({n_remaining} fields)",
-                legendgroup="other",
-                showlegend=False,
-                text=[
-                    f"<b>{field_refs[i].variable_name}</b> ({cohort})<br>{field_refs[i].description}{_cluster_hover(i)}{_value_label(i)}{_encoding_label(i)}"
-                    for i in cohort_remaining
-                ],
-                hoverinfo="text",
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=coords[cohort_remaining, 0],
+                    y=coords[cohort_remaining, 1],
+                    mode="markers",
+                    marker={
+                        "size": other_marker_size,
+                        "opacity": other_marker_opacity,
+                        "color": "gray",
+                        "symbol": shape,
+                        "line": other_border,
+                    },
+                    name=f"Other ({n_remaining} fields)",
+                    legendgroup="other",
+                    showlegend=False,
+                    text=[
+                        f"<b>{field_refs[i].variable_name}</b> ({cohort})<br>{field_refs[i].description}{_cluster_hover(i)}{_value_label(i)}{_encoding_label(i)}"
+                        for i in cohort_remaining
+                    ],
+                    hoverinfo="text",
+                )
+            )
 
     # Key annotations as subtitle
     shape_text = "    ".join(f"{cohort_shape_map[name]}: {name}" for name in cohort_names)
     subtitle = f"Shapes — {shape_text}"
     if use_data_type:
-        enc_text = "    ".join(
-            f'<span style="color:{c}">■</span> {t}'
-            for t, c in sorted(border_colors.items()) if t
-        )
+        enc_text = "    ".join(f'<span style="color:{c}">■</span> {t}' for t, c in sorted(border_colors.items()) if t)
         subtitle += f"        Borders — {enc_text}"
     fig.add_annotation(
-        x=0.5, y=1.02, xref="paper", yref="paper",
+        x=0.5,
+        y=1.02,
+        xref="paper",
+        yref="paper",
         text=subtitle,
         showarrow=False,
         font={"size": 10, "color": "gray"},
@@ -874,7 +903,10 @@ def create_combined_umap(
         legend={
             "title": "Clusters (by size)",
             "font": {"size": 9},
-            "yanchor": "top", "y": 1, "xanchor": "left", "x": 1.02,
+            "yanchor": "top",
+            "y": 1,
+            "xanchor": "left",
+            "x": 1.02,
             "bgcolor": "rgba(255,255,255,0.9)",
         },
     )
@@ -1022,8 +1054,11 @@ def create_typed_umap(
     top_n_point_set: set[int] = set()
 
     for rank, c in enumerate(sorted_clusters[:top_n]):
-        indices = [ref_index[(m.dictionary_name, m.variable_name)] for m in c.members
-                   if (m.dictionary_name, m.variable_name) in ref_index]
+        indices = [
+            ref_index[(m.dictionary_name, m.variable_name)]
+            for m in c.members
+            if (m.dictionary_name, m.variable_name) in ref_index
+        ]
         if not indices:
             continue
         top_n_point_set.update(indices)
@@ -1032,15 +1067,18 @@ def create_typed_umap(
         # Legend-only trace (circle, neutral color) for consistent legend icon
         cx = float(np.mean(coords[indices, 0]))
         cy = float(np.mean(coords[indices, 1]))
-        fig.add_trace(go.Scatter(
-            x=[cx], y=[cy],
-            mode="markers",
-            marker={"size": 8, "color": "black", "symbol": "circle", "opacity": 0.3},
-            name=legend_name,
-            legendgroup=f"cluster_{rank}",
-            showlegend=True,
-            hoverinfo="skip",
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=[cx],
+                y=[cy],
+                mode="markers",
+                marker={"size": 8, "color": "black", "symbol": "circle", "opacity": 0.3},
+                name=legend_name,
+                legendgroup=f"cluster_{rank}",
+                showlegend=True,
+                hoverinfo="skip",
+            )
+        )
 
         # Data traces: one per (cohort, data_type) combination
         groups: dict[tuple[str, str], list[int]] = {}
@@ -1051,24 +1089,30 @@ def create_typed_umap(
         for (cohort, dt), group_indices in groups.items():
             color = cohort_color_map.get(cohort, "#6b7280")
             shape = shape_map.get(dt, _DATA_TYPE_SHAPE_DEFAULT)
-            fig.add_trace(go.Scatter(
-                x=coords[group_indices, 0],
-                y=coords[group_indices, 1],
-                mode="markers",
-                marker={
-                    "size": marker_size, "opacity": marker_opacity, "color": color,
-                    "symbol": shape, "line": {"width": 0.5, "color": "white"},
-                },
-                name=legend_name,
-                legendgroup=f"cluster_{rank}",
-                showlegend=False,
-                text=[_hover_text(i) for i in group_indices],
-                hoverinfo="text",
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=coords[group_indices, 0],
+                    y=coords[group_indices, 1],
+                    mode="markers",
+                    marker={
+                        "size": marker_size,
+                        "opacity": marker_opacity,
+                        "color": color,
+                        "symbol": shape,
+                        "line": {"width": 0.5, "color": "white"},
+                    },
+                    name=legend_name,
+                    legendgroup=f"cluster_{rank}",
+                    showlegend=False,
+                    text=[_hover_text(i) for i in group_indices],
+                    hoverinfo="text",
+                )
+            )
 
         # Number at centroid
         fig.add_annotation(
-            x=cx, y=cy,
+            x=cx,
+            y=cy,
             text=f"<b>{rank}</b>",
             showarrow=False,
             font={"size": 11, "color": "black", "family": "Arial Black"},
@@ -1081,16 +1125,18 @@ def create_typed_umap(
     if remaining:
         n_remaining = len(remaining)
         # Legend-only trace
-        fig.add_trace(go.Scatter(
-            x=[float(np.mean(coords[remaining, 0]))],
-            y=[float(np.mean(coords[remaining, 1]))],
-            mode="markers",
-            marker={"size": 8, "color": "gray", "symbol": "circle"},
-            name=f"Other ({n_remaining} fields)",
-            legendgroup="other",
-            showlegend=True,
-            hoverinfo="skip",
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=[float(np.mean(coords[remaining, 0]))],
+                y=[float(np.mean(coords[remaining, 1]))],
+                mode="markers",
+                marker={"size": 8, "color": "gray", "symbol": "circle"},
+                name=f"Other ({n_remaining} fields)",
+                legendgroup="other",
+                showlegend=True,
+                hoverinfo="skip",
+            )
+        )
         # Data traces by (cohort, data_type)
         groups_other: dict[tuple[str, str], list[int]] = {}
         for i in remaining:
@@ -1100,30 +1146,33 @@ def create_typed_umap(
         for (cohort, dt), group_indices in groups_other.items():
             color = cohort_color_map.get(cohort, "#6b7280")
             shape = shape_map.get(dt, _DATA_TYPE_SHAPE_DEFAULT)
-            fig.add_trace(go.Scatter(
-                x=coords[group_indices, 0],
-                y=coords[group_indices, 1],
-                mode="markers",
-                marker={
-                    "size": other_marker_size, "opacity": other_marker_opacity,
-                    "color": color, "symbol": shape,
-                },
-                name=f"Other ({n_remaining} fields)",
-                legendgroup="other",
-                showlegend=False,
-                text=[_hover_text(i) for i in group_indices],
-                hoverinfo="text",
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=coords[group_indices, 0],
+                    y=coords[group_indices, 1],
+                    mode="markers",
+                    marker={
+                        "size": other_marker_size,
+                        "opacity": other_marker_opacity,
+                        "color": color,
+                        "symbol": shape,
+                    },
+                    name=f"Other ({n_remaining} fields)",
+                    legendgroup="other",
+                    showlegend=False,
+                    text=[_hover_text(i) for i in group_indices],
+                    hoverinfo="text",
+                )
+            )
 
     # Subtitle key
-    color_text = "    ".join(
-        f'<span style="color:{cohort_color_map[n]}">●</span> {n}' for n in cohort_names
-    )
-    shape_text = "    ".join(
-        f"{s}: {t}" for t, s in sorted(shape_map.items()) if t
-    )
+    color_text = "    ".join(f'<span style="color:{cohort_color_map[n]}">●</span> {n}' for n in cohort_names)
+    shape_text = "    ".join(f"{s}: {t}" for t, s in sorted(shape_map.items()) if t)
     fig.add_annotation(
-        x=0.5, y=1.02, xref="paper", yref="paper",
+        x=0.5,
+        y=1.02,
+        xref="paper",
+        yref="paper",
         text=f"Colors — {color_text}        Shapes — {shape_text}",
         showarrow=False,
         font={"size": 10, "color": "gray"},
@@ -1136,7 +1185,10 @@ def create_typed_umap(
         legend={
             "title": "Clusters (click to spotlight)",
             "font": {"size": 9},
-            "yanchor": "top", "y": 1, "xanchor": "left", "x": 1.02,
+            "yanchor": "top",
+            "y": 1,
+            "xanchor": "left",
+            "x": 1.02,
             "bgcolor": "rgba(255,255,255,0.9)",
             "groupclick": "toggleitem",
         },

@@ -82,6 +82,8 @@ class AnthropicClient(BaseLLMClient):
                     output_format=RerankerResponse,
                 )
                 self._use_structured = True
+                if response.parsed_output is None:
+                    raise ValueError("structured output returned no parsed result")
                 return response.parsed_output
             except Exception as e:
                 err_msg = str(e).lower()
@@ -100,7 +102,11 @@ class AnthropicClient(BaseLLMClient):
             system=RERANKER_SYSTEM_PROMPT + _JSON_INSTRUCTION,
             messages=[{"role": "user", "content": user_prompt}],
         )
-        return _parse_json_response(response.content[0].text)
+        # content is a union of block types; only TextBlock carries .text
+        from anthropic.types import TextBlock
+
+        block = response.content[0]
+        return _parse_json_response(block.text if isinstance(block, TextBlock) else "")
 
     def complete(self, prompt: str, *, system: str | None = None, max_tokens: int = 512) -> str:
         """Send a plain text prompt and return a plain text response."""

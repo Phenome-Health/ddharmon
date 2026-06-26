@@ -54,45 +54,49 @@ class PreprocessingReport:
         lines.append(f"  Unicode fixes:      {self.unicode_fixed} fields")
         if self.placeholders_replaced:
             for pv in self.placeholder_values:
-                lines.append(f"  Placeholder replaced: \"{pv[:60]}\" → variable_name ({self.placeholders_replaced} fields)")
+                lines.append(
+                    f'  Placeholder replaced: "{pv[:60]}" → variable_name ({self.placeholders_replaced} fields)'
+                )
         else:
-            lines.append(f"  Placeholders:       none detected")
+            lines.append("  Placeholders:       none detected")
         if self.prefix_value:
-            lines.append(f"  Prefix stripped:    \"{self.prefix_value}\" from {self.prefix_stripped} fields")
+            lines.append(f'  Prefix stripped:    "{self.prefix_value}" from {self.prefix_stripped} fields')
         else:
-            lines.append(f"  Prefix stripped:    none detected")
+            lines.append("  Prefix stripped:    none detected")
         lines.append(f"  Stopwords:          {self.stopwords_applied} fields")
         lines.append(f"  Name in description: {self.name_deduped} fields (embed_variable_name disabled)")
         lines.append(f"  Whitespace:         {self.whitespace_fixed} fields")
-        lines.append(f"  ---")
+        lines.append("  ---")
         lines.append(f"  Names changed:      {self.names_changed} / {self.total_fields}")
         lines.append(f"  Descriptions changed: {self.descriptions_changed} / {self.total_fields}")
         return "\n".join(lines)
 
 
-def preprocessing_diff(dd: DataDictionary) -> list[dict[str, str]]:
+def preprocessing_diff(dd: DataDictionary) -> list[dict[str, str | bool]]:
     """Return per-field before/after for all fields where preprocessing changed something.
 
     Each entry has: variable_name, raw_variable_name, raw_description,
     cleaned_variable_name, cleaned_description, embed_variable_name.
     Only includes fields where at least one value differs from raw.
     """
-    diffs: list[dict[str, str]] = []
+    diffs: list[dict[str, str | bool]] = []
     for f in dd.fields.values():
         name_changed = f.raw_variable_name is not None and f.raw_variable_name != f.variable_name
         desc_changed = f.raw_description is not None and f.raw_description != f.description
         embed_suppressed = not f._embed_variable_name
 
         if name_changed or desc_changed or embed_suppressed:
-            diffs.append({
-                "variable_name": f.variable_name,
-                "raw_variable_name": f.raw_variable_name or f.variable_name,
-                "raw_description": (f.raw_description or f.description)[:80],
-                "cleaned_description": f.description[:80],
-                "name_changed": name_changed,
-                "desc_changed": desc_changed,
-                "embed_name_suppressed": embed_suppressed,
-            })
+            diffs.append(
+                {
+                    "variable_name": f.variable_name,
+                    "raw_variable_name": f.raw_variable_name or f.variable_name,
+                    "raw_description": (f.raw_description or f.description)[:80],
+                    "cleaned_description": f.description[:80],
+                    "name_changed": name_changed,
+                    "desc_changed": desc_changed,
+                    "embed_name_suppressed": embed_suppressed,
+                }
+            )
     return diffs
 
 
@@ -171,7 +175,9 @@ def preprocess_dictionary(
 
     # Step 3: Common prefix stripping
     if strip_common_prefixes:
-        report.prefix_stripped, report.prefix_value = _strip_common_prefixes(fields, prefix_min_length, prefix_min_ratio)
+        report.prefix_stripped, report.prefix_value = _strip_common_prefixes(
+            fields, prefix_min_length, prefix_min_ratio
+        )
 
     # Step 4: Stopword removal
     merged_stopwords = _load_stopwords(stopwords, stopwords_file)
@@ -265,7 +271,7 @@ def _replace_placeholder_descriptions(fields: list[Field], min_count: int) -> tu
     placeholder_list = sorted(placeholders)
     for p in placeholder_list:
         n = desc_counts[p]
-        logger.info("Placeholder description replaced: \"%s\" (%d fields)", p[:80], n)
+        logger.info('Placeholder description replaced: "%s" (%d fields)', p[:80], n)
 
     return count, placeholder_list
 

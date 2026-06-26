@@ -10,11 +10,9 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import numpy as np
-import pytest
 
 from ddharmon.clustering.topic_engine import extract_topic_clusters
 from ddharmon.models.cluster import FieldCluster, FieldReference, TopicModelResult
-
 
 # ── helpers ─────────────────────────────────────────────────────
 

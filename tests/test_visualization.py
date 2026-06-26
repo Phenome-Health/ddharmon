@@ -344,7 +344,10 @@ def test_combined_umap_has_shapes(umap_coords_and_clusters):
     """Combined UMAP uses different marker symbols per cohort."""
     coords, hierarchy, clusters = umap_coords_and_clusters
     fig = create_combined_umap(
-        coords, hierarchy.field_refs, clusters, hierarchy.all_cohort_names,
+        coords,
+        hierarchy.field_refs,
+        clusters,
+        hierarchy.all_cohort_names,
     )
     assert isinstance(fig, go.Figure)
     # Should have sub-traces per cohort within clusters, so more traces than clusters
@@ -358,7 +361,10 @@ def test_combined_umap_legend_groups(umap_coords_and_clusters):
     """Combined UMAP uses legendgroup so each cluster shows once in legend."""
     coords, hierarchy, clusters = umap_coords_and_clusters
     fig = create_combined_umap(
-        coords, hierarchy.field_refs, clusters, hierarchy.all_cohort_names,
+        coords,
+        hierarchy.field_refs,
+        clusters,
+        hierarchy.all_cohort_names,
     )
     shown = [t.name for t in fig.data if t.showlegend is not False]
     # Should have one legend entry per cluster (not per cluster*cohort)
@@ -370,7 +376,10 @@ def test_combined_umap_axis_ranges_match(umap_coords_and_clusters):
     coords, hierarchy, clusters = umap_coords_and_clusters
     fig_cluster = create_cluster_umap(coords, hierarchy.field_refs, clusters)
     fig_combined = create_combined_umap(
-        coords, hierarchy.field_refs, clusters, hierarchy.all_cohort_names,
+        coords,
+        hierarchy.field_refs,
+        clusters,
+        hierarchy.all_cohort_names,
     )
     assert fig_cluster.layout.xaxis.range == fig_combined.layout.xaxis.range
     assert fig_cluster.layout.yaxis.range == fig_combined.layout.yaxis.range
@@ -380,7 +389,10 @@ def test_combined_umap_shape_key_annotation(umap_coords_and_clusters):
     """Combined UMAP has a shape key annotation."""
     coords, hierarchy, clusters = umap_coords_and_clusters
     fig = create_combined_umap(
-        coords, hierarchy.field_refs, clusters, hierarchy.all_cohort_names,
+        coords,
+        hierarchy.field_refs,
+        clusters,
+        hierarchy.all_cohort_names,
     )
     annotation_texts = [a.text for a in fig.layout.annotations]
     shape_annotations = [t for t in annotation_texts if "Shapes" in t]
@@ -396,7 +408,10 @@ def test_combined_umap_data_type_borders(umap_coords_and_clusters):
     dt_map[(hierarchy.field_refs[0].dictionary_name, hierarchy.field_refs[0].variable_name)] = "continuous"
 
     fig = create_combined_umap(
-        coords, hierarchy.field_refs, clusters, hierarchy.all_cohort_names,
+        coords,
+        hierarchy.field_refs,
+        clusters,
+        hierarchy.all_cohort_names,
         data_type_map=dt_map,
     )
     assert isinstance(fig, go.Figure)
@@ -408,12 +423,12 @@ def test_combined_umap_data_type_borders(umap_coords_and_clusters):
 def test_combined_umap_data_type_in_hover(umap_coords_and_clusters):
     """Hover text includes data_type label when data_type_map provided."""
     coords, hierarchy, clusters = umap_coords_and_clusters
-    dt_map = {
-        (ref.dictionary_name, ref.variable_name): {"type": "ordinal"}
-        for ref in hierarchy.field_refs
-    }
+    dt_map = {(ref.dictionary_name, ref.variable_name): {"type": "ordinal"} for ref in hierarchy.field_refs}
     fig = create_combined_umap(
-        coords, hierarchy.field_refs, clusters, hierarchy.all_cohort_names,
+        coords,
+        hierarchy.field_refs,
+        clusters,
+        hierarchy.all_cohort_names,
         data_type_map=dt_map,
     )
     has_hover = any(
@@ -427,12 +442,12 @@ def test_combined_umap_data_type_in_hover(umap_coords_and_clusters):
 def test_combined_umap_data_type_plain_string(umap_coords_and_clusters):
     """Data-type map with plain string values works."""
     coords, hierarchy, clusters = umap_coords_and_clusters
-    dt_map = {
-        (ref.dictionary_name, ref.variable_name): "continuous"
-        for ref in hierarchy.field_refs
-    }
+    dt_map = {(ref.dictionary_name, ref.variable_name): "continuous" for ref in hierarchy.field_refs}
     fig = create_combined_umap(
-        coords, hierarchy.field_refs, clusters, hierarchy.all_cohort_names,
+        coords,
+        hierarchy.field_refs,
+        clusters,
+        hierarchy.all_cohort_names,
         data_type_map=dt_map,
     )
     has_hover = any(
@@ -451,12 +466,12 @@ def test_combined_umap_data_type_plain_string(umap_coords_and_clusters):
 def test_typed_umap_basic(umap_coords_and_clusters):
     """Typed UMAP creates a valid figure with numbered clusters."""
     coords, hierarchy, clusters = umap_coords_and_clusters
-    dt_map = {
-        (ref.dictionary_name, ref.variable_name): "categorical"
-        for ref in hierarchy.field_refs
-    }
+    dt_map = {(ref.dictionary_name, ref.variable_name): "categorical" for ref in hierarchy.field_refs}
     fig = create_typed_umap(
-        coords, hierarchy.field_refs, clusters, hierarchy.all_cohort_names,
+        coords,
+        hierarchy.field_refs,
+        clusters,
+        hierarchy.all_cohort_names,
         data_type_map=dt_map,
     )
     assert isinstance(fig, go.Figure)
@@ -467,12 +482,12 @@ def test_typed_umap_basic(umap_coords_and_clusters):
 def test_typed_umap_legend_is_cluster_based(umap_coords_and_clusters):
     """Typed UMAP legend entries are cluster-based, not cohort-based."""
     coords, hierarchy, clusters = umap_coords_and_clusters
-    dt_map = {
-        (ref.dictionary_name, ref.variable_name): "ordinal"
-        for ref in hierarchy.field_refs
-    }
+    dt_map = {(ref.dictionary_name, ref.variable_name): "ordinal" for ref in hierarchy.field_refs}
     fig = create_typed_umap(
-        coords, hierarchy.field_refs, clusters, hierarchy.all_cohort_names,
+        coords,
+        hierarchy.field_refs,
+        clusters,
+        hierarchy.all_cohort_names,
         data_type_map=dt_map,
     )
     shown = [t.name for t in fig.data if t.showlegend is not False]
@@ -483,12 +498,12 @@ def test_typed_umap_legend_is_cluster_based(umap_coords_and_clusters):
 def test_typed_umap_subtitle_has_colors_and_shapes(umap_coords_and_clusters):
     """Typed UMAP subtitle shows both color key and shape key."""
     coords, hierarchy, clusters = umap_coords_and_clusters
-    dt_map = {
-        (ref.dictionary_name, ref.variable_name): "continuous"
-        for ref in hierarchy.field_refs
-    }
+    dt_map = {(ref.dictionary_name, ref.variable_name): "continuous" for ref in hierarchy.field_refs}
     fig = create_typed_umap(
-        coords, hierarchy.field_refs, clusters, hierarchy.all_cohort_names,
+        coords,
+        hierarchy.field_refs,
+        clusters,
+        hierarchy.all_cohort_names,
         data_type_map=dt_map,
     )
     annotation_texts = [a.text for a in fig.layout.annotations]

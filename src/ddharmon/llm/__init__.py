@@ -34,6 +34,7 @@ __all__ = [
 if TYPE_CHECKING:  # import-time only for type checkers; never at runtime
     from ddharmon.llm.anthropic_client import AnthropicClient
     from ddharmon.llm.base import BaseLLMClient
+    from ddharmon.llm.batch import resume_and_wait, retrieve_batch, submit_and_wait, submit_batch
     from ddharmon.llm.cached_client import CachedLLMClient
     from ddharmon.llm.openai_client import OpenAIClient
     from ddharmon.llm.prompts import CandidateJudgment, RerankerResponse

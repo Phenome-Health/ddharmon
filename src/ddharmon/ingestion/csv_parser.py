@@ -75,8 +75,7 @@ class GenericCSVParser:
             missing = [col for col in column_map if col not in actual_cols]
             if missing:
                 raise ValueError(
-                    f"Column(s) not found in {path.name}: {missing}\n"
-                    f"Available columns: {list(df.columns)}"
+                    f"Column(s) not found in {path.name}: {missing}\n" f"Available columns: {list(df.columns)}"
                 )
 
         # Step 2: Build role -> column_name(s) lookup from column_map
@@ -120,7 +119,9 @@ class GenericCSVParser:
                 description = self._get_cell_value(row, short_label_col)
             if description is None:
                 description = var_name if var_name and not var_name.startswith("_ROW_") else None
-            if var_name is None and description is None:
+            # No usable text (no description and only a positional _ROW_ placeholder name) — skip.
+            # Field requires a non-None description; this also guards a latent construction error.
+            if description is None:
                 continue
 
             # Get optional fields

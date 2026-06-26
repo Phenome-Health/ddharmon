@@ -28,10 +28,7 @@ _CUSTOM_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 def _safe_custom_id(original: str, used: set[str]) -> str:
     """Map an arbitrary record id to a Batch-API-legal, batch-unique custom_id."""
-    if _CUSTOM_ID_RE.match(original):
-        candidate = original
-    else:
-        candidate = re.sub(r"[^a-zA-Z0-9_-]", "_", original)[:64] or "id"
+    candidate = original if _CUSTOM_ID_RE.match(original) else re.sub(r"[^a-zA-Z0-9_-]", "_", original)[:64] or "id"
     if candidate in used:
         base = candidate[:60]
         i = 1
@@ -220,11 +217,15 @@ def retrieve_batch(
     # Batch is done — stream results
     written = 0
     errors = 0
+    from anthropic.types import TextBlock
+
     with open(output_path, "w") as f:
         for result in client.messages.batches.results(batch_id):
             original_id = id_map.get(result.custom_id, result.custom_id)
             if result.result.type == "succeeded":
-                text = result.result.message.content[0].text
+                # content is a union of block types; only TextBlock carries .text
+                block = result.result.message.content[0]
+                text = block.text if isinstance(block, TextBlock) else ""
                 try:
                     parsed = _parse_response_text(text)
                     record = {"id": original_id, "response": parsed}

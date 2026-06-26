@@ -93,8 +93,11 @@ def match_dictionaries(
         semantic_weight=config.semantic_weight,
         value_weight=config.value_weight,
     )
-    logger.info("retrieve_candidates: %d source fields with candidates in %.2fs",
-                len(candidates), time.perf_counter() - t0_retrieval)
+    logger.info(
+        "retrieve_candidates: %d source fields with candidates in %.2fs",
+        len(candidates),
+        time.perf_counter() - t0_retrieval,
+    )
 
     mappings: list[FieldMapping] = []
     source_unmapped: list[UnmappedField] = []
