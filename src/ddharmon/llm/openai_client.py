@@ -21,6 +21,7 @@ def _require_content(content: str | None) -> str:
         raise ValueError("OpenAI returned no message content")
     return content
 
+
 _JSON_INSTRUCTION = """
 
 Respond with ONLY valid JSON matching this schema (no markdown fences):
