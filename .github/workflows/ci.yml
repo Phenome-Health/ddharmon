@@ -1,0 +1,39 @@
+name: CI
+
+# Fast quality gate on every PR + push to main: lint, format, type-check, tests
+# (the same checks as ./scripts/check.sh). The heavier $0 benchmark gate
+# (benchmarks/gate.py — downloads the encoder + fetches eval data) runs on its
+# own schedule/manual workflow, not per-PR.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, format, type-check, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install (dev extras)
+        run: uv sync --extra dev
+      - name: Ruff (lint)
+        run: uv run ruff check src/ tests/
+      - name: Black (format)
+        run: uv run black --check src/ tests/
+      - name: Pyright (types)
+        run: uv run pyright src/
+      - name: Pytest
+        run: uv run pytest tests/ -q
