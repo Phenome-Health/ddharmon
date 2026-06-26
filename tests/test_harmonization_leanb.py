@@ -413,3 +413,30 @@ def test_axis_preservation_clause_in_split_prompt():
     s = SYS_SPLIT.lower()
     assert "object" in s and "referent" in s
     assert "split" in s and ("do not split" in s or "do not over-split" in s)
+
+
+def test_harmonize_leanb_clusters_cohorts_only_not_the_cde_backbone(monkeypatch):
+    """harmonize_leanb must cluster the COHORT fields only — the CDE backbone is the retrieval
+    target, not a clustered cohort. Regression guard for the cohorts-only clustering fix."""
+    from types import SimpleNamespace
+
+    import ddharmon.clustering.topic_engine as te
+    import ddharmon.harmonization.leanb as leanb
+
+    captured: dict[str, list[str]] = {}
+
+    def fake_topic_model(dicts, **kwargs):
+        captured["clustered"] = [d.dictionary.cohort_name for d in dicts]
+        return SimpleNamespace(clusters=[], embeddings=np.zeros((0, 8), dtype=np.float32), field_refs=[])
+
+    monkeypatch.setattr(te, "topic_model_dictionaries", fake_topic_model)
+    monkeypatch.setattr(leanb, "prepare_leanb", lambda *a, **k: [])  # short-circuit downstream
+
+    def mk(name: str):
+        return SimpleNamespace(dictionary=SimpleNamespace(cohort_name=name, name=name, fields={}))
+
+    embedded = [mk("AoU"), mk("CLSA"), mk("NIH_CDE")]
+    result = leanb.harmonize_leanb(embedded, cde_cohort="NIH_CDE")  # generate=None -> $0 path
+
+    assert captured["clustered"] == ["AoU", "CLSA"]  # CDE backbone excluded from clustering
+    assert result.ideal_prompts == []

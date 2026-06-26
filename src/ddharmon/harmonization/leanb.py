@@ -478,6 +478,7 @@ def harmonize_leanb(
     top_k: int = DEFAULT_TOP_K,
     retrieval_floor: float = DEFAULT_RETRIEVAL_FLOOR,
     model_tag: str = DEFAULT_MODEL_TAG,
+    max_clusters: int | None = None,
 ) -> LeanBResult:
     """Run the full v2 pipeline: cluster -> retrieve -> generate-ideal -> split -> per-group assign -> route.
 
@@ -486,12 +487,20 @@ def harmonize_leanb(
     prompts to export for the Batch API: ``generate=None`` -> ``ideal_prompts``; ``generate`` set but
     ``split=None`` -> ``split_prompts``; ``split`` set but ``classify=None`` -> ``group_assign_prompts``.
     With all three set the LLM runs inline and ``records`` are populated. ``retrieval_floor`` downgrades
-    far-cosine adopt/refine to novel (see :func:`assemble_leanb`).
+    far-cosine adopt/refine to novel (see :func:`assemble_leanb`). ``max_clusters`` caps how many clusters
+    are harmonized (largest first) to bound LLM cost — ``None`` processes the whole corpus.
     """
     from ddharmon.clustering.topic_engine import topic_model_dictionaries
 
-    result = topic_model_dictionaries(embedded_dicts, min_cluster_size=min_cluster_size)
     cde_dict = _find_cde_dict(embedded_dicts, cde_cohort)
+    # Cluster the COHORT fields only — the CDE backbone is the retrieval target, not a clustered cohort.
+    # (prepare_leanb still receives the full embedded_dicts so retrieval can reach the backbone.)
+    cohort_dicts = [
+        ed
+        for ed in embedded_dicts
+        if (getattr(ed.dictionary, "cohort_name", None) or getattr(ed.dictionary, "name", None)) != cde_cohort
+    ]
+    result = topic_model_dictionaries(cohort_dicts or embedded_dicts, min_cluster_size=min_cluster_size)
     ideal_prompts = prepare_leanb(
         result.clusters,
         embedded_dicts,
@@ -502,6 +511,8 @@ def harmonize_leanb(
         top_k=top_k,
         model_tag=model_tag,
     )
+    if max_clusters is not None:
+        ideal_prompts = sorted(ideal_prompts, key=lambda r: len(r.context["members"]), reverse=True)[:max_clusters]
     if generate is None:
         return LeanBResult(ideal_prompts=ideal_prompts)
 
