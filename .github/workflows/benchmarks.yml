@@ -1,0 +1,42 @@
+name: Benchmarks
+
+# The heavy $0 quality gate (benchmarks/gate.py): downloads the BioLORD encoder, fetches the
+# public eval data (CDEMapper eval CSVs from GitHub raw; PhenX cross-reference xlsx; AI-READI ships
+# its gold in data/examples; units gold is in-code), embeds the shipped CDE backbone, and asserts
+# the HARD gate thresholds (retrieval recall, PhenX separability, AI-READI recall, C2 transform-spec
+# accuracy). Intentionally NOT per-PR — it takes minutes and hits the network, so it runs weekly +
+# on demand. (The per-PR lint/type/test gate is ci.yml.)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 1" # Mondays 07:00 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmarks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: Benchmark gate (recall / separability / transform-spec)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Cache Hugging Face models (BioLORD encoder)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-biolord-${{ runner.os }}
+      - name: Install (dev extras)
+        run: uv sync --extra dev
+      - name: Benchmark gate
+        # PYTHONHASHSEED pinned for reproducible UMAP/HDBSCAN in the PhenX co-clustering benchmark.
+        run: PYTHONHASHSEED=0 uv run python -m benchmarks.gate
