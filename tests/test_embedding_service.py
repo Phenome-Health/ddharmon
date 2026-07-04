@@ -6,6 +6,7 @@ sentence-transformers. Verifies caching, incremental embedding, and find_similar
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 
@@ -13,7 +14,12 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from ddharmon.embedding.service import EmbeddedDictionary, embed_dictionary, find_similar
+from ddharmon.embedding.service import (
+    EmbeddedDictionary,
+    _default_cache_dir,
+    embed_dictionary,
+    find_similar,
+)
 from ddharmon.models.data_dictionary import (
     DataDictionary,
     Field,
@@ -437,3 +443,78 @@ class TestDualVectorEmbedding:
         assert result.value_embeddings == {}
         assert result.get_variable_names() == ["age", "height", "weight"]
         assert result.get_all_vectors().shape == (3, 32)
+
+
+class TestDefaultCacheDir:
+    """_default_cache_dir() resolves a stable, cwd-independent cache location.
+
+    Regression: the old default was Path(".ddharmon") (cwd-relative), so running
+    from a different directory (e.g. under nbconvert) silently missed a warm cache
+    and re-embedded everything.
+    """
+
+    def test_uses_env_var_when_set(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("DDHARMON_CACHE", str(tmp_path / "custom"))
+        assert _default_cache_dir() == tmp_path / "custom"
+
+    def test_falls_back_to_home_not_cwd(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.delenv("DDHARMON_CACHE", raising=False)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+        result = _default_cache_dir()
+        assert result == tmp_path / "home" / ".ddharmon"
+        assert result.is_absolute()
+        assert result != Path(".ddharmon")
+
+    def test_default_is_cwd_independent(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """The resolved default is identical regardless of the working directory."""
+        monkeypatch.delenv("DDHARMON_CACHE", raising=False)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+        (tmp_path / "a").mkdir()
+        (tmp_path / "b").mkdir()
+        monkeypatch.chdir(tmp_path / "a")
+        from_a = _default_cache_dir()
+        monkeypatch.chdir(tmp_path / "b")
+        from_b = _default_cache_dir()
+        assert from_a == from_b
+
+
+class _ContentMockProvider:
+    """Provider whose vector depends on TEXT content (not call position), so any
+    row-order error in the pipeline changes the stacked-matrix fingerprint."""
+
+    def __init__(self, dimension: int = 32) -> None:
+        self._dimension = dimension
+
+    @property
+    def model_name(self) -> str:
+        return "content-mock"
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
+    def embed(self, texts: list[str]) -> NDArray[np.float32]:
+        out = np.empty((len(texts), self._dimension), dtype=np.float32)
+        for i, t in enumerate(texts):
+            seed = int(hashlib.md5(t.encode()).hexdigest()[:8], 16)
+            out[i] = np.random.default_rng(seed).standard_normal(self._dimension).astype(np.float32)
+        return out
+
+
+class TestReproducibility:
+    """Guard: shipped embedding output is invariant to field insertion order, so
+    PYTHONHASHSEED-induced set-ordering drift in ingestion cannot change the
+    embedding fingerprint — the pipeline sorts by variable_name. Locks the property
+    from .planning todo 2026-06-09-pipeline-not-reproducible-pythonhashseed (the
+    shipped layer is already reproducible by construction; this prevents regression).
+    """
+
+    def test_fingerprint_invariant_to_field_insertion_order(self, tmp_path: Path) -> None:
+        names = ["weight", "age", "bmi", "height", "sbp", "dbp"]
+        prov = _ContentMockProvider(32)
+        r1 = embed_dictionary(_make_dictionary("d", names), provider=prov, cache_dir=tmp_path / "a")
+        r2 = embed_dictionary(_make_dictionary("d", list(reversed(names))), provider=prov, cache_dir=tmp_path / "b")
+        fp1 = hashlib.md5(r1.get_all_vectors().tobytes()).hexdigest()
+        fp2 = hashlib.md5(r2.get_all_vectors().tobytes()).hexdigest()
+        assert fp1 == fp2
+        assert r1.get_variable_names() == sorted(names)

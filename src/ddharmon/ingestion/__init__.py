@@ -18,6 +18,7 @@ from ddharmon.models.enums import FieldRole
 
 logger = logging.getLogger(__name__)
 
+
 __all__ = [
     "GenericCSVParser",
     "detect_hierarchy",
@@ -46,6 +47,8 @@ def load_dictionary(
     validation: str | None = None,
     parent_id: str | None = None,
     embed_variable_name: bool = True,
+    detect_hierarchy: bool = True,
+    hierarchy_delimiter: str = "\\",
 ) -> DataDictionary:
     """Load a CSV/TSV data dictionary into a structured DataDictionary.
 
@@ -96,10 +99,28 @@ def load_dictionary(
 
     Args:
         path: Path to the CSV or TSV file (delimiter auto-detected from extension).
-        cohort_name: Optional cohort/study name (e.g., "study_a").
-        embed_variable_name: Whether to include variable_name in semantic embedding
-            text. Set to False when variable names are opaque IDs (e.g., row numbers,
-            internal codes) that would add noise to the embedding. Default: True.
+        cohort_name: Optional cohort name (e.g., "TwinsUK", "Arivale").
+        embed_variable_name: Whether variable_name may be used in the semantic
+            embedding text as a *fallback*. It is never prepended alongside
+            present question_text/description (those are assumed richer).
+              - True (default): use the name only when there is no usable primary
+                text — readable-ish names (e.g. "thebasics_birthplace") that beat
+                embedding nothing.
+              - False: never embed it — opaque codes (e.g. "FUL_STDUP_TRM") that
+                are noise; a field with no primary text embeds empty and lands in
+                the no-information group instead of a name-artifact cluster.
+        detect_hierarchy: Whether to run prefix-based parent/child hierarchy
+            detection during load.
+              - True (default): current behavior — descriptions are split on
+                hierarchy_delimiter and synthetic parents are created for shared
+                prefixes; parent text is later prepended to child embeddings.
+              - False: skip it entirely (no synthetic parents, no parent-context
+                injection). Use for the hierarchy A/B ablation, or for cohorts that
+                do not encode hierarchy in the description.
+        hierarchy_delimiter: Delimiter used to split descriptions into hierarchy
+            levels when detect_hierarchy=True. Default ``"\\"`` (backslash) for
+            back-compat. Override per-cohort when hierarchy is encoded with a
+            different separator.
 
     Returns:
         DataDictionary with all fields populated, hierarchies linked, and
@@ -112,7 +133,7 @@ def load_dictionary(
     Examples:
         # Explicit mapping (recommended):
         dd = load_dictionary(
-            "data/questionnaire.tsv",
+            "data/arivale_questionnaire.tsv",
             variable_name="Column Name",
             description="Description",
             category="Category",
@@ -163,12 +184,23 @@ def load_dictionary(
             "but harmonization quality may be degraded."
         )
 
+    if not isinstance(embed_variable_name, bool):
+        raise TypeError(
+            "embed_variable_name must be a bool (True=fallback, False=never), "
+            f"got {type(embed_variable_name).__name__}"
+        )
+
     parser = GenericCSVParser()
     t0 = time.perf_counter()
-    result = parser.load(path, cohort_name=cohort_name, column_map=hints)
-    if not embed_variable_name:
-        for fld in result.fields.values():
-            fld._embed_variable_name = False
+    result = parser.load(
+        path,
+        cohort_name=cohort_name,
+        column_map=hints,
+        detect_hierarchy=detect_hierarchy,
+        hierarchy_delimiter=hierarchy_delimiter,
+    )
+    for fld in result.fields.values():
+        fld._embed_variable_name = embed_variable_name
     elapsed = time.perf_counter() - t0
     logger.info("load_dictionary(%s): %d fields in %.2fs", Path(path).name, result.field_count, elapsed)
     return result

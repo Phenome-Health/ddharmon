@@ -113,8 +113,13 @@ def _resolve_config(config_path: str | None, inputs: tuple[str, ...], cde: str |
     }
 
 
-def _columns_for(spec: dict[str, Any]) -> dict[str, str]:
-    """Auto-detected columns overlaid with the spec's explicit mappings (explicit wins)."""
+def _columns_for(spec: dict[str, Any]) -> dict[str, Any]:
+    """Auto-detected columns overlaid with the spec's explicit mappings (explicit wins).
+
+    Return type is ``dict[str, Any]`` (values are column-name strings) so it unpacks cleanly as
+    ``**kwargs`` into ``load_dictionary``, whose signature mixes ``str | None`` column params with
+    ``bool`` flags (``detect_hierarchy``); ``_LOAD_COLUMN_KEYS`` guarantees only column params are present.
+    """
     columns = dict(_autodetect_columns(spec["path"]))
     columns.update(spec.get("columns") or {})
     return {k: v for k, v in columns.items() if k in _LOAD_COLUMN_KEYS}
@@ -334,4 +339,4 @@ def cluster(inputs: tuple[str, ...], config_path: str | None, output: str, min_c
 
 
 if __name__ == "__main__":  # pragma: no cover
-    main()
+    main()  # type: ignore[call-arg]  # click injects ctx via @pass_context at runtime

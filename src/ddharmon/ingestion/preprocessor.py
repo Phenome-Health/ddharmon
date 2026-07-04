@@ -45,6 +45,7 @@ class PreprocessingReport:
     prefix_value: str | None = None  # the prefix that was detected and stripped
     stopwords_applied: int = 0
     name_deduped: int = 0  # fields where _embed_variable_name was set to False
+    option_echo_cleared: int = 0  # descriptions cleared because they echoed a response-option label
     whitespace_fixed: int = 0
     names_changed: int = 0  # total fields where variable_name differs from raw
     descriptions_changed: int = 0  # total fields where description differs from raw
@@ -65,6 +66,7 @@ class PreprocessingReport:
             lines.append("  Prefix stripped:    none detected")
         lines.append(f"  Stopwords:          {self.stopwords_applied} fields")
         lines.append(f"  Name in description: {self.name_deduped} fields (embed_variable_name disabled)")
+        lines.append(f"  Option-echo desc cleared: {self.option_echo_cleared} fields")
         lines.append(f"  Whitespace:         {self.whitespace_fixed} fields")
         lines.append("  ---")
         lines.append(f"  Names changed:      {self.names_changed} / {self.total_fields}")
@@ -76,7 +78,8 @@ def preprocessing_diff(dd: DataDictionary) -> list[dict[str, str | bool]]:
     """Return per-field before/after for all fields where preprocessing changed something.
 
     Each entry has: variable_name, raw_variable_name, raw_description,
-    cleaned_variable_name, cleaned_description, embed_variable_name.
+    cleaned_variable_name, cleaned_description, embed_variable_name. The *_changed
+    and *_suppressed entries are booleans; the rest are strings.
     Only includes fields where at least one value differs from raw.
     """
     diffs: list[dict[str, str | bool]] = []
@@ -108,6 +111,7 @@ def preprocess_dictionary(
     prefix_min_length: int = 8,
     prefix_min_ratio: float = 0.5,
     normalize_unicode: bool = True,
+    drop_description_echoing_option: bool = True,
     strip_common_prefixes: bool = True,
     dedup_name_in_description: bool = True,
     replace_placeholder_descriptions: bool = True,
@@ -120,9 +124,13 @@ def preprocess_dictionary(
 
     Steps (in order):
         1. Unicode normalization (ftfy) — fix mojibake, curly quotes, encoding artifacts
+        1b. Option-echo description clearing — if a field's description is just one
+           of its own response-option labels (e.g. UKBB description == '"Do not
+           know"' / '"Less than a year"'), clear it: the label is noise that
+           distorts the semantic embedding and inflates spurious cluster outliers.
         2. Placeholder description replacement — if the same description appears in
            >= placeholder_min_count fields, it's uninformative (e.g., "Field description
-           available on the registry website"). Replace with the variable name so the
+           available on UK Biobank website"). Replace with the variable name so the
            embedding captures the field identity rather than boilerplate.
         3. Common prefix stripping — detect and remove shared variable name prefixes
         4. Stopword removal — remove user-configured substrings from variable names
@@ -141,6 +149,8 @@ def preprocess_dictionary(
         prefix_min_ratio: Minimum fraction of fields that must share a prefix
             for it to be stripped (0.0–1.0). Higher = more conservative.
         normalize_unicode: Whether to run ftfy unicode normalization.
+        drop_description_echoing_option: Whether to clear a description that merely
+            echoes one of the field's own response-option labels (default True).
         strip_common_prefixes: Whether to detect and strip common prefixes.
         dedup_name_in_description: Whether to suppress variable_name in embedding
             text when it's a substring of the description.
@@ -166,6 +176,12 @@ def preprocess_dictionary(
     # Step 1: Unicode normalization
     if normalize_unicode:
         report.unicode_fixed = _normalize_unicode(fields)
+
+    # Step 1b: Drop descriptions that merely echo a response-option label.
+    # Must run before placeholder replacement so an echoed sentinel isn't first
+    # converted into the variable_name (which would hide the echo).
+    if drop_description_echoing_option:
+        report.option_echo_cleared = _drop_description_echoing_options(fields)
 
     # Step 2: Placeholder description replacement
     if replace_placeholder_descriptions:
@@ -237,6 +253,42 @@ def _normalize_unicode(fields: list[Field]) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Step 1b: Drop descriptions that echo a response-option label
+# ---------------------------------------------------------------------------
+
+
+def _drop_description_echoing_options(fields: list[Field]) -> int:
+    """Clear a description that merely echoes one of the field's own response-
+    option labels (e.g. UKBB ``description == '"Do not know"'`` or
+    ``'"Less than a year"'``).
+
+    Such a description carries no semantic signal — the variable name already
+    does — and a sentinel/boundary label actively distorts the embedding and
+    inflates spurious cluster outliers. Cohort-agnostic: fires only on an exact
+    match (de-quoted, case-folded) to one of the field's own option labels, so
+    legitimate descriptions that merely contain words like "missing" are left
+    untouched. Cleared to "" (not None): _normalize_unicode and the whitespace
+    pass expect a string, and to_embedding_text() falls back to variable_name
+    when the description is empty.
+    """
+    count = 0
+    for f in fields:
+        desc = (f.description or "").strip()
+        if not desc:
+            continue
+        norm = desc.strip("\"'").strip().casefold()
+        if not norm:
+            continue
+        labels = {(o.label or "").strip().casefold() for o in (f.response_options or [])}
+        if norm in labels:
+            f.description = ""
+            count += 1
+    if count:
+        logger.info("Option-echo descriptions cleared: %d fields", count)
+    return count
+
+
+# ---------------------------------------------------------------------------
 # Step 2: Placeholder description replacement
 # ---------------------------------------------------------------------------
 
@@ -245,7 +297,7 @@ def _replace_placeholder_descriptions(fields: list[Field], min_count: int) -> tu
     """Replace high-frequency duplicate descriptions with the variable name.
 
     If the same exact description appears in >= min_count fields, it's likely a
-    placeholder (e.g., "Field description available on the registry website") rather
+    placeholder (e.g., "Field description available on UK Biobank website") rather
     than a real definition. Replace it with the variable name so the embedding
     captures field identity instead of boilerplate.
 
@@ -483,8 +535,9 @@ def _dedup_name_in_description(fields: list[Field]) -> int:
     """Suppress variable_name in embedding text when it's redundant with description.
 
     If the variable name (after normalizing underscores to spaces) appears as a
-    substring of the description, we set _embed_variable_name = False to avoid
-    double-counting in embeddings. Returns count of fields suppressed.
+    substring of the description, we set _embed_variable_name = False so it is not
+    used even as a fallback (it's redundant with the description). Returns count
+    of fields suppressed.
     """
     count = 0
     for f in fields:

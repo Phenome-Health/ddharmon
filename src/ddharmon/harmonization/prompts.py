@@ -7,8 +7,10 @@ cluster has no machine-readable response options, the concept-only
 labeling — those LLM passes are cut from v1 and the verdict is routed to EITL
 for human verification.
 
-The user-prompt builder takes a derived label, a representative member sample,
-and the CDE candidates from ``find_anchor_cde``.
+System prompts and schemas are lifted verbatim from nb 05's decomposed Pass-1
+(``HARMONIZE_CLASSIFY_*`` / ``KGONLY_*``). The user-prompt builder is decoupled
+from the j-signal ``Verdict`` it used to read: it takes a derived label, a
+representative member sample, and the CDE candidates from ``find_anchor_cde``.
 """
 
 from __future__ import annotations

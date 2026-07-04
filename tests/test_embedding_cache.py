@@ -105,7 +105,7 @@ class TestEmbeddingCache:
         """close() closes the connection cleanly."""
         cache = EmbeddingCache(tmp_path / "test.db", dimension=128)
         cache.close()
-        # After close, operations should fail
+        # After close, operations on the closed sqlite3 connection should fail
         with pytest.raises(sqlite3.ProgrammingError):
             cache.get("model-a", "hash123")
 

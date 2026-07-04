@@ -157,6 +157,104 @@ class TestNormalizeUnicode:
         assert fields[0].question_text is not None
 
 
+class TestDropDescriptionEchoingOptions:
+    """Tests for clearing descriptions that merely echo a response-option label."""
+
+    def test_clears_quoted_sentinel_echo(self) -> None:
+        from ddharmon.ingestion.preprocessor import _drop_description_echoing_options
+        from ddharmon.models.data_dictionary import Field, ResponseOption
+
+        # UKBB pattern: description column holds a quoted option label.
+        f = Field(
+            variable_name="Length of working week for main job",
+            description='"Do not know"',
+            response_options=[ResponseOption(code="-1", label="Do not know")],
+        )
+        count = _drop_description_echoing_options([f])
+        assert count == 1
+        assert f.description == ""
+        # Embedding text falls back to the variable name (no sentinel leakage).
+        assert f.to_embedding_text() == "Length of working week for main job"
+
+    def test_clears_non_sentinel_boundary_label_echo(self) -> None:
+        from ddharmon.ingestion.preprocessor import _drop_description_echoing_options
+        from ddharmon.models.data_dictionary import Field, ResponseOption
+
+        f = Field(
+            variable_name="Time employed in main current job",
+            description='"Less than a year"',
+            response_options=[ResponseOption(code="1", label="Less than a year")],
+        )
+        assert _drop_description_echoing_options([f]) == 1
+        assert f.description == ""
+
+    def test_keeps_description_containing_sentinel_word(self) -> None:
+        from ddharmon.ingestion.preprocessor import _drop_description_echoing_options
+        from ddharmon.models.data_dictionary import Field
+
+        # Legit variable whose description merely contains "missing" \u2014 not an
+        # option label, so it must be preserved (no over-matching).
+        f = Field(variable_name="ADL_NBRMIS_COM", description="OARS Scale: Number of Missing Items")
+        assert _drop_description_echoing_options([f]) == 0
+        assert f.description == "OARS Scale: Number of Missing Items"
+
+    def test_keeps_real_description_with_options(self) -> None:
+        from ddharmon.ingestion.preprocessor import _drop_description_echoing_options
+        from ddharmon.models.data_dictionary import Field, ResponseOption
+
+        f = Field(
+            variable_name="Age",
+            description="Age of participant at baseline",
+            response_options=[ResponseOption(code="1", label="years")],
+        )
+        assert _drop_description_echoing_options([f]) == 0
+        assert f.description == "Age of participant at baseline"
+
+    def test_no_response_options_is_noop(self) -> None:
+        from ddharmon.ingestion.preprocessor import _drop_description_echoing_options
+        from ddharmon.models.data_dictionary import Field
+
+        f = Field(variable_name="x", description="Do not know", response_options=[])
+        assert _drop_description_echoing_options([f]) == 0
+        assert f.description == "Do not know"
+
+    def test_runs_within_preprocess_dictionary(self) -> None:
+        from ddharmon.ingestion.preprocessor import preprocess_dictionary
+        from ddharmon.models.data_dictionary import DataDictionary, Field, ResponseOption
+
+        dd = DataDictionary(
+            name="UKBB",
+            fields={
+                "Number in household": Field(
+                    variable_name="Number in household",
+                    description='"Do not know"',
+                    response_options=[ResponseOption(code="-1", label="Do not know")],
+                ),
+            },
+        )
+        preprocess_dictionary(dd)
+        assert dd.fields["Number in household"].description == ""
+        assert dd.preprocessing_report.option_echo_cleared == 1
+
+    def test_flag_disables_step(self) -> None:
+        from ddharmon.ingestion.preprocessor import preprocess_dictionary
+        from ddharmon.models.data_dictionary import DataDictionary, Field, ResponseOption
+
+        dd = DataDictionary(
+            name="UKBB",
+            fields={
+                "v": Field(
+                    variable_name="v",
+                    description='"Do not know"',
+                    response_options=[ResponseOption(code="-1", label="Do not know")],
+                ),
+            },
+        )
+        preprocess_dictionary(dd, drop_description_echoing_option=False)
+        assert dd.preprocessing_report.option_echo_cleared == 0
+        assert dd.fields["v"].description == '"Do not know"'
+
+
 class TestStripCommonPrefixes:
     """Tests for common prefix stripping on fields."""
 
@@ -426,9 +524,13 @@ class TestPreprocessDictionary:
         from ddharmon.ingestion.preprocessor import preprocess_dictionary
         from ddharmon.models.data_dictionary import Field
 
+        # Whitespace normalization collapses runs in the description (the embedded
+        # text), so the content hash — the embedding cache key — must change.
+        # (A variable-name-only change would NOT change the hash now, since the
+        # name is fallback-only and not embedded when a description is present.)
         dd = self._make_dd(
             [
-                ("assessment_health_bmi", "Body mass index"),
+                ("assessment_health_bmi", "Body  mass   index"),
                 ("assessment_health_age", "Age at enrollment"),
                 ("assessment_health_weight", "Body weight in kg"),
                 ("assessment_health_height", "Standing height"),
@@ -436,16 +538,16 @@ class TestPreprocessDictionary:
         )
 
         # Get hash before preprocessing
-        old_field = Field(variable_name="assessment_health_bmi", description="Body mass index")
+        old_field = Field(variable_name="assessment_health_bmi", description="Body  mass   index")
         old_hash = old_field.content_hash()
 
         preprocess_dictionary(dd)
 
-        # After preprocessing, the field named "bmi" should have a different hash
+        # After preprocessing, the field (prefix stripped to "bmi") has collapsed
+        # whitespace in its description -> different embedded text -> different hash.
         new_field = dd.fields.get("bmi")
         assert new_field is not None
-        new_hash = new_field.content_hash()
-        assert old_hash != new_hash
+        assert old_hash != new_field.content_hash()
 
     def test_disabling_all_steps(self) -> None:
         from ddharmon.ingestion.preprocessor import preprocess_dictionary

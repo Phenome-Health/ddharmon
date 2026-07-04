@@ -43,8 +43,8 @@ SIMPLE_MAP = {
 
 
 @pytest.fixture
-def study_csv(tmp_path: Path) -> Path:
-    """Create a study-style CSV with SNOMED codes and two-population pattern."""
+def twinsuk_csv(tmp_path: Path) -> Path:
+    """Create a TwinsUK-style CSV with SNOMED codes and two-population pattern."""
     csv_content = (
         "Data_Type,Historical_ID,Phenotype_Description,snomed_term_1,snomed_term_2,snomed_term_3,snomed_term_4\n"
         "Measurements,HID001,Serum cystatin C level,1002561000000109 | Serum cystatin C level (observable entity) |,NA,NA,NA\n"
@@ -53,12 +53,12 @@ def study_csv(tmp_path: Path) -> Path:
         "Self-reported,NA,How often do you exercise?,NA,NA,NA,NA\n"
         "Other dataset,HID003,Smoking status,NA,NA,NA,NA\n"
     )
-    p = tmp_path / "study.csv"
+    p = tmp_path / "twinsuk.csv"
     p.write_text(csv_content)
     return p
 
 
-STUDY_MAP = {
+TWINSUK_MAP = {
     "Historical_ID": FieldRole.VARIABLE_NAME,
     "Phenotype_Description": FieldRole.DESCRIPTION,
     "Data_Type": FieldRole.CATEGORY,
@@ -111,25 +111,25 @@ class TestGenericCSVParser:
         dd = parser.load(simple_csv, column_map=SIMPLE_MAP)
         assert set(dd.fields.keys()) == {"age", "sex", "bmi"}
 
-    def test_study_snomed_extraction(self, parser: GenericCSVParser, study_csv: Path) -> None:
+    def test_twinsuk_snomed_extraction(self, parser: GenericCSVParser, twinsuk_csv: Path) -> None:
         """SNOMED codes extracted from pipe-delimited format into standard_codes."""
-        dd = parser.load(study_csv, cohort_name="study_a", column_map=STUDY_MAP)
+        dd = parser.load(twinsuk_csv, cohort_name="TwinsUK", column_map=TWINSUK_MAP)
 
         hid001 = dd.fields["HID001"]
         assert "SNOMED" in hid001.standard_codes
         assert "1002561000000109" in hid001.standard_codes["SNOMED"]
 
-    def test_study_na_handling(self, parser: GenericCSVParser, study_csv: Path) -> None:
+    def test_twinsuk_na_handling(self, parser: GenericCSVParser, twinsuk_csv: Path) -> None:
         """NA values in SNOMED columns and Historical_ID are handled as None/empty."""
-        dd = parser.load(study_csv, cohort_name="study_a", column_map=STUDY_MAP)
+        dd = parser.load(twinsuk_csv, cohort_name="TwinsUK", column_map=TWINSUK_MAP)
 
         hid002 = dd.fields["HID002"]
         snomed_codes = hid002.standard_codes.get("SNOMED", [])
         assert len(snomed_codes) == 0
 
-    def test_study_variable_name_generation(self, parser: GenericCSVParser, study_csv: Path) -> None:
+    def test_twinsuk_variable_name_generation(self, parser: GenericCSVParser, twinsuk_csv: Path) -> None:
         """Rows without Historical_ID get auto-generated variable names."""
-        dd = parser.load(study_csv, cohort_name="study_a", column_map=STUDY_MAP)
+        dd = parser.load(twinsuk_csv, cohort_name="TwinsUK", column_map=TWINSUK_MAP)
 
         assert dd.field_count == 5
         generated_names = [name for name in dd.fields if name.startswith("_ROW_")]
@@ -148,9 +148,9 @@ class TestGenericCSVParser:
         assert "empty_desc" in dd.fields
         assert dd.fields["empty_desc"].description == "empty_desc"
 
-    def test_study_section_mapping(self, parser: GenericCSVParser, study_csv: Path) -> None:
-        """study Data_Type column maps to Field.category via explicit mapping."""
-        dd = parser.load(study_csv, cohort_name="study_a", column_map=STUDY_MAP)
+    def test_twinsuk_section_mapping(self, parser: GenericCSVParser, twinsuk_csv: Path) -> None:
+        """TwinsUK Data_Type column maps to Field.category via explicit mapping."""
+        dd = parser.load(twinsuk_csv, cohort_name="TwinsUK", column_map=TWINSUK_MAP)
 
         hid001 = dd.fields["HID001"]
         assert hid001.category == "Measurements"
@@ -178,7 +178,7 @@ class TestGenericCSVParser:
         p.write_text(csv_content)
 
         parser = GenericCSVParser()
-        dd = parser.load(p, cohort_name="study_a", column_map=STUDY_MAP)
+        dd = parser.load(p, cohort_name="TwinsUK", column_map=TWINSUK_MAP)
 
         hid001 = dd.fields["HID001"]
         assert "SNOMED" in hid001.standard_codes

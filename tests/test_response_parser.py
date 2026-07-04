@@ -4,7 +4,7 @@ from ddharmon.values.response_parser import parse_value_encoding
 
 
 class TestParenthesizedFormat:
-    """Parenthesized format: (code) label|(code) label"""
+    """Arivale format: (code) label|(code) label"""
 
     def test_ordinal_frequency(self):
         raw = "(1) Less than once per month|(2) 1-3 times per month|(3) Once per week|(4) 2-4 times per week"
@@ -44,26 +44,26 @@ class TestCodeEqualsLabelFormat:
 
 
 class TestCodeCommaLabelFormat:
-    """REDCap-style format: Code, Label | Code, Label"""
+    """REDCap/All of Us format: Code, Label | Code, Label"""
 
     def test_simple(self):
-        raw = "region_usa, USA | region_other, Other"
+        raw = "Birthplace_USA, USA | PMI_Other, Other"
         opts = parse_value_encoding(raw)
         assert len(opts) == 2
-        assert opts[0].code == "region_usa"
+        assert opts[0].code == "Birthplace_USA"
         assert opts[0].label == "USA"
-        assert opts[1].code == "region_other"
+        assert opts[1].code == "PMI_Other"
         assert opts[1].label == "Other"
 
     def test_with_parenthetical_in_label(self):
         raw = (
-            "race_aian, American Indian or Alaska Native "
+            "WhatRaceEthnicity_AIAN, American Indian or Alaska Native "
             "(For example: Aztec, Navajo) | "
-            "race_asian, Asian (For example: Chinese, Japanese)"
+            "WhatRaceEthnicity_Asian, Asian (For example: Chinese, Japanese)"
         )
         opts = parse_value_encoding(raw)
         assert len(opts) == 2
-        assert opts[0].code == "race_aian"
+        assert opts[0].code == "WhatRaceEthnicity_AIAN"
         assert "American Indian" in opts[0].label
         assert "Aztec" in opts[0].label  # parenthetical preserved
 

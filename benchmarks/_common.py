@@ -18,6 +18,8 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = REPO_ROOT / ".cache" / "benchmarks"
 CDE_FLAT = REPO_ROOT / "data" / "examples" / "all_cdes_flat.tsv"
+# AI-READI survey gold ships in-repo (built by scripts/build_aireadi_csv.py); no fetch needed.
+AIREADI_CSV = REPO_ROOT / "data" / "examples" / "aireadi_surveys.csv"
 
 CDEMAPPER_RAW = "https://raw.githubusercontent.com/BIDS-Xu-Lab/CDE-Mapping-Tool/main/EvaluationData"
 CDEMAPPER_SETS = ("ADRD", "Eye", "Stroke", "covid-19")

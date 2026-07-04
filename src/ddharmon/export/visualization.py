@@ -237,7 +237,7 @@ def compute_umap_coords(
         random_state=random_state,
         n_neighbors=min(n_neighbors, len(vectors) - 1),
     )
-    return np.asarray(reducer.fit_transform(vectors))
+    return np.asarray(reducer.fit_transform(vectors), dtype=np.float64)
 
 
 def _shared_umap_layout(

@@ -110,7 +110,7 @@ class TestField:
 
         f = Field(variable_name="age", description="Age at enrollment")
         text = f.to_embedding_text()
-        assert text == "age | Age at enrollment"
+        assert text == "Age at enrollment"  # name not prepended when primary text exists
 
     def test_to_embedding_text_prefers_question_text_over_description(self) -> None:
         """question_text is the primary semantic field; description is only a fallback."""
@@ -121,13 +121,13 @@ class TestField:
             description="Trouble sleeping",
             question_text="Do you have trouble falling asleep at night?",
         )
-        assert f.to_embedding_text() == "sleep_q | Do you have trouble falling asleep at night?"
+        assert f.to_embedding_text() == "Do you have trouble falling asleep at night?"
 
     def test_to_embedding_text_falls_back_to_description_when_no_question_text(self) -> None:
         from ddharmon.models.data_dictionary import Field
 
         f = Field(variable_name="age", description="Age at enrollment")
-        assert f.to_embedding_text() == "age | Age at enrollment"
+        assert f.to_embedding_text() == "Age at enrollment"
 
     def test_to_embedding_text_omits_response_options_and_type(self) -> None:
         """Response options, data_type, and units belong to the value vector, not semantic."""
@@ -144,7 +144,7 @@ class TestField:
             units="n/a",
         )
         text = f.to_embedding_text()
-        assert text == "smoker | Do you smoke?"
+        assert text == "Do you smoke?"
         assert "Values:" not in text
         assert "Type:" not in text
         assert "Units:" not in text
@@ -154,7 +154,7 @@ class TestField:
 
         f = Field(variable_name="height", description="Standing height", category="Measurements")
         text = f.to_embedding_text()
-        assert text == "height | Standing height | Category: Measurements"
+        assert text == "Standing height | Category: Measurements"
 
     def test_to_embedding_text_dedupes_variable_name_equal_to_primary_text(self) -> None:
         from ddharmon.models.data_dictionary import Field
@@ -181,7 +181,41 @@ class TestField:
             category="Self-reported",
         )
         text = f.to_embedding_text()
-        assert text == "pain_scale | Rate your pain | Category: Self-reported"
+        assert text == "Rate your pain | Category: Self-reported"
+
+    def test_to_embedding_text_name_not_prepended_when_primary_present(self) -> None:
+        """The name is never prepended alongside present primary text (True or False)."""
+        from ddharmon.models.data_dictionary import Field
+
+        for embed_name in (True, False):
+            f = Field(
+                variable_name="cdc_covid_xx_dose4",
+                description="Field label",
+                question_text="Have you had COVID symptoms?",
+            )
+            f._embed_variable_name = embed_name
+            assert f.to_embedding_text(include=set()) == "Have you had COVID symptoms?"
+
+    def test_to_embedding_text_name_fallback_when_primary_empty(self) -> None:
+        """No usable primary text: True falls back to the name; False embeds empty."""
+        from ddharmon.models.data_dictionary import Field
+
+        f = Field(variable_name="other_specify_textbox", description="   ", question_text="")
+        f._embed_variable_name = True
+        assert f.to_embedding_text(include=set()) == "other_specify_textbox"
+
+        f = Field(variable_name="FUL_STDUP_TRM", description="   ", question_text="")
+        f._embed_variable_name = False
+        assert f.to_embedding_text(include=set()) == ""
+
+    def test_load_dictionary_rejects_non_bool_embed_flag(self) -> None:
+        """embed_variable_name is a strict bool — a stray mode string fails loudly."""
+        import pytest
+
+        from ddharmon.ingestion import load_dictionary
+
+        with pytest.raises(TypeError):
+            load_dictionary("x.csv", variable_name="v", embed_variable_name="never")
 
     def test_content_hash_deterministic(self) -> None:
         from ddharmon.models.data_dictionary import Field
@@ -314,10 +348,10 @@ class TestDataDictionary:
             name="test",
             fields={"f1": Field(variable_name="f1", description="Test field")},
             source_path=Path("/data/test.csv"),
-            cohort_name="study_a",
+            cohort_name="TwinsUK",
         )
         assert dd.source_path == Path("/data/test.csv")
-        assert dd.cohort_name == "study_a"
+        assert dd.cohort_name == "TwinsUK"
 
 
 class TestModelsReExport:

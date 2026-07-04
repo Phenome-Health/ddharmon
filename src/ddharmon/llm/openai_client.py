@@ -9,18 +9,10 @@ from typing import TYPE_CHECKING, cast
 from ddharmon.llm.base import BaseLLMClient
 from ddharmon.llm.prompts import RERANKER_SYSTEM_PROMPT, RerankerResponse, build_reranker_prompt
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # import-time only for type checkers; openai stays an optional runtime dep
     from openai.types.chat import ChatCompletionMessageParam
 
 logger = logging.getLogger(__name__)
-
-
-def _require_content(content: str | None) -> str:
-    """Return message content, raising if the API returned none."""
-    if content is None:
-        raise ValueError("OpenAI returned no message content")
-    return content
-
 
 _JSON_INSTRUCTION = """
 
@@ -45,6 +37,13 @@ def _parse_json_response(text: str) -> RerankerResponse:
         if text.endswith("```"):
             text = text[:-3].strip()
     return RerankerResponse.model_validate(json.loads(text))
+
+
+def _require_content(content: str | None) -> str:
+    """Return the message text, or raise if OpenAI returned no content."""
+    if content is None:
+        raise ValueError("OpenAI returned no message content")
+    return content
 
 
 class OpenAIClient(BaseLLMClient):
@@ -99,7 +98,7 @@ class OpenAIClient(BaseLLMClient):
                 self._use_structured = True
                 parsed = response.choices[0].message.parsed
                 if parsed is None:
-                    raise ValueError("structured output returned no parsed result")
+                    raise ValueError("OpenAI structured output returned no parsed result")
                 return parsed
             except Exception as e:
                 err_msg = str(e).lower()

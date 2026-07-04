@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
-from ddharmon.clustering.topic_engine import extract_topic_clusters
+from ddharmon.clustering.topic_engine import extract_topic_clusters, recluster_residual
 from ddharmon.models.cluster import FieldCluster, FieldReference, TopicModelResult
 
 # ── helpers ─────────────────────────────────────────────────────
@@ -97,6 +97,51 @@ def test_extract_topic_clusters_single_topic():
     assert len(clusters) == 1
     assert outlier is None
     assert len(clusters[0].members) == 10
+
+
+# ── recluster_residual (tail re-clustering) ─────────────────────
+
+
+def _blob_embeddings(seed: int = 0) -> np.ndarray:
+    """60 vectors: rows 0-14 = head (diffuse), rows 15-59 = residual in 3 tight, far-apart blobs."""
+    rng = np.random.RandomState(seed)
+    head = rng.normal(0.0, 1.0, size=(15, 16)).astype(np.float32)
+    blobs = []
+    for k in range(3):
+        center = np.zeros(16, dtype=np.float32)
+        center[k] = 10.0  # orthogonal directions → cosine-separable
+        blobs.append(center + rng.normal(0.0, 0.05, size=(15, 16)).astype(np.float32))
+    return np.vstack([head, *blobs]).astype(np.float32)
+
+
+def test_recluster_residual_empty():
+    """No residual indices → empty result, no UMAP."""
+    refs = _make_refs(5, ["A"])
+    clusters, outlier = recluster_residual(np.zeros((5, 8), dtype=np.float32), refs, [])
+    assert clusters == [] and outlier is None
+
+
+def test_recluster_residual_small_residual_single_group():
+    """Below the clustering threshold → one group over EXACTLY the residual (head excluded), no UMAP."""
+    refs = _make_refs(20, ["A", "B"])
+    res_idx = [10, 12, 14, 16]  # 4 ≤ max(min_cluster_size, umap_n_neighbors)
+    clusters, outlier = recluster_residual(np.zeros((20, 8), dtype=np.float32), refs, res_idx)
+    assert outlier is None and len(clusters) == 1
+    assert {m.variable_name for m in clusters[0].members} == {"var_10", "var_12", "var_14", "var_16"}
+
+
+def test_recluster_residual_isolates_tail_and_conserves_members():
+    """Full UMAP+HDBSCAN path: clusters ONLY the residual (head excluded), every residual field accounted
+    for, and 3 far-apart blobs separate into multiple clusters."""
+    emb = _blob_embeddings()
+    refs = _make_refs(60, ["A", "B", "C"])
+    res_idx = list(range(15, 60))  # the 45 residual rows; head rows 0-14 must be excluded
+    clusters, outlier = recluster_residual(emb, refs, res_idx, min_cluster_size=5, umap_n_neighbors=10)
+
+    placed = [m for c in clusters for m in c.members] + (outlier.members if outlier else [])
+    assert len(placed) == 45  # every residual field placed, none dropped
+    assert {m.variable_name for m in placed} == {f"var_{i}" for i in res_idx}  # residual-only, no head
+    assert len(clusters) >= 2  # the tail separates into distinct concepts
 
 
 # ── TopicModelResult ────────────────────────────────────────────
