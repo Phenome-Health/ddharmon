@@ -14,6 +14,7 @@ Then load in ddharmon:
         description="definition",
         question_text="question_text",
         data_type="datatype",
+        units="uom",
         value_encoding="permissible_values",
         category="classification",
         standard_code="concept_codes",
@@ -50,6 +51,7 @@ def flatten_cde(record: dict) -> dict:
     # value domain
     vd = record.get("valueDomain", {})
     datatype = vd.get("datatype", "")
+    uom = (vd.get("uom") or "").strip()  # unit of measure (numeric CDEs); drives N1 transform specs
 
     # permissible values — format as "value=meaning | value=meaning"
     pvs = vd.get("permissibleValues", [])
@@ -104,6 +106,7 @@ def flatten_cde(record: dict) -> dict:
         "question_text": pqt,
         "definition": definition,
         "datatype": datatype,
+        "uom": uom,
         "permissible_values": permissible_values,
         "classification": classification,
         "concept_codes": "; ".join(concept_codes),
@@ -131,6 +134,7 @@ def main():
         "question_text",
         "definition",
         "datatype",
+        "uom",
         "permissible_values",
         "classification",
         "concept_codes",

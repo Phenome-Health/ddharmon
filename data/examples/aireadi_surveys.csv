@@ -1,0 +1,809 @@
+variable_name,form_name,field_label,field_type,value_encoding,n_codes,cde_concept_name,cde_vocabulary,cde_concept_code,cde_domain,mapping_confidence
+viao_crcid,bcva,Interviewer code,text,,,,,N/A - operational variable,,
+viaocmpdat,bcva,Date BCVA performed,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+viaocmpyn,bcva,viaocmpyn,checkbox,,,,,,,
+viaodaxi,bcva,OD - Autorefractor - Axis,text,,,Right eye Axis Autorefractor.auto,LOINC,28689-8,Measurement,1
+viaodcyl,bcva,OD - Autorefractor - Cylinder,text,,,Right eye Cylinder Autorefractor.auto,LOINC,28688-0,Measurement,1
+viaodmlog,bcva,LLVA Letter Score - Mesopic VA - OD,text,,,Visual acuity best corrected Right eye by ETDRS eye chart,LOINC,79876-9,Measurement,0.75
+viaodmscore,bcva,Mesopic LogMAR OD Score,calc,,,LogMAR visual acuity right eye,SNOMED,413078003,Observation,0.75
+viaodmsf,bcva,Snellen fraction - Mesopic VA - OD,text,,,Visual acuity best corrected Right eye by Snellen eye chart,LOINC,79880-1,Measurement,0.75
+viaodplog,bcva,VA Letter Score - Photopic VA - OD,text,,,Visual acuity best corrected Right eye by ETDRS eye chart,LOINC,79876-9,Measurement,0.75
+viaodpscore,bcva,Photopic LogMAR OD Score,calc,,,Visual acuity log MAR Eye - right,LOINC,6616-7,Measurement,0.5
+viaodpsf,bcva,Snellen fraction - Photopic VA - OD,text,,,Visual acuity best corrected Right eye by Snellen eye chart,LOINC,79880-1,Measurement,0.75
+viaodsph,bcva,OD - Autorefractor - Sphere,text,,,Right eye Sphere Autorefractor.auto,LOINC,28687-2,Measurement,1
+viaomthd,bcva,Method used to complete form,radio,1=EVA|2=ETDRS,2,Method,SNOMED,260686004,Observation,0.75
+viaoreasn,bcva,"If not completed, why? (explain)",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+viaosaxi,bcva,OS - Autorefractor - Axis,text,,,Left eye Axis Autorefractor.auto,LOINC,28693-0,Measurement,1
+viaoscyl,bcva,OS - Autorefractor - Cylinder,text,,,Left eye Cylinder Autorefractor.auto,LOINC,28692-2,Measurement,1
+viaosmlog,bcva,LLVA Letter Score - Mesopic VA - OS,text,,,Visual acuity best corrected Left eye by ETDRS eye chart,LOINC,79877-7,Measurement,0.75
+viaosmscore,bcva,Mesopic LogMAR OS Score,calc,,,LogMAR visual acuity left eye,SNOMED,413077008,Observation,0.75
+viaosmsf,bcva,Snellen fraction - Mesopic VA - OS,text,,,Visual acuity best corrected Left eye by Snellen eye chart,LOINC,79881-9,Measurement,0.75
+viaosplog,bcva,VA Letter Score - Photopic VA - OS,text,,,Visual acuity best corrected Left eye by ETDRS eye chart,LOINC,79877-7,Measurement,0.75
+viaospscore,bcva,Photopic LogMAR OS Score,calc,,,Visual acuity log MAR Eye - left,LOINC,6617-5,Measurement,0.5
+viaospsf,bcva,Snellen fraction - Photopic VA - OS,text,,,Visual acuity best corrected Left eye by Snellen eye chart,LOINC,79881-9,Measurement,0.75
+viaossph,bcva,OS - Autorefractor - Sphere,text,,,Left eye Sphere Autorefractor.auto,LOINC,28691-4,Measurement,1
+ces1,cesd10_survey,I was bothered by things that usually don't bother me,radio,0=Rarely or none of the time (< 1 day)|1=Some or a little of the time (1-2 days)|2=Occasionally or a moderate amount of time (3-4 days)|3=All of the time (5-7 days),4,Bothered by things that are not usually bothersome,LOINC,100767-3,Observation,1
+ces10,cesd10_survey,"I could not ""get going""",radio,0=Rarely or none of the time (< 1 day)|1=Some or a little of the time (1-2 days)|2=Occasionally or a moderate amount of time (3-4 days)|3=All of the time (5-7 days),4,Lack of energy,LOINC,100786-3,Observation,1
+ces2,cesd10_survey,I had trouble keeping my mind on what I was doing,radio,0=Rarely or none of the time (< 1 day)|1=Some or a little of the time (1-2 days)|2=Occasionally or a moderate amount of time (3-4 days)|3=All of the time (5-7 days),4,Trouble focusing,LOINC,100771-5,Observation,1
+ces3,cesd10_survey,I felt depressed,radio,0=Rarely or none of the time (< 1 day)|1=Some or a little of the time (1-2 days)|2=Occasionally or a moderate amount of time (3-4 days)|3=All of the time (5-7 days),4,Feeling depressed,LOINC,100772-3,Observation,1
+ces4,cesd10_survey,I felt that everything I did was an effort,radio,0=Rarely or none of the time (< 1 day)|1=Some or a little of the time (1-2 days)|2=Occasionally or a moderate amount of time (3-4 days)|3=All of the time (5-7 days),4,Feeling everything is too much of an effort,LOINC,100773-1,Observation,1
+ces5,cesd10_survey,I felt hopeful about the future,radio,3=Rarely or none of the time (< 1 day)|2=Some or a little of the time (1-2 days)|1=Occasionally or a moderate amount of time (3-4 days)|0=All of the time (5-7 days),4,Feeling hopeful about the future,LOINC,100774-9,Observation,1
+ces6,cesd10_survey,I felt fearful,radio,0=Rarely or none of the time (< 1 day)|1=Some or a little of the time (1-2 days)|2=Occasionally or a moderate amount of time (3-4 days)|3=All of the time (5-7 days),4,Feeling fearful,LOINC,100776-4,Observation,1
+ces7,cesd10_survey,My sleep was restless,radio,0=Rarely or none of the time (< 1 day)|1=Some or a little of the time (1-2 days)|2=Occasionally or a moderate amount of time (3-4 days)|3=All of the time (5-7 days),4,Restless sleep,LOINC,100777-2,Observation,1
+ces8,cesd10_survey,I was happy,radio,3=Rarely or none of the time (< 1 day)|2=Some or a little of the time (1-2 days)|1=Occasionally or a moderate amount of time (3-4 days)|0=All of the time (5-7 days),4,Feeling happy,LOINC,100778-0,Observation,1
+ces9,cesd10_survey,I felt lonely,radio,0=Rarely or none of the time (< 1 day)|1=Some or a little of the time (1-2 days)|2=Occasionally or a moderate amount of time (3-4 days)|3=All of the time (5-7 days),4,Feeling lonely,LOINC,100780-6,Observation,1
+ces_nd,cesd10_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+cescmpts,cesd10_survey,CES-D-10 Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+cesmpdat,cesd10_survey,CES-D-10 survey date,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+cesstartts,cesd10_survey,CES-D-10 Survey Started Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+cestl,cesd10_survey,CESD-10 Score,calc,,,Total Score CES-D,LOINC,100787-1,Observation,1
+crcid_ces,cesd10_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+cmt_cmt,comments,Comments,notes,,,Result comments,SNOMED,281296001,Observation,0.75
+cmt_form,comments,Form Comment Linked to,dropdown,ehr=EHR Information|mail=Mailing Information|svy=Recruitment & Survey Management|rec=Recruitment Survey|faq=FAQ Survey|scr=Screening Survey|scrout=Screening Stop Message|precon=Pre-Consent Survey|icfs=Consent Survey|icfa=Staff Consent Attestation Survey|dicf=Download Consent|prt=Participant Contact Information Survey|dmg=Demographics Survey|mh=Health Survey|sus=Substance Use Survey|ces=CESD-10 Survey|paid=PAID-5 Dm Survey|dml=Diabetes Survey|diet=Dietary Survey|via=Ophthalmic Survey|pxep=PX SDOH Combined Survey|pxfi=PX Food Insecurity Survey|pxne=PX Neighborhood Environment Survey|pxrd=PX Racial Ethnic Discrimination Survey|scrn_out=Decline Participation Survey|enrl=Study Enrollment|dri=Driving Record|dv=Device Distribution|cma=Meds Assessment|cm=Current Medications|pa=Physical Assessment|bcva=BCVA|plcs=Photopic Mars|mics=Mesopic Mars|mss=Monofilament|moca=MoCA|ekg=ECG|rt=Retinal Imaging|lbr=Lab Results|lb=Specimen Management|dc=Return|cnct=Contact Log|eos=Disposition|dmt=Data Management,44,Form,LOINC,LP181112-6,Meas Value,0.75
+c184390,consent_survey,Paper consent obtained,checkbox,,,Informed consent obtained,LOINC,19826-7,Observation,1
+c184390_dat,consent_survey,Date paper consent completed,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+crcid_icf,consent_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+icf_consent,consent_survey,I have read this entire form and I agree to be in this study.,radio,,,Informed consent obtained,LOINC,19826-7,Observation,0.75
+icf_dat,consent_survey,Consent survey/form date (date survey/form opened),text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+icf_fname,consent_survey,Your First Name,text,,,First (Given) name Person,LOINC,97848-6,Observation,1
+icf_lname,consent_survey,Your Last Name,text,,,Last (Family) name Person,LOINC,97847-8,Observation,1
+icf_nd,consent_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+icf_sign,consent_survey,Your Signature,file,,,Consent given for observational study participation,SNOMED,736814000,Observation,0.5
+icf_version,consent_survey,Version,radio,,,Form version,LOINC,68356-5,Observation,0.75
+icfcmpts,consent_survey,Consent Survey Completed Timestamp,text,,,Time to complete survey,LOINC,99423-6,Observation,
+icfsvyts,consent_survey,Consent Survey Start Timestamp,text,,,Time to complete survey,LOINC,99423-6,Observation,
+cnct_dattim,contact_log,Date & time of Attempt or Contact,text,,,Date and time of scheduled task,LOINC,90118-1,Observation,0.5
+cnct_nt,contact_log,Notes,notes,,,Note,LOINC,34109-9,Note,1
+cnct_prp,contact_log,Purpose of Contact,dropdown,1=Questions regarding Consent|2=Report Change in Contact|3=Issue with Device(s)|4=Return of Devices|5=Request to Complete Randomization|6=Schedule In Person Visit|7=Study Payment|8=Report Adverse Event|888=Other,9,Purpose,SNOMED,246099003,Observation,0.75
+cnct_sccs,contact_log,Successful for getting/relaying information,radio,1=Yes|0=No,2,,,,,
+cnct_type,contact_log,Contact Type,dropdown,1=Phone - Participant initiated|2=Phone - Site initiated|3=Voicemail message - Participant initiated|4=Voicemail message - Site initiaited|5=Email - Participant initiated|6=Email - Site initiated|7=Text message - Site initiated|8=Mail,8,Initial contact type,SNOMED,405750004,Observation,0.75
+cnct_upd,contact_log,Study Staff: Updated contact information in 'Participant Information' form and/or 'Contact' database as applicable.,radio,,,,,N/A - operational variable,,
+crcid_10,contact_log,Interviewer Code,text,,,,,N/A - operational variable,,
+cm_crcid2,current_medications,Interviewer code,text,,,,,N/A - operational variable,,
+cmcmpdat2,current_medications,Date current medication collected,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+cmdos,current_medications,Amount taken (Dose),text,,,Drug dose,SNOMED,398232005,Observation,1
+cmdosfrq,current_medications,Frequency taken or applied:,dropdown,ONCE=Once|PRN=As Needed|QD=Daily|BID=Twice Daily|TID=Three Times Daily|QID=Four times daily|QOD=Every Other Day|QW=Weekly|QM=Monthly|UNK=Unknown|888=Other,11,Frequency,SNOMED,260864003,Observation,1
+cmdosu,current_medications,"Unit (Record the dose unit of the dose of concomitant medication/treatment/therapy taken (e.g., mg.)).",dropdown,1=Percent Volume per Volume|2=Capsule|3=Gram|4=Inhalation|5=International Dosing Unit|6=Liter per Hour|7=Liter per Minute|8=Milligram|9=Milligram per Kilogram|10=Milliliter|11=Milliliter per Hour|12=Milliliter per Kilogram|13=Puff|14=Spray|15=Tablet|16=Microgram|17=Microgram per Kilogram|18=Other,18,,,,,
+cmname,current_medications,Medication Name,text,,,Medication,LOINC,LA22650-8,Meas Value,1
+cmroute,current_medications,"How is it taken? (ex. oral, cream, injection, etc.)",dropdown,1=Intralesional|2=Intramuscular|3=Intraocular|4=Intraperitoneal|5=Nasal|6=Oral|7=Rectal|8=Inhalation|9=Subcutaneous|10=Topical|11=Transdermal|12=Vaginal|888=Other,13,Dose form - RxNorm RXCUI of Medication,LOINC,74054-8,Measurement,0.75
+cmrouteot,current_medications,"If Other, please specify:",text,,,Other (specify),LOINC,LA6310-2,Meas Value,1
+cmtrt,current_medications,RxNorm (assign after visit),text,,,,,,,
+dm,data_management,Click here to indicate which data is approved for sending to Fairhub.io: (goal is that all data would become available),checkbox,S=Screening|C=Consent|P=Participant Surveys|I=In-Person Visit|D=Device Information,5,,,N/A - operational variable,,
+fairhub,data_management,Files verified in Fairhub,checkbox,1=MoCA|2=Fundus - Eidon|3=Fundus - Optomed Handheld Device|4=Spectralis HRA OCT - OCT & OCTA|5=Triton OCT|6=Maestro2 - OCT & OCTA|7=FLIO|8=Angioplex - Cirrus 5000|9=EKG - Pagewriter TC30 Cardiograph|10=Device - Delve Health - Apple Watch|11=Device - Continuous Glucose Monitor - Dexcom G6|12=Device - Environmental Sensor,12,,,N/A - operational variable,,
+crcid_dec,decline_participation_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+dec_nd,decline_participation_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+deccmpdat,decline_participation_survey,Decline participation survey/form date (date survey/form opened),text,,,Date recorded,LOINC,74015-9,Observation,0.5
+declinecmpts,decline_participation_survey,Decline Participant Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+declinestartts,decline_participation_survey,Decline Participation Survey Started Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+scrn_out,decline_participation_survey,"If you're not interested, can you tell us why?",checkbox,1=Concerns about privacy|2=The study doesn't benefit me directly|3=Stipend is too low|4=Feel uncomfortable with some tasks I will need to perform|5=Too difficult to make time for an in-person visit|6=Transportation to/from the Clinical Research Unit|888=Other issue,7,Not interested in the activity,LOINC,LA16600-1,Meas Value,0.5
+scrn_outrsn,decline_participation_survey,Can you tell us about which tasks you are not comfortable with?,notes,,,Reason for,SNOMED,410666004,Observation,0.5
+scrn_outrsno,decline_participation_survey,Can you tell us your other concerns?,notes,,,Reason for,SNOMED,410666004,Observation,0.5
+brthdd,demographics_survey,Day (01 - 31),dropdown,0=Unknown,1,Day,LOINC,LA15804-0,Meas Value,1
+brthmm,demographics_survey,Month (e.g. Jan or Feb),dropdown,0=Unknown,1,Month,LOINC,LA14217-6,Meas Value,1
+brthyy,demographics_survey,Year (e.g. 1967),text,,,Calendar year,SNOMED,277267003,Observation,1
+cage,demographics_survey,Age (in years),text,,,Age,SNOMED,397669002,Observation,1
+cl_maristat,demographics_survey,Marital Status,radio,C51773=Married|C51774=Single|C51776=Divorced|C51775=Widowed|C53262=Domestic Partner|C51777=Living separately but not divorced|888=Other|777=Prefer not to say,8,Marital status,SNOMED,125680007,Observation,1
+cl_maristatot,demographics_survey,Other (please specify),text,,,Other (specify),LOINC,LA6310-2,Meas Value,1
+crcid_dmg,demographics_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+dmg_nd,demographics_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+dmgcmpdat,demographics_survey,Demographic survey date (date survey/form opened),text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+dmgcmpts,demographics_survey,Demograhics Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+dmgstartts,demographics_survey,Demographics Survey Started Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+genderid,demographics_survey,What gender do you identify as?,radio,1=Man (including transgender men)|2=Woman (including transgender women)|3=Non-binary|888=Other|777=Prefer not to say,5,Gender identity,LOINC,76691-5,Observation,1
+genderidot,demographics_survey,Other (please specify),text,,,Other (specify),LOINC,LA6310-2,Meas Value,1
+dvamwinstr,device_distribution,Did you provide printed instructions to the participant for this device?,yesno,,,Medical equipment or device education,SNOMED,362978005,Procedure,0.75
+dvamwreasn,device_distribution,"If participant did not receive a device , please explain why:",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+dvamwsn,device_distribution,Serial Number,text,,,Serial number,LOINC,LA20885-2,Meas Value,1
+dvamwstcrcid,device_distribution,Interviewer Code,text,,,,,N/A - operational variable,,
+dvamwstdat,device_distribution,Date device given to participant,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+dvamwyn,device_distribution,Was the activity monitor/watch sent home with the participant?,yesno,,,Wearable device external physiologic monitoring panel,LOINC,82611-5,Meas Value,0.5
+dvcgminstr,device_distribution,Did you provide printed instructions to the participant for this device?,yesno,,,Medical equipment or device education,SNOMED,362978005,Procedure,0.75
+dvcgmreasn,device_distribution,"If sensor was not inserted, please explain why:",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+dvcgmsn,device_distribution,Serial Number,text,,,Serial number,LOINC,LA20885-2,Meas Value,1
+dvcgmstcrcid,device_distribution,Interviewer code (insertion and initializing),text,,,,,N/A - operational variable,,
+dvcgmstdat,device_distribution,Date sensor inserted,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+dvcgmvrfy,device_distribution,Did you verify that the Dexcom sensor was initialized and recording?,yesno,,,Wearable device external physiologic monitoring panel,LOINC,82611-5,Meas Value,0.5
+dvcgmyn,device_distribution,Was the sensor inserted?,yesno,,,Wearable device external physiologic monitoring panel,LOINC,82611-5,Meas Value,0.5
+dvenvcrcid,device_distribution,Environmental Sensor,radio,1=Demonstration of use performed|2=Demonstration of use NOT performed,2,Environmental sensor,SNOMED,468916005,Device,1
+dvenvinstr,device_distribution,Did you provide printed instructions to the participant for this device?,yesno,,,Medical equipment or device education,SNOMED,362978005,Procedure,0.75
+dvenvreasn,device_distribution,"If not, please explain (in detail):",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+dvenvsn,device_distribution,Serial Number,text,,,Serial number,LOINC,LA20885-2,Meas Value,1
+dvenvstcrcid,device_distribution,Interviewer code (for installation),text,,,,,N/A - operational variable,,
+dvenvstdat,device_distribution,Date device given to participant,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+dvenvyn,device_distribution,Was the environmental sensor sent home with the participant?,yesno,,,Wearable device external physiologic monitoring panel,LOINC,82611-5,Meas Value,0.5
+dvrtmthd,device_distribution,Planned method of device return,radio,1=Direct to clinic|2=Ship,2,Method,SNOMED,260686004,Observation,0.5
+dvrtnyn,device_distribution,Was the participant given return instructions sheet and shipping box?,yesno,,,Medical equipment or device education,SNOMED,362978005,Procedure,0.5
+dcgemclarityyn,device_return,Was participant data downloaded from Clarity? (.csv file format),yesno,,,,,,,
+dcvgmenyn,device_return,Dexcom G6 transmitter returned?,yesno,,,Wearable device external physiologic monitoring panel,LOINC,82611-5,Meas Value,0.5
+dvamwdeactv,device_return,"After Day 10, did you exit the participant in Study Pal?",yesno,,,,,N/A - operational variable,,
+dvamwdwnd,device_return,Data downloaded/retrieved from device?,yesno,,,Wearable device external physiologic monitoring panel,LOINC,82611-5,Meas Value,0.5
+dvamwencrcid,device_return,Interviewer code (acknowledges receipt of returned device),text,,,,,N/A - operational variable,,
+dvamwendat,device_return,Date device received back from participant,text,,,Date,SNOMED,410671006,Observation,0.5
+dvamwendhand,device_return,Participant's dominant hand,radio,dvamwendhand_1=|dvamwendhand_2=|dvamwendhand_4=|dvamwendhand_3=,4,,,,,
+dvamwendwnd,device_return,Was data downloaded from the physical activity monitor?,yesno,,,,,,,
+dvamwendwndot,device_return,Please explain,notes,,,,,,,
+dvamwenhand,device_return,dvamwenhand,radio,dvamwenhand=Physical Activity Monitor was worn on which wrist?|dvamwenhand_1=|dvamwenhand_2=|dvamwenhand_3=,4,,,,,
+dvamwenyn,device_return,Activity monitor returned?,yesno,,,Wearable device external physiologic monitoring panel,LOINC,82611-5,Meas Value,0.5
+dvcgmdwnd,device_return,Data downloaded from transmitter? Data downloaded/retrieved from device?,yesno,,,Wearable device external physiologic monitoring panel,LOINC,82611-5,Meas Value,0.5
+dvcgmencrcid,device_return,Interviewer code (acknowledges receipt of returned device),text,,,,,N/A - operational variable,,
+dvcgmendat,device_return,Date device received back from participant,text,,,Date,SNOMED,410671006,Observation,0.5
+dvenvdwnd,device_return,Data downloaded from device?,yesno,,,Wearable device external physiologic monitoring panel,LOINC,82611-5,Meas Value,0.5
+dvenvencrcid,device_return,Interviewer code (acknowledges receipt of returned device),text,,,,,N/A - operational variable,,
+dvenvendat,device_return,Date device received back from participant,text,,,Date,SNOMED,410671006,Observation,0.5
+dvenvenyn,device_return,Environmental sensor returned?,yesno,,,Wearable device external physiologic monitoring panel,LOINC,82611-5,Meas Value,0.5
+dvenvlocn,device_return,Location of the environmental sensor in the home:,text,,,Location within home premises,SNOMED,284349006,Observation,0.75
+crcid_dml,diabetes_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+dml_nd,diabetes_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+dmlact,diabetes_survey,What would you consider your typical activity level to be?,radio,"10=Active (stairs, walks, housework)|5=Somewhat active|0=Not Active (TV, computer, phone, use lifts)|777=Prefer not to say",4,Level of physical activity,SNOMED,8.59981E+14,Observation,1
+dmlcmpdat,diabetes_survey,Diabetes survey date,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+dmlcmpts,diabetes_survey,Diabetes Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+dmledu,diabetes_survey,"How often would you say that you engage in diabetes health education? (Examples: consulting with a dietician, attending support groups, reading books on diabetes, using diabetes-focused websites, watching TV shows on health, or using health-focused apps on your phone or tablet)",radio,"10=Regularly; at least monthly (dietician, support groups, books, websites, apps)|5=Occasionally; every 2-3 months|0=Rarely or none|777=Prefer not to say",4,Diabetes self-monitoring health education,SNOMED,398773005,Procedure,0.75
+dmlfeet,diabetes_survey,How often do you inspect your feet?,radio,10=Daily or weekly|5=Monthly|0=Rarely or none|777=Prefer not to say,4,Inspection of foot,SNOMED,4.7251E+13,Procedure,0.75
+dmlfrveg,diabetes_survey,"In a typical day, how many servings of fruits and vegetables do you consume?",radio,10=4-5 servings or pieces of fruits and raw vegetables per day|5=1-3 servings or pieces per day|0=Rarely or none|777=Prefer not to say,4,Number of portions of fruit and vegetables daily,SNOMED,401070008,Observation,0.75
+dmlgrain,diabetes_survey,"In a typical day, how often do you consume whole grains? (Examples: include whole wheat, brown bread, or brown rice).",radio,10=Usually eat whole grain|5=Rarely eat whole grain|0=Usually eat white bread or white rice|777=Prefer not to say,4,Assessment of eating and drinking behavior,SNOMED,710848001,Procedure,0.25
+dmlhex,diabetes_survey,"How often would you say that you engage in daily home exercise? (Examples: stretching, calisthenics, or yoga)",radio,10=Doing daily or almost daily|5=Irregular; once or twice a week|0=Rarely or none|777=Prefer not to say,4,Home exercise program,SNOMED,229075007,Observation,0.75
+dmlmd,diabetes_survey,Which of the following options best describes you with respect to physician care and medications?,radio,10=3 or more visits a year to the same doctor. Regular with medicines.|5=1-2 visits a year. Forgetting medicines frequently.|0=Rarely or none. Not taking 1 or more recommended medicines|777=Prefer not to say,4,Assessment of compliance with medical regimen,SNOMED,410119004,Procedure,0.5
+dmlpor,diabetes_survey,"When reflecting on your typical eating habits, which of the following best describes your approach to portion control?",radio,10=Eat small portions and avoid second servings|5=Occasionally limit portions|0=Rarely or none; eat at buffets and restaurants with large portions|777=Prefer not to say,4,Able to control portion size,SNOMED,4.49921E+14,Observation,0.75
+dmlstartts,diabetes_survey,Diabetes Survey Started Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+dmlsugar,diabetes_survey,"When reflecting on your typical eating habits, which of the following options best describes how often you consume simple sugars?",radio,10=Rarely eat sweets|5=Occasionally eat sweets|0=Frequently eat sweets|777=Prefer not to say,4,Assessment of eating and drinking behavior,SNOMED,710848001,Procedure,0.25
+dmlvex,diabetes_survey,"In a typical week, how often do you engage in vigorous exercise? (Examples: hiking, jogging at 6 mph, shoveling, carrying heavy loads, bicycling fast (14-16 mph), playing basketball, playing soccer, playing tennis, or any activity during which you cannot say more than a few words without taking a breath)",radio,10=At least 30 minutes daily 3 or more days a week|5=Less than 30 minutes daily less than 3 days a week|0=Rarely or none|777=Prefer not to say,4,Physical activity target strenuous exercise,SNOMED,408579009,Condition,0.5
+crcid_diet,dietary_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+diet1,dietary_survey,How many times a week did you eat fast food meals or snacks?,radio,0=Less than 1 time|1=1 - 3 times|2=4 or more times|777=Prefer not to say,4,How many times a week did you eat fast food or snacks or pizza in past 7 days [SAMHSA],LOINC,68510-7,Observation,1
+diet2,dietary_survey,How many servings of fruit did you eat each day?,radio,0=5 or more|1=4-Mar|2=2 or less|777=Prefer not to say,4,Fruit servings 24 hour Estimated,LOINC,80457-5,Observation,1
+diet3,dietary_survey,How many servings of vegetables did you eat each day?,radio,0=5 or more|1=4-Mar|2=2 or less|777=Prefer not to say,4,Vegetable servings 24 hour Estimated,LOINC,80459-1,Observation,1
+diet4,dietary_survey,How many regular sodas or glasses of sweet tea did you drink each day?,radio,0=Less than 1|1=2-Jan|2=3 or more|777=Prefer not to say,4,Estimated oral intake of sugar sweetened drinks in 24 hours,SNOMED,818990008,Observation,0.75
+diet5,dietary_survey,"How many times a week did you eat beans (like pinto or black beans), chicken, or fish?",radio,0=3 or more times|1=1 - 2 times|2=Less than 1 time|777=Prefer not to say,4,Oral intake,SNOMED,870690008,Observation,0.25
+diet6,dietary_survey,How many times a week did you eat regular snack chips or crackers (not low-fat)?,radio,0=1 time or less|1=2 - 3 times|2=4 or more times|777=Prefer not to say,4,Savory snack intake,SNOMED,230079003,Observation,0.75
+diet7,dietary_survey,How many times a week did you eat desserts and other sweets (not the low-fat kind)?,radio,0=1 time or less|1=2 - 3 times|2=4 or more times|777=Prefer not to say,4,Sweets intake,SNOMED,226463006,Observation,0.75
+diet8,dietary_survey,"How much margarine, butter, or meat fat do you use to season vegetables or put on potatoes, bread or corn?",radio,0=Very little|1=Some|2=A lot|777=Prefer not to say,4,Fat and oil intake,SNOMED,870372004,Observation,0.75
+diet9,dietary_survey,How many servings of fruit juice did you drink each day?,radio,0=Less than 1|1=2-Jan|2=3 or more|777=Prefer not to say,4,Fruit juice intake,SNOMED,226389005,Observation,0.75
+diet_nd,dietary_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+dietcmpdat,dietary_survey,Dietary survey date,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+dietcmpts,dietary_survey,Dietary Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+dietscore,dietary_survey,Diet score,calc,,,Dietary intake assessment,SNOMED,225388007,Procedure,0.5
+dietstartts,dietary_survey,Dietary Survey Start Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+eos_compen,disposition,Was the participant compensated?,yesno,,,Compensation,SNOMED,59811005,Condition,0.75
+eos_compenno,disposition,"If no, please specify the reason:",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+eos_compenref,disposition,Reference #,text,,,Reference documentation,SNOMED,308910008,Observation,0.75
+eos_ds,disposition,Did the subject complete the study?,yesno,,,Completion of clinical trial,SNOMED,443729008,Condition,0.5
+eos_dsdecod,disposition,What was the primary reason the subject discontinued?,radio,1=Did not meet Inclusion/Exclusion criteria|2=Lost to Follow-up|3=Withdrawal by Subject|4=Geographic Inaccessibility|5=Investigator deemed not appropriate for study|6=Currently enrolled in a conflicting study|7=Death|8=Adverse Event|9=Protocol Deviation|888=Other {eos_dsterm},10,Reason for,SNOMED,410666004,Observation,0.5
+eos_dsdecodie,disposition,Mark questions from Inclusion/Exclusion that were not met.,checkbox,1=Individual was under age 40|2=Individual is pregnant|3=Individual is not needed at this time for recruitment goals|4=Individual had Type 1 Diabetes|888=Other,5,Not eligible for participation in research study,SNOMED,8.73751E+14,Observation,0.75
+eos_dsstdat,disposition,What was the study discontinuation or completion date?,text,,,Participation in research study completed,SNOMED,8.71441E+14,Observation,0.5
+eos_dsterm,disposition,"If Other, please specify:",text,,,Other (specify),LOINC,LA6310-2,Meas Value,1
+eos_dsvst,disposition,Provide the last study visit/stage completed:,radio,0=Signed Consent|1=Pre-Visit|2=In Person (Baseline)|3=Devices Returned,4,Date of last examination,SNOMED,840643003,Observation,0.5
+exportzip,disposition,Zip Code for Export,text,,,Postal code [Location],LOINC,ValidityValid,Observation,1
+uppdae,disposition,"Was there any Unanticipated Problems, Protocol Deviations or Adverse Event's that occurred or were associated with this participant?",yesno,,,Serious reportable event,SNOMED,370894009,Observation,0.5
+uppdaeot,disposition,"If yes, please give a brief description along with the type(s) of events and refer to the MOP for further instructions.",notes,,,Serious reportable event,SNOMED,370894009,Observation,0.5
+uppdaeot2,disposition,"If this was an adverse event, was your site PI notified?",radio,1=Yes|0=No|999=Not an Adverse Event,3,Serious reportable event,SNOMED,370894009,Observation,0.5
+icf_pdf,download_consent,You can download your completed consent form by clicking on the link below.,file,,,,,N/A - operational variable,,
+crcid_12,driving_record,Interviewer Code,text,,,,,N/A - operational variable,,
+dri1,driving_record,"In an average week, how many days per week do you normally drive? (number of days)",text,,,,,,,
+dri2,driving_record,About how many miles did you personally drive during the past 12 months in all motorized vehicles?,radio,"1=5000 miles or less|2=5001 to 10,000 miles|3=10,001 to 15.000 miles|4=15,001 to 20,000 miles|5=More than 20,000 miles|99=Don't know",6,,,,,
+dri3,driving_record,Driver's License photocopied,radio,1=Yes|0=No,2,Has driver's license,SNOMED,446497005,Observation,0.75
+dricmpdat,driving_record,Date driving record assessment conducted,text,,,Date and time of scheduled task,LOINC,90118-1,Observation,0.5
+dricmpyn,driving_record,Review procedure,checkbox,,,Review procedure,SNOMED,288564002,Observation,0.25
+drinum,driving_record,Drivers license number,text,,,,,,,
+driot,driving_record,"If ""No"", please specify why",text,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+drireasn,driving_record,"If not completed, why?",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+dristate,driving_record,Drivers license state,dropdown,AL=Alabama|AK=Alaska|AZ=Arizona|AR=Arkansas|CA=California|CO=Colorado|CT=Connecticut|DE=Delaware|FL=Florida|GA=Georgia|HI=Hawaii|ID=Idaho|IL=Illinois|IN=Indiana|IA=Iowa|KS=Kansas|KY=Kentucky|LA=Louisiana|ME=Maine|MD=Maryland|MA=Massachusetts|MI=Michigan|MN=Minnesota|MS=Mississippi|MO=Missouri|MT=Montana|NE=Nebraska|NV=Nevada|NH=New Hampshire|NJ=New Jersey|NM=New Mexico|NY=New York|NC=North Carolina|ND=North Dakota|OH=Ohio|OK=Oklahoma|OR=Oregon|PA=Pennsylvania|RI=Rhode Island|SC=South Carolina|SD=South Dakota|TN=Tennessee|TX=Texas|UT=Utah|VT=Vermont|VA=Virginia|WA=Washington|WV=West Virginia|WI=Wisconsin|WY=Wyoming|Other=Other,51,State,SNOMED,398070004,Observation,1
+odristate,driving_record,Specify other,text,,,Other (specify),LOINC,LA6310-2,Meas Value,1
+brthdat,ehr_information,Birth Date,text,,,Birth date,LOINC,21112-8,Observation,1
+cell_ph,ehr_information,Cell Phone,text,,,Contact Phone number,LOINC,89060-8,Observation,0.75
+doc,ehr_information,Record Creation Date,text,,,,,N/A - operational variable,,
+email,ehr_information,Email Address,text,,,Contact email address,LOINC,89058-2,Observation,1
+ethnic_ehr,ehr_information,EHR Ethnicity,text,,,Ethnicity,SNOMED,7.23621E+14,Observation,1
+fname,ehr_information,First,text,,,First (Given) name Person,LOINC,97848-6,Observation,1
+home_ph,ehr_information,Home Phone,text,,,Contact Phone number,LOINC,89060-8,Observation,0.75
+language,ehr_information,Primary Language,text,,,Language.primary,LOINC,45402-5,Observation,1
+lname,ehr_information,Last,text,,,Last (Family) name Person,LOINC,97847-8,Observation,1
+mname,ehr_information,Middle,text,,,,,,,
+mrn,ehr_information,MRN,text,,,Medical record number [Identifier],LOINC,46106-1,Observation,1
+phone,ehr_information,Phone,text,,,,,,,
+race_ehr,ehr_information,EHR Race,text,,,Race,LOINC,32624-9,Observation,1
+record_id,ehr_information,Screening ID,text,,,,,N/A - operational variable,,
+recruitment_access_code,ehr_information,Recruitment survey access code,text,,,,,N/A - operational variable,,
+recruitment_url,ehr_information,Recruitment survey url,text,,,,,N/A - operational variable,,
+sex,ehr_information,Sex at birth,text,F=Female|M=Male|I=Intersex|99=Not Avaliable,4,Sex assigned at birth,LOINC,76689-9,Observation,1
+crcid_faq,faq_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+faq_nd,faq_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+faqcmpdat,faq_survey,FAQ survey date (date survey/form opened),text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+faqcmpts,faq_survey,FAQ Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+faqstartts,faq_survey,FAQ Survey Started Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+scrn_intst2,faq_survey,Are you interested in learning if you're eligible for our research study?,radio,,,,,N/A - operational variable,,
+crcid_mh,health_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+fh_dm2pt,health_survey,Were either of your parents diagnosed with Type II Diabetes?,radio,1=Yes|0=No|555=Unknown|777=Prefer not to say,4,Family history of diabetes mellitus,SNOMED,160303001,Observation,0.5
+fh_dm2ptsp,health_survey,"If yes, which parent?",checkbox,1=Mother|2=Father,2,Father or mother,LOINC,LA15647-3,Meas Value,1
+fh_dm2sb,health_survey,Has a sibling been diagnosed with Type II Diabetes?,radio,1=Yes|0=No|555=Unknown|777=Prefer not to say,4,Family history of diabetes mellitus type 2,SNOMED,430679000,Observation,0.5
+fh_dm2sbsp,health_survey,"If yes, please check all that apply:",checkbox,1=Sister|2=Brother|3=Half-Sister|4=Half-Brother,4,,,,,
+mh_nd,health_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+mhcat_adot,health_survey,"If yes, please choose between:",radio,1=Alzheimer's disease|888=Other|999=Unsure from the options listed|777=Prefer not to say,4,,,,,
+mhcat_dmtaot,health_survey,Other (please specify):,text,,,Other (specify),LOINC,LA6310-2,Meas Value,1
+mhcmpdat,health_survey,Health survey date,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+mhcmpts,health_survey,Heath Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+mhoccur_ad,health_survey,"Dementia (Examples: Alzheimer's Disease, vascular dementia, etc)",radio,1=Yes|0=No|777=Prefer not to say,3,Dementia,LOINC,LA20372-1,Meas Value,0.75
+mhoccur_amd,health_survey,Age-related macular degeneration (AMD) (in one or both eyes),radio,1=Yes|0=No|777=Prefer not to say,3,Age related macular degeneration,SNOMED,267718000,Condition,1
+mhoccur_ca,health_survey,Cancer (any type),radio,1=Yes|0=No|777=Prefer not to say,3,Cancer,LOINC,LA10524-9,Meas Value,1
+mhoccur_circ,health_survey,"Circulation problems (Examples: arteriosclerosis, atherosclerosis, blood clots in lungs or leg veins)",radio,1=Yes|0=No|777=Prefer not to say,3,History of Problems with your heart or circulation [PhenX],LOINC,67434-1,Observation,0.5
+mhoccur_clsh,health_survey,High blood cholesterol,radio,1=Yes|0=No|777=Prefer not to say,3,Ever told by doctor or nurse that you have high blood cholesterol,LOINC,58292-4,Observation,1
+mhoccur_cnrot,health_survey,"If yes, please specify:",text,,,Other (specify),LOINC,LA6310-2,Meas Value,0.75
+mhoccur_cns,health_survey,Other neurological conditions,radio,1=Yes|0=No|777=Prefer not to say,3,Other neurological conditions,LOINC,LA28880-5,Meas Value,1
+mhoccur_cnsot,health_survey,"If yes, please specify:",text,,,Other (specify),LOINC,LA6310-2,Meas Value,0.75
+mhoccur_cogn,health_survey,"Mild cognitive impairment (known as ""MCI""; mild but noticeable cognitive changes, may slow or interfere with daily activities but does not stop them)",radio,1=Yes|0=No|777=Prefer not to say,3,Minimal cognitive impairment,SNOMED,110352000,Condition,0.75
+mhoccur_crt,health_survey,Cataracts (in one or both eyes),radio,1=Yes|0=No|777=Prefer not to say,3,Cataracts,LOINC,LA16306-5,Meas Value,1
+mhoccur_cvdot,health_survey,"Other heart issues (Examples: pacemaker, heart valve disease, open heart surgery)",radio,1=Yes|0=No|777=Prefer not to say,3,Has doctor ever told you that you had heart trouble [PhenX],LOINC,64204-1,Observation,1
+mhoccur_ded,health_survey,Dry eye (in one or both eyes),radio,1=Yes|0=No|777=Prefer not to say,3,Dry eyes,SNOMED,162290004,Condition,1
+mhoccur_ear,health_survey,Hearing impairment,radio,1=Yes|0=No|777=Prefer not to say,3,Hearing impairment,LOINC,LA16989-8,Meas Value,1
+mhoccur_fall,health_survey,Have you fallen in the last 12 months? (a fall is defined as an event which results in a person coming to rest inadvertently on the ground or floor or other lower level),radio,1=Yes|0=No|777=Prefer not to say,3,Falls in the past year,LOINC,52552-7,Observation,1
+mhoccur_fallot,health_survey,"If so, how many times in the last 12 months?",text,,,Number of falls in last year,SNOMED,391002003,Observation,1
+mhoccur_gi,health_survey,"Digestive problems (Examples: stomach ulcer, gastrointestinal problems, hiatal hernia)",radio,1=Yes|0=No|777=Prefer not to say,3,Digestive symptom,SNOMED,308925008,Condition,0.75
+mhoccur_glc,health_survey,Glaucoma (in one or both eyes),radio,1=Yes|0=No|777=Prefer not to say,3,Glaucoma,SNOMED,23986001,Condition,1
+mhoccur_hbp,health_survey,High blood pressure,radio,1=Yes|0=No|777=Prefer not to say,3,Ever told by doctor or nurse that you have high blood pressure,LOINC,58295-7,Observation,1
+mhoccur_lbp,health_survey,Low blood pressure,radio,1=Yes|0=No|777=Prefer not to say,3,Low blood pressure,LOINC,LA16994-8,Meas Value,1
+mhoccur_mi,health_survey,Heart attack,radio,1=Yes|0=No|777=Prefer not to say,3,Ever told by doctor that you had a myocardial infarction or heart attack,LOINC,58338-5,Observation,1
+mhoccur_ms,health_survey,Multiple sclerosis,radio,1=Yes|0=No|777=Prefer not to say,3,Multiple sclerosis,SNOMED,24700007,Condition,1
+mhoccur_oa,health_survey,Osteoporosis,radio,1=Yes|0=No|777=Prefer not to say,3,Osteoporosis,LOINC,LA10527-2,Meas Value,1
+mhoccur_obs,health_survey,Obesity,radio,1=Yes|0=No|777=Prefer not to say,3,Obesity,LOINC,LA6301-1,Meas Value,1
+mhoccur_ot,health_survey,"If yes, please specify:",text,,,Other (specify),LOINC,LA6310-2,Meas Value,0.75
+mhoccur_pd,health_survey,Parkinson's disease,radio,1=Yes|0=No|777=Prefer not to say,3,Parkinson's disease,LOINC,LA27533-1,Meas Value,1
+mhoccur_pdr,health_survey,Diabetic retinopathy (in one or both eyes),radio,1=Yes|0=No|777=Prefer not to say,3,Diabetic retinopathy [Minimum Data Set],LOINC,45672-3,Observation,1
+mhoccur_plm,health_survey,"Chronic pulmonary (lung) problems (Examples: emphysema, asthma, tuberculosis, asbestosis)",radio,1=Yes|0=No|777=Prefer not to say,3,Chronic lung disease,SNOMED,413839001,Condition,1
+mhoccur_ra,health_survey,Arthritis (joint pain),radio,1=Yes|0=No|777=Prefer not to say,3,Arthritis,SNOMED,3723001,Condition,1
+mhoccur_rnl,health_survey,Kidney problems,radio,1=Yes|0=No|777=Prefer not to say,3,Kidney,LOINC,LA4591-9,Meas Value,0.75
+mhoccur_rvo,health_survey,"Retinal vascular occlusion (""stroke in the eye or eye vessels"" - in one or both eyes)",radio,1=Yes|0=No|777=Prefer not to say,3,Retinal vascular occlusion,SNOMED,73757007,Condition,1
+mhoccur_strk,health_survey,Stroke,radio,1=Yes|0=No|777=Prefer not to say,3,Have you ever been told by a physician that you had a stroke [PhenX],LOINC,65718-9,Observation,1
+mhoccur_ua,health_survey,"Urinary problems (Examples: urinary tract infections, incontinence, prostate problems)",radio,1=Yes|0=No|777=Prefer not to say,3,Urinary tract problems,LOINC,LA17005-2,Meas Value,0.75
+mhoccur_yn,health_survey,"Have you been diagnosed with any conditions not listed above? (any condition, not just eyes)",radio,1=Yes|0=No|777=Prefer not to say,3,Other health condition,LOINC,76472-0,Observation,0.75
+mhstartts,health_survey,Health Survey Started Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+lb1_crcid,lab_results,Interviewer code,text,,,,,N/A - operational variable,,
+lbdattim1,lab_results,Date & time clinical labs performed,text,,,Date and time of scheduled task,LOINC,90118-1,Observation,0.5
+lbperfyn1,lab_results,Laboratory procedure performed,checkbox,,,Laboratory procedure performed,SNOMED,165331007,Observation,0.25
+lbreasn1,lab_results,"If not performed, please explain why:",notes,,,Procedure not completed,SNOMED,1.78291E+14,Observation,0.5
+lbscat_a1c,lab_results,Hemoglobin - g/dL,text,,,Hemoglobin [Mass/volume] in Blood,LOINC,718-7,Measurement,0.5
+lbscat_hct,lab_results,Hematocrit  - %,text,,,Hematocrit [Volume Fraction] of Blood,LOINC,20570-8,Measurement,1
+lbscat_mch,lab_results,MCH - pg,text,,,MCH [Entitic mass],LOINC,28539-5,Measurement,0.75
+lbscat_mchc,lab_results,MCHC - g/dL,text,,,MCHC [Mass/volume],LOINC,28540-3,Measurement,1
+lbscat_mcv,lab_results,MCV - fL,text,,,MCV [Entitic volume],LOINC,30428-7,Measurement,1
+lbscat_plt,lab_results,Platelets - x10E3/µL,text,,,Platelets [#/volume] in Blood,LOINC,26515-7,Measurement,0.75
+lbscat_rbc,lab_results,Red Blood Cells (RBC) - x10E6/µL,text,,,Red blood cell count,SNOMED,14089001,Measurement,0.75
+lbscat_rdw,lab_results,RDW - %,text,,,Erythrocyte distribution width [Ratio],LOINC,30385-9,Measurement,1
+lbscat_wbc,lab_results,White Blood Cells (WBC) - x10E3/µL,text,,,White blood cell count,SNOMED,767002,Measurement,0.75
+city,mailing_information,City,text,,,City,LOINC,68997-6,Observation,1
+state,mailing_information,State,dropdown,AL=Alabama|AK=Alaska|AZ=Arizona|AR=Arkansas|CA=California|CO=Colorado|CT=Connecticut|DE=Delaware|FL=Florida|GA=Georgia|HI=Hawaii|ID=Idaho|IL=Illinois|IN=Indiana|IA=Iowa|KS=Kansas|KY=Kentucky|LA=Louisiana|ME=Maine|MD=Maryland|MA=Massachusetts|MI=Michigan|MN=Minnesota|MS=Mississippi|MO=Missouri|MT=Montana|NE=Nebraska|NV=Nevada|NH=New Hampshire|NJ=New Jersey|NM=New Mexico|NY=New York|NC=North Carolina|ND=North Dakota|OH=Ohio|OK=Oklahoma|OR=Oregon|PA=Pennsylvania|PR=Puerto Rico|RI=Rhode Island|SC=South Carolina|SD=South Dakota|TN=Tennessee|TX=Texas|UT=Utah|VT=Vermont|VA=Virginia|WA=Washington|WV=West Virginia|WI=Wisconsin|WY=Wyoming,51,State of residence,LOINC,46499-0,Observation,1
+street,mailing_information,Street/PO Box,text,,,Street,LOINC,LA28897-9,Meas Value,0.75
+zip,mailing_information,Zip Code,text,,,Postal code [Location],LOINC,45401-7,Observation,1
+cm_act,meds_assessment,"Have you taken acetaminophen medicines, such as Tylenol, in the past 2 weeks?",radio,0=No|1=Every day|2=A few days (<1 day/week)|3=Some days (1-2 days/week)|4=Most days (3-4 days/week)|99=Don't know/not sure|777=Decline to answer,7,,,,,
+cm_ant,meds_assessment,"Have you taken antihistamines, such as cold pills or allergy pills, in the past 2 weeks?",radio,0=No|1=Every day|2=A few days (<1 day/week)|3=Some days (1-2 days/week)|4=Most days (3-4 days/week)|99=Don't know/not sure|777=Decline to answer,7,,,,,
+cm_asp,meds_assessment,Have you taken aspirin in the past 2 weeks?,radio,0=No|1=Every day|2=A few days (<1 day/week)|3=Some days (1-2 days/week)|4=Most days (3-4 days/week)|99=Don't know/not sure|777=Decline to answer,7,,,,,
+cm_crcid,meds_assessment,Interviewer code,text,,,,,N/A - operational variable,,
+cm_dcg,meds_assessment,"Have you taken decongestants, such as cold pills or allergy pills, in the past 2 weeks?",radio,0=No|1=Every day|2=A few days (<1 day/week)|3=Some days (1-2 days/week)|4=Most days (3-4 days/week)|99=Don't know/not sure|777=Decline to answer,7,,,,,
+cm_ibp,meds_assessment,Have you taken ibuprofen or ibuprofen-containing medicines such as Advil or Motrin in the past 2 weeks?,radio,0=No|1=Every day|2=A few days (<1 day/week)|3=Some days (1-2 days/week)|4=Most days (3-4 days/week)|99=Don't know/not sure|777=Decline to answer,7,,,,,
+cm_slp,meds_assessment,Have you taken sleeping pills in the past 2 weeks?,radio,0=No|1=Every day|2=A few days (<1 day/week)|3=Some days (1-2 days/week)|4=Most days (3-4 days/week)|99=Don't know/not sure|777=Decline to answer,7,,,,,
+cmcmpdat,meds_assessment,Date medications assessment conducted,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+cmcmpyn,meds_assessment,Medication monitoring assessment,checkbox,,,Medication monitoring assessment,SNOMED,4237617,Procedure,0.75
+cmotyn,meds_assessment,"Are there any other medications that you are currently taking that are not included here? This includes prescription or over-the-counter medications, vitamins and herbal supplements.",radio,1=Yes|0=No,2,,,,,
+cmreasn,meds_assessment,"If not completed, why? (explain)",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+cmyn,meds_assessment,"Are you currently taking any medications, including prescription, over-the-counter, and supplements?",yesno,,,,,,,
+mlcs_crcid,mesopic_mars,Interviewer code,text,,,,,N/A - operational variable,,
+mlcscmpdat,mesopic_mars,Date procedure performed,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+mlcscmpyn,mesopic_mars,Contrast sensitivity test,checkbox,,,Contrast sensitivity test,SNOMED,410566008,Procedure,0.75
+mlcsodeye,mesopic_mars,OD Form 1 (eye),radio,L=Left eye|R=Right eye|B=Binocular,3,Which eye [PhenX],LOINC,64747-9,Observation,1
+mlcsodeyev_rw1,mesopic_mars,OD Form 1: Row 1,checkbox,C=C (0.04)|H=H (0.08)|V=V (0.12)|O=O (0.16)|S=S (0.20)|N=N (0.24),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsodeyev_rw2,mesopic_mars,OD Form 1: Row 2,checkbox,D=D (0.28)|S=S (0.32)|Z=Z (0.36)|N=N (0.40)|R=R (0.44)|K=K (0.48),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsodeyev_rw3,mesopic_mars,OD Form 1: Row 3,checkbox,N=N (0.52)|D=D (0.56)|R=R (0.60)|H=H (0.64)|V=V (0.68)|Z=Z (0.72),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsodeyev_rw4,mesopic_mars,OD Form 1: Row 4,checkbox,C=C (0.76)|S=S (0.80)|O=O (0.84)|N=N (0.88)|K=K (0.92)|H=H (0.96),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsodeyev_rw5,mesopic_mars,OD Form 1: Row 5,checkbox,K=K (1.00)|N=N (1.04)|V=V (1.08)|D=D (1.12)|S=S (1.16)|R=R (1.20),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsodeyev_rw6,mesopic_mars,OD Form 1: Row 6,checkbox,Z=Z (1.24)|R=R (1.28)|D=D (1.32)|K=K (1.36)|H=H (1.40)|O=O (1.44),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsodeyev_rw7,mesopic_mars,OD Form 1: Row 7,checkbox,H=H (1.48)|Z=Z (1.52)|C=C (1.56)|V=V (1.60)|R=R (1.64)|K=K (1.68),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsodeyev_rw8,mesopic_mars,OD Form 1: Row 8,checkbox,S=S (1.72)|C=C (1.76)|Z=Z (1.80)|D=D (1.84)|V=V (1.88)|O=O (1.92),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsodfcl,mesopic_mars,OD: Value of final correct letter,text,,,Contrast sensitivity test,SNOMED,410566008,Procedure,0.25
+mlcsodlog,mesopic_mars,OD: Log Contrast Sensitivity,calc,,,Contrast sensitivity,SNOMED,251686008,Measurement,0.75
+mlcsodmiss,mesopic_mars,OD: Number of misses prior to stopping,text,,,Contrast sensitivity test,SNOMED,410566008,Procedure,0.25
+mlcsoseye,mesopic_mars,OS Form 2 (eye),radio,L=Left eye|R=Right eye|B=Binocular,3,Which eye [PhenX],LOINC,64747-9,Observation,1
+mlcsoseyev_rw1,mesopic_mars,OS Form 2: Row 1,checkbox,C=C (0.04)|H=H (0.08)|V=V (0.12)|O=O (0.16)|S=S (0.20)|N=N (0.24),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsoseyev_rw2,mesopic_mars,OS Form 2: Row 2,checkbox,D=D (0.28)|S=S (0.32)|Z=Z (0.36)|N=N (0.40)|R=R (0.44)|K=K (0.48),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsoseyev_rw3,mesopic_mars,OS Form 2: Row 3,checkbox,N=N (0.52)|D=D (0.56)|R=R (0.60)|H=H (0.64)|V=V (0.68)|Z=Z (0.72),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsoseyev_rw4,mesopic_mars,OS Form 2: Row 4,checkbox,C=C (0.76)|S=S (0.80)|O=O (0.84)|N=N (0.88)|K=K (0.92)|H=H (0.96),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsoseyev_rw5,mesopic_mars,OS Form 2: Row 5,checkbox,K=K (1.00)|N=N (1.04)|V=V (1.08)|D=D (1.12)|S=S (1.16)|R=R (1.20),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsoseyev_rw6,mesopic_mars,OS Form 2: Row 6,checkbox,Z=Z (1.24)|R=R (1.28)|D=D (1.32)|K=K (1.36)|H=H (1.40)|O=O (1.44),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsoseyev_rw7,mesopic_mars,OS Form 2: Row 7,checkbox,H=H (1.48)|Z=Z (1.52)|C=C (1.56)|V=V (1.60)|R=R (1.64)|K=K (1.68),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsoseyev_rw8,mesopic_mars,OS Form 2: Row 8,checkbox,S=S (1.72)|C=C (1.76)|Z=Z (1.80)|D=D (1.84)|V=V (1.88)|O=O (1.92),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsosfcl,mesopic_mars,OS: Value of final correct letter,text,,,Contrast sensitivity test,SNOMED,410566008,Procedure,0.25
+mlcsoslog,mesopic_mars,OS: Log Contrast Sensitivity,calc,,,Contrast sensitivity,SNOMED,251686008,Measurement,0.75
+mlcsosmiss,mesopic_mars,OS: Number of misses prior to stopping,text,,,Contrast sensitivity test,SNOMED,410566008,Procedure,0.25
+mlcsoueye,mesopic_mars,OU Form 3 (eye),radio,L=Left eye|R=Right eye|B=Binocular,3,Which eye [PhenX],LOINC,64747-9,Observation,1
+mlcsoueyev_rw1,mesopic_mars,OU Form 3: Row 1,checkbox,C=C (0.04)|H=H (0.08)|V=V (0.12)|O=O (0.16)|S=S (0.20)|N=N (0.24),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsoueyev_rw2,mesopic_mars,OU Form 3: Row 2,checkbox,D=D (0.28)|S=S (0.32)|Z=Z (0.36)|N=N (0.40)|R=R (0.44)|K=K (0.48),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsoueyev_rw3,mesopic_mars,OU Form 3: Row 3,checkbox,N=N (0.52)|D=D (0.56)|R=R (0.60)|H=H (0.64)|V=V (0.68)|Z=Z (0.72),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsoueyev_rw4,mesopic_mars,OU Form 3: Row 4,checkbox,C=C (0.76)|S=S (0.80)|O=O (0.84)|N=N (0.88)|K=K (0.92)|H=H (0.96),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsoueyev_rw5,mesopic_mars,OU Form 3: Row 5,checkbox,K=K (1.00)|N=N (1.04)|V=V (1.08)|D=D (1.12)|S=S (1.16)|R=R (1.20),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsoueyev_rw6,mesopic_mars,OU Form 3: Row 6,checkbox,Z=Z (1.24)|R=R (1.28)|D=D (1.32)|K=K (1.36)|H=H (1.40)|O=O (1.44),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsoueyev_rw7,mesopic_mars,OU Form 3: Row 7,checkbox,H=H (1.48)|Z=Z (1.52)|C=C (1.56)|V=V (1.60)|R=R (1.64)|K=K (1.68),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsoueyev_rw8,mesopic_mars,OU Form 3: Row 8,checkbox,S=S (1.72)|C=C (1.76)|Z=Z (1.80)|D=D (1.84)|V=V (1.88)|O=O (1.92),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+mlcsoufcl,mesopic_mars,OU: Value of final correct letter,text,,,Contrast sensitivity test,SNOMED,410566008,Procedure,0.25
+mlcsoulog,mesopic_mars,OU: Log Contrast Sensitivity,calc,,,Contrast sensitivity,SNOMED,251686008,Measurement,0.5
+mlcsoumiss,mesopic_mars,OU: Number of misses prior to stopping,text,,,Contrast sensitivity test,SNOMED,410566008,Procedure,0.25
+mlcsreasn,mesopic_mars,"If not completed, why? (explain)",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+mss_crcid,monofilament,Interviewer code,text,,,,,N/A - operational variable,,
+msscmpdat,monofilament,Date monofilament performed,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+msscmpyn,monofilament,Monofilament foot sensation test,checkbox,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,1
+msslf1,monofilament,Site 1,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+msslf10,monofilament,Site 10,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+msslf2,monofilament,Site 2,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+msslf3,monofilament,Site 3,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+msslf4,monofilament,Site 4,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+msslf5,monofilament,Site 5,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+msslf6,monofilament,Site 6,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+msslf7,monofilament,Site 7,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+msslf8,monofilament,Site 8,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+msslf9,monofilament,Site 9,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+msslffl,monofilament,Left Foot - Felt:,calc,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+msslftt,monofilament,Left Foot - Tested:,calc,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+mssreasn,monofilament,"If not completed, why? (explain)",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+mssrf1,monofilament,Site 1,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+mssrf10,monofilament,Site 10,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+mssrf2,monofilament,Site 2,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+mssrf3,monofilament,Site 3,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+mssrf4,monofilament,Site 4,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+mssrf5,monofilament,Site 5,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+mssrf6,monofilament,Site 6,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+mssrf7,monofilament,Site 7,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+mssrf8,monofilament,Site 8,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+mssrf9,monofilament,Site 9,radio,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+mssrffl,monofilament,Right Foot - Felt:,calc,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+mssrftt,monofilament,Right Foot - Tested:,calc,,,Monofilament foot sensation test,SNOMED,134388005,Procedure,0.5
+via1,ophthalmic_survey,"How much difficulty, if any, do you have in recognizing a friend across the street? Would you say:",radio,1=No difficulty|2=A little difficulty|3=Moderate difficulty|4=Extreme difficulty|5=Unable to do because of eyesight|777=Prefer not to say,6,Difficulty seeing distant objects,SNOMED,424348007,Condition,0.5
+via2,ophthalmic_survey,"How much difficulty, if any, do you have reading print in newspapers, magazines, recipes, menus, or numbers on the telephone? Would you say:",radio,1=No difficulty|2=A little difficulty|3=Moderate difficulty|4=Extreme difficulty|5=Unable to do because of eyesight|777=Prefer not to say,6,How much difficulty do you have reading ordinary print in newspapers,LOINC,66077-9,Observation,0.75
+via3,ophthalmic_survey,"Because of your eyesight, how much difficulty do you have noticing objects off to the side while you are walking along? Would you say:",radio,1=No difficulty|2=A little difficulty|3=Moderate difficulty|4=Extreme difficulty|5=Unable to do because of eyesight|777=Prefer not to say,6,Level of difficulty seeing objects off to the side,LOINC,66082-9,Observation,0.75
+via4,ophthalmic_survey,When was the last time you had your eyes examined by an eye care provider (ophthalmologist or optometrist)? ,radio,1=Within the past month (anytime less than 1 month ago)|2=Within the past year (1 month but less than 12 months ago)|3=Within the past 2 years (1 year but less than 2 years ago)|4=2 or more years ago|777=Prefer not to say,5,Date of last eye examination,LOINC,55400-6,Observation,0.75
+via5,ophthalmic_survey,You have indicated that you have not seen an eye care professional in the past 12 months. What is the main reason you have not visited an eye care professional in the past 12 months?,radio,"1=Cost/Insurance|2=Do not have/know an eye doctor|3=Cannot get to the office/clinic (too far away, no transportation)|4=Could not get an appointment|5=No reason to go (no problem)|6=Have not thought of it|7=Other|777=Prefer not to say",8,Reason for,SNOMED,410666004,Observation,0.5
+via6,ophthalmic_survey,When was the last time you had an eye exam in which the pupils were dilated? (This would have made you temporarily sensitive to bright light),radio,1=Within the past month (anytime less than 1 month ago)|2=Within the past year (1 month but less than 12 months ago)|3=Within the past 2 years (1 year but less than 2 years ago)|4=2 or more years ago|5=Never|777=Prefer not to say,6,Instillation of dilating eye drops to eye,SNOMED,424986007,Procedure,0.5
+via_crcid,ophthalmic_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+via_nd,ophthalmic_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+viacmpdat,ophthalmic_survey,Ophthalmic survey date,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+viacmpts,ophthalmic_survey,Ophthalmic Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+viastartts,ophthalmic_survey,Ophthalmic Survey Started Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+crcid_paid,paid5_dm_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+paid_cml,paid5_dm_survey,Coping with complications of diabetes,radio,0=Not a problem|1=Minor problem|2=Moderate problem|3=Somewhat serious problem|4=Serious problem,5,Finding related to ability to cope,SNOMED,397706001,Condition,0.25
+paid_dpr,paid5_dm_survey,Feeling depressed when you think about living with diabetes,radio,0=Not a problem|1=Minor problem|2=Moderate problem|3=Somewhat serious problem|4=Serious problem,5,Depressed mood,SNOMED,366979004,Condition,0.25
+paid_eng,paid5_dm_survey,Feeling that diabetes is taking up too much of your mental and physical energy every day,radio,0=Not a problem|1=Minor problem|2=Moderate problem|3=Somewhat serious problem|4=Serious problem,5,Finding related to ability to comply with treatment,SNOMED,397695000,Observation,0.25
+paid_nd,paid5_dm_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+paid_scrd,paid5_dm_survey,Feeling scared when you think about living with diabetes,radio,0=Not a problem|1=Minor problem|2=Moderate problem|3=Somewhat serious problem|4=Serious problem,5,Fear of metabolic disease,SNOMED,723113005,Condition,0.25
+paid_wr,paid5_dm_survey,Worrying about the future and the possibility of serious complications,radio,0=Not a problem|1=Minor problem|2=Moderate problem|3=Somewhat serious problem|4=Serious problem,5,Anxiety about body function or health,SNOMED,247808006,Condition,0.25
+paidcmpdat,paid5_dm_survey,PAID-5 DM survey date,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+paidcmpts,paid5_dm_survey,PAID-5 DM Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+paidscore,paid5_dm_survey,PAID score,calc,,,Assessment of attitude toward health status,SNOMED,710834001,Procedure,0.25
+paidstartts,paid5_dm_survey,PAID-5 DM Survey Start Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+add_enrolled,participant_contact_information_survey,Add participant record to Enrolled Project,checkbox,,,,,N/A - operational variable,,
+crcid_prt,participant_contact_information_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+parcon_nd,participant_contact_information_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+prefmthd,participant_contact_information_survey,Preferred mode of contact?,radio,1=Phone call|2=Text message|3=Email|4=Mail,4,Preferred mode of communication,SNOMED,428330008,Observation,1
+prt_cell_phone,participant_contact_information_survey,Is this a cell phone?,yesno,,,Contact Phone number,LOINC,89060-8,Observation,0.75
+prt_cell_phone_2,participant_contact_information_survey,Is the alternate phone number a cell phone?,yesno,,,Contact Phone number,LOINC,89060-8,Observation,0.75
+prt_city,participant_contact_information_survey,City,text,,,City,LOINC,68997-6,Observation,1
+prt_email,participant_contact_information_survey,Email Address,text,,,Contact email address,LOINC,89058-2,Observation,1
+prt_phone,participant_contact_information_survey,Phone (best number to contact you),text,,,Contact Phone number,LOINC,89060-8,Observation,1
+prt_phone_2,participant_contact_information_survey,Alternate phone number,text,,,Contact Phone number,LOINC,89060-8,Observation,0.75
+prt_state,participant_contact_information_survey,State,dropdown,AL=Alabama|AK=Alaska|AZ=Arizona|AR=Arkansas|CA=California|CO=Colorado|CT=Connecticut|DE=Delaware|FL=Florida|GA=Georgia|HI=Hawaii|ID=Idaho|IL=Illinois|IN=Indiana|IA=Iowa|KS=Kansas|KY=Kentucky|LA=Louisiana|ME=Maine|MD=Maryland|MA=Massachusetts|MI=Michigan|MN=Minnesota|MS=Mississippi|MO=Missouri|MT=Montana|NE=Nebraska|NV=Nevada|NH=New Hampshire|NJ=New Jersey|NM=New Mexico|NY=New York|NC=North Carolina|ND=North Dakota|OH=Ohio|OK=Oklahoma|OR=Oregon|PA=Pennsylvania|RI=Rhode Island|SC=South Carolina|SD=South Dakota|TN=Tennessee|TX=Texas|UT=Utah|VT=Vermont|VA=Virginia|WA=Washington|WV=West Virginia|WI=Wisconsin|WY=Wyoming,50,State of residence,LOINC,46499-0,Observation,1
+prt_street,participant_contact_information_survey,Street/PO Box,text,,,Street,LOINC,LA28897-9,Meas Value,0.75
+prt_zip,participant_contact_information_survey,Zip Code,text,,,Postal code [Location],LOINC,45401-7,Observation,1
+prtcmpdat,participant_contact_information_survey,Participant contact survey/form date (date survey/form opened),text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+prtcmpts,participant_contact_information_survey,Participant Contact Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+prtstartts,participant_contact_information_survey,Participant Contact Survey Started Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+plcscmpdat,photopic_mars,Date procedure performed,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+plcscmpyn,photopic_mars,Contrast sensitivity test,checkbox,,,Contrast sensitivity test,SNOMED,410566008,Procedure,0.25
+plcsodeye,photopic_mars,OD Form 1 (eye),radio,L=Left eye|R=Right eye|B=Binocular,3,Which eye [PhenX],LOINC,64747-9,Observation,1
+plcsodeyev_rw1,photopic_mars,plcsodeyev_rw1,checkbox,plcsodeyev_rw1=OD Form 1: Row 1|C=C (0.04)|H=H (0.08)|V=V (0.12)|O=O (0.16)|S=S (0.20)|N=N (0.24),7,,,,,
+plcsodeyev_rw2,photopic_mars,OD Form 1: Row 2,checkbox,D=D (0.28)|S=S (0.32)|Z=Z (0.36)|N=N (0.40)|R=R (0.44)|K=K (0.48),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsodeyev_rw3,photopic_mars,OD Form 1: Row 3,checkbox,N=N (0.52)|D=D (0.56)|R=R (0.60)|H=H (0.64)|V=V (0.68)|Z=Z (0.72),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsodeyev_rw4,photopic_mars,OD Form 1: Row 4,checkbox,C=C (0.76)|S=S (0.80)|O=O (0.84)|N=N (0.88)|K=K (0.92)|H=H (0.96),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsodeyev_rw5,photopic_mars,OD Form 1: Row 5,checkbox,K=K (1.00)|N=N (1.04)|V=V (1.08)|D=D (1.12)|S=S (1.16)|R=R (1.20),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsodeyev_rw6,photopic_mars,OD Form 1: Row 6,checkbox,Z=Z (1.24)|R=R (1.28)|D=D (1.32)|K=K (1.36)|H=H (1.40)|O=O (1.44),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsodeyev_rw7,photopic_mars,OD Form 1: Row 7,checkbox,H=H (1.48)|Z=Z (1.52)|C=C (1.56)|V=V (1.60)|R=R (1.64)|K=K (1.68),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsodeyev_rw8,photopic_mars,OD Form 1: Row 8,checkbox,S=S (1.72)|C=C (1.76)|Z=Z (1.80)|D=D (1.84)|V=V (1.88)|O=O (1.92),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsodfcl,photopic_mars,OD: Value of final correct letter,text,,,Contrast sensitivity test,SNOMED,410566008,Procedure,0.25
+plcsodlog,photopic_mars,OD: Log Contrast Sensitivity,calc,,,Contrast sensitivity,SNOMED,251686008,Measurement,0.75
+plcsodmiss,photopic_mars,OD: Number of misses prior to stopping,text,,,Contrast sensitivity test,SNOMED,410566008,Procedure,0.25
+plcsoseye,photopic_mars,OS Form 2 (eye),radio,L=Left eye|R=Right eye|B=Binocular,3,Which eye [PhenX],LOINC,64747-9,Observation,1
+plcsoseyev_rw1,photopic_mars,OS Form 2: Row 1,checkbox,C=C (0.04)|H=H (0.08)|V=V (0.12)|O=O (0.16)|S=S (0.20)|N=N (0.24),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsoseyev_rw2,photopic_mars,OS Form 2: Row 2,checkbox,D=D (0.28)|S=S (0.32)|Z=Z (0.36)|N=N (0.40)|R=R (0.44)|K=K (0.48),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsoseyev_rw3,photopic_mars,OS Form 2: Row 3,checkbox,N=N (0.52)|D=D (0.56)|R=R (0.60)|H=H (0.64)|V=V (0.68)|Z=Z (0.72),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsoseyev_rw4,photopic_mars,OS Form 2: Row 4,checkbox,C=C (0.76)|S=S (0.80)|O=O (0.84)|N=N (0.88)|K=K (0.92)|H=H (0.96),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsoseyev_rw5,photopic_mars,OS Form 2: Row 5,checkbox,K=K (1.00)|N=N (1.04)|V=V (1.08)|D=D (1.12)|S=S (1.16)|R=R (1.20),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsoseyev_rw6,photopic_mars,OS Form 2: Row 6,checkbox,Z=Z (1.24)|R=R (1.28)|D=D (1.32)|K=K (1.36)|H=H (1.40)|O=O (1.44),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsoseyev_rw7,photopic_mars,OS Form 2: Row 7,checkbox,H=H (1.48)|Z=Z (1.52)|C=C (1.56)|V=V (1.60)|R=R (1.64)|K=K (1.68),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsoseyev_rw8,photopic_mars,OS Form 2: Row 8,checkbox,S=S (1.72)|C=C (1.76)|Z=Z (1.80)|D=D (1.84)|V=V (1.88)|O=O (1.92),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsosfcl,photopic_mars,OS: Value of final correct letter,text,,,Contrast sensitivity test,SNOMED,410566008,Procedure,0.25
+plcsoslog,photopic_mars,OS: Log Contrast Sensitivity,calc,,,Contrast sensitivity,SNOMED,251686008,Measurement,0.75
+plcsosmiss,photopic_mars,OS: Number of misses prior to stopping,text,,,Contrast sensitivity test,SNOMED,410566008,Procedure,0.25
+plcsoueye,photopic_mars,OU Form 3 (eye),checkbox,L=Left eye|R=Right eye|B=Binocular,3,Which eye [PhenX],LOINC,64747-9,Observation,1
+plcsoueyev_rw1,photopic_mars,OU Form 3: Row 1,checkbox,C=C (0.04)|H=H (0.08)|V=V (0.12)|O=O (0.16)|S=S (0.20)|N=N (0.24),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsoueyev_rw2,photopic_mars,OU Form 3: Row 2,checkbox,D=D (0.28)|S=S (0.32)|Z=Z (0.36)|N=N (0.40)|R=R (0.44)|K=K (0.48),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsoueyev_rw3,photopic_mars,OU Form 3: Row 3,checkbox,N=N (0.52)|D=D (0.56)|R=R (0.60)|H=H (0.64)|V=V (0.68)|Z=Z (0.72),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsoueyev_rw4,photopic_mars,OU Form 3: Row 4,checkbox,C=C (0.76)|S=S (0.80)|O=O (0.84)|N=N (0.88)|K=K (0.92)|H=H (0.96),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsoueyev_rw5,photopic_mars,OU Form 3: Row 5,checkbox,K=K (1.00)|N=N (1.04)|V=V (1.08)|D=D (1.12)|S=S (1.16)|R=R (1.20),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsoueyev_rw6,photopic_mars,OU Form 3: Row 6,checkbox,Z=Z (1.24)|R=R (1.28)|D=D (1.32)|K=K (1.36)|H=H (1.40)|O=O (1.44),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsoueyev_rw7,photopic_mars,OU Form 3: Row 7,checkbox,H=H (1.48)|Z=Z (1.52)|C=C (1.56)|V=V (1.60)|R=R (1.64)|K=K (1.68),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsoueyev_rw8,photopic_mars,OU Form 3: Row 8,checkbox,S=S (1.72)|C=C (1.76)|Z=Z (1.80)|D=D (1.84)|V=V (1.88)|O=O (1.92),6,Letter on line read by the patient [PhenX],LOINC,64843-6,Observation,0.5
+plcsoufcl,photopic_mars,OU: Value of final correct letter,text,,,Contrast sensitivity test,SNOMED,410566008,Procedure,0.25
+plcsoulog,photopic_mars,OU: Log Contrast Sensitivity,calc,,,Contrast sensitivity,SNOMED,251686008,Measurement,0.75
+plcsoumiss,photopic_mars,OU: Number of misses prior to stopping,text,,,Contrast sensitivity test,SNOMED,410566008,Procedure,0.25
+plcsreasn,photopic_mars,"If not completed, why? (explain)",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+plsc_crcid,photopic_mars,Interviewer code,text,,,,,N/A - operational variable,,
+bmi_vsorres,physical_assessment,BMI,calc,,,Body mass index,SNOMED,60621009,Measurement,1
+bp1_diabp_vsorres,physical_assessment,Diastolic (mmHg),text,,,Diastolic blood pressure,LOINC,2396814,Measurement,1
+bp1_sysbp_vsorres,physical_assessment,Systolic (mmHg),text,,,Systolic blood pressure,LOINC,2403450,Measurement,1
+bp2_diabp_vsorres,physical_assessment,Diastolic (mmHg),text,,,Diastolic blood pressure,LOINC,2396814,Measurement,1
+bp2_sysbp_vsorres,physical_assessment,Systolic (mmHg),text,,,Systolic blood pressure,LOINC,2403450,Measurement,1
+crcid_5,physical_assessment,Interviewer code,text,,,,,N/A - operational variable,,
+height_vsorres,physical_assessment,Height (cm),text,,,Body height,LOINC,8302-2,Measurement,1
+hip_vsorres,physical_assessment,Hip Circumference (inches),text,,,Hip circumference,SNOMED,284472007,Measurement,0.75
+paate,physical_assessment,How many hours since you last ate? (number of hours),text,,,Time of last food intake,SNOMED,301897001,Observation,0.5
+pacmpdat,physical_assessment,Date Assessment Preformed,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+pacmpyn,physical_assessment,Physical assessment,checkbox,,,Physical assessment,SNOMED,81375008,Procedure,
+pareasn,physical_assessment,"If not completed, why? (explain)",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+pulse_vsorres,physical_assessment,Heart Rate (bpm),text,,,Heart rate,SNOMED,364075005,Measurement,1
+pulse_vsorres_2,physical_assessment,Heart Rate (bpm),text,,,Heart rate,SNOMED,364075005,Measurement,1
+waist_vsorres,physical_assessment,Waist Circumference (inches),text,,,Waist circumference,SNOMED,276361009,Measurement,0.75
+weight_vsorres,physical_assessment,Weight (kilograms),text,,,Body weight,LOINC,29463-7,Measurement,1
+whr_vsorres,physical_assessment,Waist to Hip Ratio (WHR),calc,,,Waist to height ratio,SNOMED,8.45541E+14,Measurement,1
+crcid_prcon,preconsent_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+icf_c16468,preconsent_survey,"You have the option to continue to our informed consent document, which contains more details on the data to be collected, as well as your rights as a volunteer. You also have the option to request that a study team member call you to answer any questions you have, or choose not to participate and exit this website.",radio,,,,,N/A - operational variable,,
+precon_nd,preconsent_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+preconcmpdat,preconsent_survey,Pre-consent survey/form date (date survey/form opened),text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+preconcmpts,preconsent_survey,Pre-consent Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+preconstartts,preconsent_survey,Pre-consent Survey Started Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+crcid_18,procedures,Interviewer code,text,,,,,N/A - operational variable,,
+crcid_19,procedures,Technician ID,text,,,,,N/A - operational variable,,
+crcid_20,procedures,Technician ID,text,,,,,N/A - operational variable,,
+crcid_21,procedures,Technician ID,text,,,,,N/A - operational variable,,
+crcid_22,procedures,Technician ID,text,,,,,N/A - operational variable,,
+crcid_23,procedures,Technician ID,text,,,,,N/A - operational variable,,
+crcid_24,procedures,Technician ID,text,,,,,N/A - operational variable,,
+crcid_25,procedures,Technician ID,text,,,,,N/A - operational variable,,
+crcid_26,procedures,Technician ID,text,,,,,N/A - operational variable,,
+mocacmpdattim,procedures,Date time MoCA performed,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+mocacmpyn,procedures,Assessment using Montreal cognitive assessment,checkbox,,,Assessment using Montreal cognitive assessment,SNOMED,4.59661E+14,Procedure,1
+mocareasn,procedures,"If not performed, please explain why:",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+rtaccmpdattim,procedures,Date & time Angioplex - Cirrus 5000 performed,text,,,Date and time of scheduled task,LOINC,90118-1,Observation,0.5
+rtaccmpyn,procedures,Optical coherence tomography,checkbox,,,Optical coherence tomography,SNOMED,392010000,Procedure,0.75
+rtacreasn,procedures,"If not performed, please explain why:",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+rtekgcmpdattim,procedures,Date & time Cardiology - EKG - Pagewriter TC30 Cardiograp performed,text,,,Date and time of scheduled task,LOINC,90118-1,Observation,0.5
+rtekgcmpyn,procedures,"Electrocardiogram, routine ECG with at least 12 leads; with interpretation and report",checkbox,,,"Electrocardiogram, routine ECG with at least 12 leads; with interpretation and report",CPT4,93000,Procedure,0.75
+rtekgreasn,procedures,"If not performed, please explain why:",notes,,,Procedure not completed,SNOMED,1.78291E+14,Observation,0.5
+rtfliocmpdattim,procedures,Date & time FLIO performed,text,,,Date and time of scheduled task,LOINC,90118-1,Observation,0.5
+rtfliocmpyn,procedures,Fluorescence imaging of eye,checkbox,,,Fluorescence imaging of eye,SNOMED,827055000,Procedure,0.75
+rtflioreasn,procedures,"If not performed, please explain why:",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+rtfncmpdattim,procedures,Date & time Fundus - Edion performed,text,,,Date and time of scheduled task,LOINC,90118-1,Observation,0.5
+rtfncmpyn,procedures,Confocal scanning laser ophthalmoscopy,checkbox,,,Confocal scanning laser ophthalmoscopy,SNOMED,391999003,Procedure,0.75
+rtfnocmpdattim,procedures,Date & time Fundus - Optomed performed,text,,,Date and time of scheduled task,LOINC,90118-1,Observation,0.5
+rtfnocmpyn,procedures,Ocular fundus photography,checkbox,,,Ocular fundus photography,SNOMED,20067007,Procedure,0.75
+rtfnoreasn,procedures,"If not performed, please explain why:",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+rtfnreasn,procedures,"If not performed, please explain why:",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+rthracmpdattim,procedures,Date & time OCT & OCTA - Spectralis HRA OCT performed,text,,,Date and time of scheduled task,LOINC,90118-1,Observation,0.5
+rthracmpyn,procedures,Optical coherence tomography,checkbox,,,Optical coherence tomography,SNOMED,392010000,Procedure,0.75
+rthrareasn,procedures,"If not performed, please explain why:",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+rtm2cmpdattim,procedures,Date & time OCT & OCTA - Maestro2 performed,text,,,Date and time of scheduled task,LOINC,90118-1,Observation,0.5
+rtm2cmpyn,procedures,Optical coherence tomography,checkbox,,,Optical coherence tomography,SNOMED,392010000,Procedure,0.75
+rtm2reasn,procedures,"If not performed, please explain why:",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+rtoctcmpdattim,procedures,Date & time OCT - Triton OCT performed,text,,,Date and time of scheduled task,LOINC,90118-1,Observation,0.5
+rtoctcmpyn,procedures,Optical coherence tomography,checkbox,,,Optical coherence tomography,SNOMED,392010000,Procedure,0.75
+rtoctreasn,procedures,"If not performed, please explain why:",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+food_insecurity_change_diet_frequency,px_food_insecurity_survey,"How often did this happen - almost every month, some months but not every month, or in only 1 or 2 months?",radio,1=Almost every month|2=Some months but not every month|3=Only 1 or 2 months|555=Don't know|777=Prefer not to say,5,"In the last 12 months, how often did you cut the size of your meals or skip meals because there wasn't enough money for food [U.S. FSS]",LOINC,95250-7,Observation,1
+px270301_metadata,px_food_insecurity_survey,PhenX MetaData,text,,,,,,,
+pxfi1,px_food_insecurity_survey,"The first statement is, ""The food that (I/we) bought just didn't last, and (I/we) didn't have money to get more."" Was that often, sometimes, or never true for (you/your household) in the last 12 months?",radio,1=Often true|2=Sometimes true|0=Never true|555=Don't know|777=Prefer not to say,5,Within the past 12 months the food we bought just didn't last and we didn't have money to get more [U.S. FSS],LOINC,88123-5,Observation,1
+pxfi2,px_food_insecurity_survey,"""(I/we) couldn't afford to eat balanced meals."" Was that often, sometimes, or never true for (you/your household) in the last 12 months?",radio,1=Often true|2=Sometimes true|0=Never true|555=Don't know|777=Prefer not to say,5,"In the last 12 months, we couldn't afford to eat balanced meals [U.S. FSS]",LOINC,95248-1,Observation,1
+pxfi3,px_food_insecurity_survey,"In the last year, did you and/or other adults in your household ever cut the size of your meals or skip meals because there wasn't enough money for food?",radio,1=Yes|0=No|555=Don't know|777=Prefer not to say,4,"In the last 12 months, did you ever cut the size of your meals or skip meals because there wasn't enough money for food [U.S. FSS]",LOINC,95249-9,Observation,1
+pxfi4,px_food_insecurity_survey,"In the last 12 months, did you ever eat less than you felt you should because there wasn't enough money to buy food?",radio,1=Yes|0=No|555=Don't know|777=Prefer not to say,4,"In the last 12 months, did you ever eat less than you felt you should because there wasn't enough money for food [U.S. FSS]",LOINC,95251-5,Observation,1
+pxfi5,px_food_insecurity_survey,"In the last 12 months, were you ever hungry but didn't eat because you couldn't afford enough food?",radio,1=Yes|0=No|555=Don't know|777=Prefer not to say,4,"In the last 12 months, were you ever hungry but didn't eat because there wasn't enough money for food [U.S. FSS]",LOINC,95252-3,Observation,1
+pxfi_crcid,px_food_insecurity_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+pxfi_nd,px_food_insecurity_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+pxfistartts,px_food_insecurity_survey,PhenX Food Insecurity Survey Started Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+pxsficmpdat,px_food_insecurity_survey,PhenX Food Insecurity survey date,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+pxsficmpts,px_food_insecurity_survey,PhenX Food Insecurity Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+px291201_metadata,px_neighborhood_environment_survey,PhenX Neighborhood Environment MetaData,text,,,,,,,
+pxne1,px_neighborhood_environment_survey,What is the main type of housing in your neighborhood?,radio,"1=Detached single-family housing|2=Townhouses, row houses, apartments, or condos of 2-3 stories|3=Mix of single-family residences and townhouses, row houses, apartments or condos|4=Apartments or condos of 4-12 stories|5=Apartments or condos of more than 12 stories|555=Don't know/Not sure|777=Prefer not to say",7,What is the main type of housing in your neighborhood [PhenX],LOINC,66356-7,Observation,1
+pxne10,px_neighborhood_environment_survey,There are many interesting things to look at while walking in my neighborhood. Would you say you...,radio,1=Strongly disagree|2=Somewhat disagree|3=Somewhat agree|4=Strongly agree|555=Don't know/Not sure|777=Prefer not to say,6,,PhenX,,,
+pxne11,px_neighborhood_environment_survey,"How many motor vehicles in working order (e.g., cars, trucks, motorcycles) are there at your household?",dropdown,0=None|6=6 or more|555=Don't know / unsure|777=Prefer not to say,4,,PhenX,,,
+pxne12,px_neighborhood_environment_survey,There are many four-way intersections in my neighborhood. Would you say that you...,radio,1=Strongly disagree|2=Somewhat disagree|3=Somewhat agree|4=Strongly agree|88=There are no streets or roads in my neighborhood|555=Don't know/Not sure|777=Prefer not to say,7,,PhenX,,,
+pxne13,px_neighborhood_environment_survey,"The sidewalks in my neighborhood are well maintained (paved, with few cracks) and not obstructed. Would you say that you...",radio,1=Strongly disagree|2=Somewhat disagree|3=Somewhat agree|4=Strongly agree|555=Don't know/Not sure|777=Prefer not to say,6,,PhenX,,,
+pxne14,px_neighborhood_environment_survey,Places for bicycling (such as bike paths) in and around my neighborhood are well maintained and not obstructed. Would you say that you...,radio,1=Strongly disagree|2=Somewhat disagree|3=Somewhat agree|4=Strongly agree|555=Don't know/Not sure|777=Prefer not to say,6,,PhenX,,,
+pxne15,px_neighborhood_environment_survey,There is so much traffic on the streets that it makes it difficult or unpleasant to ride a bicycle in my neighborhood. Would you say that you...,radio,1=Strongly disagree|2=Somewhat disagree|3=Somewhat agree|4=Strongly agree|555=Don't know/Not sure|777=Prefer not to say,6,,PhenX,,,
+pxne16,px_neighborhood_environment_survey,The crime rate in my neighborhood makes it unsafe to go on walks during the day. Would you say that you...,radio,1=Strongly disagree|2=Somewhat disagree|3=Somewhat agree|4=Strongly agree|555=Don't know/Not sure|777=Prefer not to say,6,,PhenX,,,
+pxne17,px_neighborhood_environment_survey,There are many places to go within easy walking distance of my home. Would you say that you...,radio,1=Strongly disagree|2=Somewhat disagree|3=Somewhat agree|4=Strongly agree|555=Don't know/Not sure|777=Prefer not to say,6,,PhenX,,,
+pxne2,px_neighborhood_environment_survey,"Many shops, stores, markets or other places to buy things I need are within easy walking distance of my home. Would you say that you...",radio,1=Strongly disagree|2=Somewhat disagree|3=Somewhat agree|4=Strongly agree|555=Don't know/Not sure|777=Prefer not to say,6,"Many shops, stores, markets, or other places to buy things I need are within easy walking distance of my home [PhenX]",LOINC,66357-5,Observation,1
+pxne3,px_neighborhood_environment_survey,"It is within a 10-15 minute walk to a transit stop (such as bus, train, trolley, or tram) from my home. Would you say that you...",radio,1=Strongly disagree|2=Somewhat disagree|3=Somewhat agree|4=Strongly agree|555=Don't know/Not sure|777=Prefer not to say,6,"It is within a 10-15 minute walk to a transit stop, such as bus, train, trolley, or tram, from my home [PhenX]",LOINC,66358-3,Observation,1
+pxne4,px_neighborhood_environment_survey,There are sidewalks on most of the streets in my neighborhood. Would you say that you...,radio,1=Strongly disagree|2=Somewhat disagree|3=Somewhat agree|4=Strongly agree|88=Does not apply to my neighborhood|555=Don't know/Not sure|777=Prefer not to say,7,There are sidewalks on most of the streets in my neighborhood [PhenX],LOINC,66359-1,Observation,1
+pxne5,px_neighborhood_environment_survey,"There are facilities to bicycle in or near my neighborhood, such as special lanes, separate paths or trails, shared use paths for cycles and pedestrians. Would you say that you...",radio,1=Strongly disagree|2=Somewhat disagree|3=Somewhat agree|4=Strongly agree|88=Does not apply to my neighborhood|555=Don't know/Not sure|777=Prefer not to say,7,"There are facilities to bicycle in or near my neighborhood, such as special lanes, separate paths or trails, shared use paths for cycles and pedestrians [PhenX]",LOINC,66360-9,Observation,1
+pxne6,px_neighborhood_environment_survey,"My neighborhood has several free or low cost recreation facilities, such as parks, walking trails, bike paths, recreation centers, playgrounds, public swimming pools, etc. Would you say that you...",radio,1=Strongly disagree|2=Somewhat disagree|3=Somewhat agree|4=Strongly agree|555=Don't know/Not sure|777=Prefer not to say,6,"My neighborhood has several free or low-cost recreation facilities, such as parks, walking trails, bike paths, recreation centers, playgrounds, public swimming pools, etc [PhenX]",LOINC,66361-7,Observation,1
+pxne7,px_neighborhood_environment_survey,The crime rate in my neighborhood makes it unsafe to go on walks at night. Would you say that you...,radio,1=Strongly disagree|2=Somewhat disagree|3=Somewhat agree|4=Strongly agree|555=Don't know/Not sure|777=Prefer not to say,6,The crime rate in my neighborhood makes it unsafe to go on walks at night [PhenX],LOINC,66362-5,Observation,1
+pxne8,px_neighborhood_environment_survey,There is so much traffic on the streets that it makes it difficult or unpleasant to walk in my neighborhood. Would you say that you...,radio,1=Strongly disagree|2=Somewhat disagree|3=Somewhat agree|4=Strongly agree|88=There are no streets or roads in my neighborhood|555=Don't know/Not sure|777=Prefer not to say,7,,PhenX,,,
+pxne9,px_neighborhood_environment_survey,"I see many people being physically active in my neighborhood doing things like walking, jogging, cycling, or playing sports and active games. Would you say that you...",radio,1=Strongly disagree|2=Somewhat disagree|3=Somewhat agree|4=Strongly agree,4,,PhenX,,,
+pxne9_,px_neighborhood_environment_survey,pxne9_,radio,555=Don't know/Not sure|777=Prefer not to say,2,,,,,
+pxne_crcid,px_neighborhood_environment_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+pxne_nd,px_neighborhood_environment_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+pxnecmpdat,px_neighborhood_environment_survey,PhenX Neighborhood Enviroment survey date,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+pxnecmpts,px_neighborhood_environment_survey,PhenX Neighborhood Environment Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+pxnestartts,px_neighborhood_environment_survey,PhenX Neighborhood Enviroment Survey Started Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+pdrx9,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you? 1 = Not at all stressful; 6 = Extremely stressful",radio,,,,PhenX,,,
+px281501_metadata,px_racial_ethnic_discrimination_survey,PhenX Racial/Ethnic MetaData,text,,,,,,,
+pxrd1,px_racial_ethnic_discrimination_survey,How often in the past year?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd10,px_racial_ethnic_discrimination_survey,How often in the past year?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd11,px_racial_ethnic_discrimination_survey,How often in your entire life?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd12,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you? 1 = Not at all stressful; 6 = Extremely stressful",radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,PhenX,,,
+pxrd13,px_racial_ethnic_discrimination_survey,How often in the past year?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd14,px_racial_ethnic_discrimination_survey,How often in your entire life?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd15,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you? 1 = Not at all stressful; 6 = Extremely stressful",radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,PhenX,,,
+pxrd16,px_racial_ethnic_discrimination_survey,How often in the past year?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd17,px_racial_ethnic_discrimination_survey,How often in your entire life?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd18,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you? 1 = Not at all stressful; 6 = Extremely stressful",radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,PhenX,,,
+pxrd19,px_racial_ethnic_discrimination_survey,How often in the past year?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd2,px_racial_ethnic_discrimination_survey,How often in your entire life?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd20,px_racial_ethnic_discrimination_survey,How often in your entire life?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd21,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you? 1 = Not at all stressful; 6 = Extremely stressful",radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,PhenX,,,
+pxrd22,px_racial_ethnic_discrimination_survey,How often in the past year?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd23,px_racial_ethnic_discrimination_survey,How often in your entire life?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd24,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you? 1 = Not at all stressful; 6 = Extremely stressful",radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,PhenX,,,
+pxrd25,px_racial_ethnic_discrimination_survey,How often in the past year?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd26,px_racial_ethnic_discrimination_survey,How often in your entire life?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd27,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you? 1 = Not at all stressful; 6 = Extremely stressful",radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,PhenX,,,
+pxrd28,px_racial_ethnic_discrimination_survey,How often in the past year?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd29,px_racial_ethnic_discrimination_survey,How often in your entire life?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd3,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you? 1 = Not at all stressful; 6 = Extremely stressful",radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,PhenX,,,
+pxrd30,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you? 1 = Not at all stressful; 6 = Extremely stressful",radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,PhenX,,,
+pxrd31,px_racial_ethnic_discrimination_survey,How often in the past year?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd32,px_racial_ethnic_discrimination_survey,How often in your entire life?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd33,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you? 1 = Not at all stressful; 6 = Extremely stressful",radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,PhenX,,,
+pxrd34,px_racial_ethnic_discrimination_survey,How often in the past year?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd35,px_racial_ethnic_discrimination_survey,How often in your entire life?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd36,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you? 1 = Not at all stressful; 6 = Extremely stressful",radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,PhenX,,,
+pxrd37,px_racial_ethnic_discrimination_survey,How often in the past year?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd38,px_racial_ethnic_discrimination_survey,How often in your entire life?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd39,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you? 1 = Not at all stressful; 6 = Extremely stressful",radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,PhenX,,,
+pxrd4,px_racial_ethnic_discrimination_survey,How often in the past year?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd40,px_racial_ethnic_discrimination_survey,How often in the past year?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd41,px_racial_ethnic_discrimination_survey,How often in your entire life?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd42,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you? 1 = Not at all stressful; 6 = Extremely stressful",radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,PhenX,,,
+pxrd43,px_racial_ethnic_discrimination_survey,How often in the past year?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd44,px_racial_ethnic_discrimination_survey,How often in your entire life?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd45,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you? 1 = Not at all stressful; 6 = Extremely stressful",radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,PhenX,,,
+pxrd46,px_racial_ethnic_discrimination_survey,How often in the past year?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd47,px_racial_ethnic_discrimination_survey,How often in your entire life?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd48,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you? 1 = Not at all stressful; 6 = Extremely stressful",radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,PhenX,,,
+pxrd49,px_racial_ethnic_discrimination_survey,How often in the past year?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd5,px_racial_ethnic_discrimination_survey,How often in your entire life?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd50,px_racial_ethnic_discrimination_survey,How often in your entire life?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd51,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you? 1 = Not at all stressful; 6 = Extremely stressful",radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,PhenX,,,
+pxrd52,px_racial_ethnic_discrimination_survey,In the Past Year?,radio,1=The Same as it is now|2=A little different|3=Different in a few ways|4=Different in a lot of ways|5=Different in most ways|6=Totally different|777=Prefer not to say,7,,PhenX,,,
+pxrd53,px_racial_ethnic_discrimination_survey,In your entire life?,radio,1=The Same as it is now|2=A little different|3=Different in a few ways|4=Different in a lot of ways|5=Different in most ways|6=Totally different|777=Prefer not to say,7,,PhenX,,,
+pxrd54,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you? 1 = Not at all stressful; 6 = Extremely stressful",radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,PhenX,,,
+pxrd6,px_racial_ethnic_discrimination_survey,"On a scale of 1-6, how stressful was this for you?    1= Not at all stressful; 6 = Extremely stressful",radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,PhenX,,,
+pxrd7,px_racial_ethnic_discrimination_survey,How often in the past year?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd8,px_racial_ethnic_discrimination_survey,How often in your entire life?,radio,1=Never|2=Once in a while|3=Sometimes|4=A lot|5=Most of the time|6=Almost all the time|777=Prefer not to say,7,,PhenX,,,
+pxrd9,px_racial_ethnic_discrimination_survey,pxrd9,radio,1=1 - Not at all stressful|6=6 - Extremely stressful|777=Prefer not to say,3,,,,,
+pxrd_crcid,px_racial_ethnic_discrimination_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+pxrd_nd,px_racial_ethnic_discrimination_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+pxrdcmpdat,px_racial_ethnic_discrimination_survey,PhenX Racial/Ethnic Discrimination survey date,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+pxrdcmpts,px_racial_ethnic_discrimination_survey,PhenX Racial/Ethnic Discrimination Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+pxrdstartts,px_racial_ethnic_discrimination_survey,PhenX Racial/Ethnic Discrimination Survey Started Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+px011002_metadata,px_sdoh_combined_survey,PhenX Education Attainment MetaData,text,,,,,,,
+px11502_metadata,px_sdoh_combined_survey,PhenX Health Insurance MetaData,text,,,,,,,
+px270101_metadata,px_sdoh_combined_survey,PhenX Health Care Access MetaData,text,,,,,,,
+px270201_metadata,px_sdoh_combined_survey,PhenX English Proficiency MetaData,text,,,,,,,
+px280301_metadata,px_sdoh_combined_survey,PhenX Job Security MetaData ,text,,,,,,,
+px280801_metadata,px_sdoh_combined_survey,PhenX Prescriptions Affordability MetaData ,text,,,,,,,
+px280901_metadata,px_sdoh_combined_survey,PhenX Healthcare Discrimination MetaData,text,,,,,,,
+px281401_metadata,px_sdoh_combined_survey,PhenX Housing Insecurity MetaData ,text,,,,,,,
+pxahc1,px_sdoh_combined_survey,About how long has it been since you last saw a doctor or other health care professional about your health?,radio,0=Never|1=Within the past year (anytime less than 12 months ago)|2=Within the last 2 years (1 year but less than 2 years ago)|3=Within the last 3 years (2 years but less than 3 years ago)|4=Within the last 5 years (3 years but less than 5 years ago)|5=Within the last 10 years (5 years but less than 10 years ago)|6=10 years ago or more|777=Prefer not to say|555=Don't know,9,Date of last examination,SNOMED,840643003,Observation,0.5
+pxahc10,px_sdoh_combined_survey,"During the past 12 months, was there any time when you needed medical care, but DID NOT GET IT because of the cost?",radio,1=Yes|0=No|777=Prefer not to say|555=Don't know,4,,PhenX,,,
+pxahc2,px_sdoh_combined_survey,"Was this a wellness visit, physical, or general purpose check-up?",radio,1=Yes|0=No|555=Don't know|777=Prefer not to say,4,,PhenX,,,
+pxahc3,px_sdoh_combined_survey,"About how long has it been since you last saw a doctor or other health professional for a wellness visit, physical, or general purpose check-up?",radio,0=Never|1=Within the past year (anytime less than 12 months ago)|2=Within the last 2 years (1 year but less than 2 years ago)|3=Within the last 3 years (2 years but less than 3 years ago)|4=Within the last 5 years (3 years but less than 5 years ago)|5=Within the last 10 years (5 years but less than 10 years ago)|6=10 years ago or more|777=Prefer not to say|555=Don't know,9,,PhenX,,,
+pxahc4,px_sdoh_combined_survey,Is there a place that you USUALLY go to if you are sick and need health care? ,radio,1=Yes|0=There is NO place|2=There is MORE THAN ONE place|777=Prefer not to say|555=Don't know,5,,PhenX,,,
+pxahc5,px_sdoh_combined_survey,"What kind of place is it/do you go to most often? A doctor's office or health center is a place where you see the same doctor or the same group of doctors every visit, where you usually need to make an appointment ahead of time, and where your medical records are on file.Urgent care centers and clinics in a drug store or grocery store are places where you do not need to make an appointment ahead of time, and do not usually see the same health care provider at each visit.",radio,"1=A doctor's office or health center|2=Walk-in clinic, urgent care center, or retail clinic in a pharmacy or grocery store|3=Emergency room|4=A VA Medical Center or VA outpatient clinic|5=Some other place|6=Does not go to one place most often|777=Prefer not to say|555=Don't know",8,,PhenX,,,
+pxahc6,px_sdoh_combined_survey,"During the past 12 months, how many times have you gone to an urgent care center or a clinic in a drug store or grocery store about your health?Urgent care centers and clinics in drug stores or grocery stores are places where you do not need to make an appointment ahead of time, and do not usually see the same health care provider at each visit. This is different from a hospital emergency room.",dropdown,0=None|1=1 - 10 times|2=11 - 19 times|3=20 - 29 times|4=30 - 39 times|5=40 - 49 times|6=50 or more times|777=Prefer not to say|555=Don't know,9,,PhenX,,,
+pxahc7,px_sdoh_combined_survey,"During the past 12 months, how many times have you gone to a hospital emergency room about your health?  *This includes emergency room visits that resulted in a hospital admission.",dropdown,0=None|1=1 - 10 times|2=11 - 19 times|3=20 - 29 times|4=30 - 39 times|5=40 - 49 times|6=50 or more times|777=Prefer not to say|555=Don't know,9,,PhenX,,,
+pxahc8,px_sdoh_combined_survey,"During the past 12 months, have you been hospitalized overnight? (Do not include an overnight stay in the emergency room)",radio,1=Yes|0=No|777=Prefer not to say|555=Don't know,4,,PhenX,,,
+pxahc9,px_sdoh_combined_survey,"During the past 12 months, have you DELAYED getting medical care because of the cost?",radio,1=Yes|0=No|777=Prefer not to say|555=Don't know,4,,PhenX,,,
+pxdhc1,px_sdoh_combined_survey,You are treated with less courtesy than other people.,radio,1=Never|2=Rarely|3=Sometimes|4=Most of the time|5=Always|777=Prefer not to say,6,You have been treated with less courtesy than other people [PhenX],LOINC,67586-8,Observation,0.75
+pxdhc2,px_sdoh_combined_survey,You are treated with less respect than other people.,radio,1=Never|2=Rarely|3=Sometimes|4=Most of the time|5=Always|777=Prefer not to say,6,You have been treated with less respect than other people [PhenX],LOINC,67587-6,Observation,0.75
+pxdhc3,px_sdoh_combined_survey,You receive poorer service than others.,radio,1=Never|2=Rarely|3=Sometimes|4=Most of the time|5=Always|777=Prefer not to say,6,How often do you receive poorer service than others when you go to a doctor's office or other health care provider?,PPI,sdoh_dms_3,Observation,0.75
+pxdhc4,px_sdoh_combined_survey,A doctor or nurse acts as if he or she thinks you are not smart.,radio,1=Never|2=Rarely|3=Sometimes|4=Most of the time|5=Always|777=Prefer not to say,6,How often does a doctor or nurse act as if he or she thinks you are not smart when you go to a doctor's office or other health care provider?,PPI,sdoh_dms_4,Observation,0.75
+pxdhc5,px_sdoh_combined_survey,A doctor or nurse acts as if he or she is afraid of you.,radio,1=Never|2=Rarely|3=Sometimes|4=Most of the time|5=Always|777=Prefer not to say,6,How often does a doctor or nurse act as if he or she is afraid of you when you go to a doctor's office or other health care provider?,PPI,sdoh_dms_5,Observation,0.75
+pxdhc6,px_sdoh_combined_survey,A doctor or nurse acts as if he or she is better than you.,radio,1=Never|2=Rarely|3=Sometimes|4=Most of the time|5=Always|777=Prefer not to say,6,How often does a doctor or nurse act as if he or she is better than you when you go to a doctor's office or other health care provider?,PPI,sdoh_dms_7,Observation,0.75
+pxdhc7,px_sdoh_combined_survey,You feel like a doctor or nurse is not listening to what you were saying,radio,1=Never|2=Rarely|3=Sometimes|4=Most of the time|5=Always|777=Prefer not to say,6,How often do you feel like a doctor or nurse is not listening to what you were saying. when you go to a doctor's office or other health care provider?,PPI,sdoh_dms_6,Observation,0.75
+pxed1,px_sdoh_combined_survey,What is the highest grade or level of school you have completed or the highest degree you have received?,dropdown,"0=NEVER ATTENDED/KINDERGARTEN ONLY|1=1ST Grade|2=2ND Grade|3=3RD Grade|4=4TH Grade|5=5TH Grade|6=6TH Grade|7=7TH Grade|8=8TH Grade|9=9TH Grade|10=10TH Grade|11=11TH Grade|12=12TH Grade, No diploma|13=High School Graduate|14=GED or Equivalent|15=Some College, No degree|16=Associate Degree: Occupational, Technical, or Vocational Program|17=Associate Degree: Academic Program|18=Bachelor's Degree (Example: BA, AB, BS, BBA)|19=Master's Degree (Example: MA, MS, MEng, MEd, MBA)|20=Professional School Degree (Example: MD, DDS, DVM, JD)|21=Doctoral Degree (Example: PhD, EdD)|777=Prefer not to say|555=Don't know",24,What is the highest grade or level of school you have completed or the highest degree you have received [NHANES],LOINC,63504-5,Observation,1
+pxep1,px_sdoh_combined_survey,Is English your first language?,radio,1=Yes|0=No|777=Prefer not to say,3,Language.primary is English,LOINC,52553-5,Observation,0.75
+pxep2,px_sdoh_combined_survey,Do you speak another language at home?,radio,1=Yes|0=No|777=Prefer not to say,3,Language other than English,LOINC,LA30188-9,Meas Value,0.75
+pxep3,px_sdoh_combined_survey,"Since you speak a language other than English at home, we are interested in your own opinion of how well you speak English. Would you say you speak English...?",radio,1=Very well|2=Well|3=Not well|0=Not at all|777=Prefer not to say|555=Don't know,6,How well do you speak English [NLAAS],LOINC,66680-0,Observation,1
+pxhi1,px_sdoh_combined_survey,What is your living situation today?,radio,"1=I have a steady place to live|2=I have a place to live today, but I am worried about losing it in the future|0=I do not have a steady place to live (I am temporarily staying with others, in a hotel, in a shelter, living outside on the street, on a beach, in a car, abandoned building, bus or train station, or in a park)|777=Prefer not to say",4,Housing status,PhenX,71802-3,Observation,0.5
+pxhi2,px_sdoh_combined_survey,Think about the place you live. Do you have problems with any of the following? CHOOSE ALL THAT APPLY,checkbox,"1=Pests such as bugs, ants, or mice|2=Mold|3=Lead paint or pipes|4=Lack of heat|5=Oven or stove not working|6=Smoke detectors missing or not working|7=Water leaks|8=None of the above|777=Prefer not to say",9,,PhenX,,,
+pxhic1,px_sdoh_combined_survey,Insurance through a current or former employer or union (of yours or another family member's). This would include COBRA coverage.,radio,1=Covered|0=Not Covered|999=Not Sure|777=Prefer not to say,4,PhenX - health insurance coverage protocol 011501,LOINC,63066-5,Measurement,0.5
+pxhic2,px_sdoh_combined_survey,"Insurance purchased directly from an insurance company (by you or another family member). This would include coverage purchased through an exchange or marketplace, such as HealthCare.gov",radio,1=Covered|0=Not Covered|999=Not Sure|777=Prefer not to say,4,PhenX - health insurance coverage protocol 011501,LOINC,63066-5,Measurement,0.5
+pxhic3,px_sdoh_combined_survey,"Medicare, for people 65 and older, or people with certain disabilities.",radio,1=Covered|0=Not Covered|999=Not Sure|777=Prefer not to say,4,PhenX - health insurance coverage protocol 011501,LOINC,63066-5,Measurement,0.5
+pxhic4,px_sdoh_combined_survey,"Medicaid, Medical Assistance (MA), the Children's Health Insurance Program (CHIP), or any kind of state or government-sponsored assistance. plan based on income or a disability.",radio,1=Covered|0=Not Covered|999=Not Sure|777=Prefer not to say,4,PhenX - health insurance coverage protocol 011501,LOINC,63066-5,Measurement,0.5
+pxhic5,px_sdoh_combined_survey,"TRICARE or other military health care, including VA health care.",radio,1=Covered|0=Not Covered|999=Not Sure|777=Prefer not to say,4,PhenX - health insurance coverage protocol 011501,LOINC,63066-5,Measurement,0.5
+pxhic6,px_sdoh_combined_survey,Indian Health Service.,radio,1=Covered|0=Not Covered|999=Not Sure|777=Prefer not to say,4,PhenX - health insurance coverage protocol 011501,LOINC,63066-5,Measurement,0.5
+pxhic7,px_sdoh_combined_survey,Any other type of health insurance coverage or health coverage plan,radio,1=Covered|0=Not Covered|999=Not Sure|777=Prefer not to say,4,PhenX - health insurance coverage protocol 011501,LOINC,63066-5,Measurement,0.5
+pxhic8,px_sdoh_combined_survey,"Does this mean you currently have no health insurance or health coverage plan? In answering this question, please exclude plans that pay for only one type of service (such as, nursing home care, accidents, family planning, or dental care) and plans that only provide extra cash when hospitalized).",radio,0=I do NOT have health insurance|1=I HAVE some kind of health insurance|777=Prefer not to say,3,PhenX - health insurance coverage protocol 011501,LOINC,63066-5,Measurement,0.5
+pxhic9,px_sdoh_combined_survey,What type of health insurance do you have?,text,,,PhenX - health insurance coverage protocol 011501,LOINC,63066-5,Measurement,0.5
+pxji1,px_sdoh_combined_survey,"Thinking about the next 12 months, how likely do you think it is that you will lose your job or be laid off?",radio,1=Very likely|2=Fairly likely|3=Not too likely|4=Not at all likely|5=Will be leaving labor force voluntarily|555=Don't know|777=Prefer not to say|0=Not applicable,8,,PhenX,PX280301010000,,
+pxji2,px_sdoh_combined_survey,"About how easy would it be for you to find a job with another employer with approximately the same income and fringe benefits you now have? Would you say very easy, somewhat easy, or not easy at all?",radio,1=Very easy|2=Somewhat easy|3=Not easy at all|555=Don't know|777=Prefer not to say|0=Not applicable,6,,PhenX,PX280301020000,,
+pxpa1,px_sdoh_combined_survey,"In the last 12 months, have you delayed getting prescription medicines because of worry about the cost?",radio,1=Yes|0=No|777=Prefer not to say|555=Don't know,4,,PhenX,,,
+pxpa2,px_sdoh_combined_survey,Did any other person in your household delay getting prescription medicines because of worry about the cost?,radio,1=Yes|0=No|777=Prefer not to say|555=Don't know,4,,PhenX,,,
+pxpa3,px_sdoh_combined_survey,"In the last 12 months, was there any time when you needed prescription medicines, but did not get them because you couldn't afford it?",radio,1=Yes|0=No|777=Prefer not to say|555=Don't know,4,,PhenX,,,
+pxpa4,px_sdoh_combined_survey,"In the last 12 months, was there any time when anyone else in your household needed prescription medicines, but did not get them because you/they couldn't afford it?",radio,1=Yes|0=No|777=Prefer not to say|555=Don't know,4,,PhenX,,,
+pxsdoh_crcid,px_sdoh_combined_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+pxsdoh_nd,px_sdoh_combined_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+pxsdohcmpdat,px_sdoh_combined_survey,PhenX SDOH survey date,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+pxsdohcmpts,px_sdoh_combined_survey,PhenX SDOH Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+pxsdohstartts,px_sdoh_combined_survey,PhenX SDOH Survey Started Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+rec_crcid,recruitment_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+reccmpdat,recruitment_survey,Recruitment survey date (date survey/form opened),text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+reccmpts,recruitment_survey,Recruitment Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+recruit_nd,recruitment_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+recstartts,recruitment_survey,Recruitment Survey Started Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+scrn_intst1,recruitment_survey,Are you interested to learn if you're eligible for our research study?,radio,,,,,N/A - operational variable,,
+age,recruitment_survey_management,Age,calc,,,Age,SNOMED,397669002,Observation,1
+consent_alert_trigger,recruitment_survey_management,Move participant forward to Consent,checkbox,,,,,N/A - operational variable,,
+mgmtdat,recruitment_survey_management,Date initial mailing to be sent,text,,,,,N/A - operational variable,,
+screen_alert_trigger,recruitment_survey_management,FAQ Follow Up Move participant forward to Screening,checkbox,,,,,N/A - operational variable,,
+siteid,recruitment_survey_management,Site,text,,,Site,SNOMED,10546003,Observation,1
+stop_srvy,recruitment_survey_management,Cancel survey invitations,checkbox,,,,,N/A - operational variable,,
+crcid_rt,retinal_imaging_v2,crcid_rt,text,=Examiner Initials,1,,,,,
+rt_cmt,retinal_imaging_v2,rt_cmt,notes,=Comments,1,,,,,
+rt_dat,retinal_imaging_v2,rt_dat,text,=Assessment Date,1,,,,,
+rtci_odd1,retinal_imaging_v2,Cirrus-Disc Cube-200x200-OCT,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtci_odd2,retinal_imaging_v2,Cirrus-Disc 6x6-OCTA,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtci_odm1,retinal_imaging_v2,Cirrus-Mac Cube-512x128-OCT,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtci_odm2,retinal_imaging_v2,Cirrus-Macula 6x6-OCTA,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtci_osd1,retinal_imaging_v2,Cirrus-Disc Cube-200x200-OCT,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtci_osd2,retinal_imaging_v2,Cirrus-Disc 6x6-OCTA,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtci_osm1,retinal_imaging_v2,Cirrus-Mac Cube-512x128-OCT,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtci_osm2,retinal_imaging_v2,Cirrus-Macula 6x6-OCTA,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtei_odfaf,retinal_imaging_v2,Eidon-UWF Central-FAF,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtei_odir,retinal_imaging_v2,Eidon-UWF Central-IR,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtei_osfaf,retinal_imaging_v2,Eidon-UWF Central-FAF,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtei_osir,retinal_imaging_v2,Eidon-UWF Central-IR,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtfl_od,retinal_imaging_v2,FLIO-Mac-HS,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtfl_os,retinal_imaging_v2,FLIO-Mac-HS,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtma_odm,retinal_imaging_v2,M2-3D Macula 6x6-OCT,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtma_odm1,retinal_imaging_v2,M2-Mac 6x6-360x360-(rep3)-OCTA,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtma_odw,retinal_imaging_v2,M2-3D Wide(H) 12x9-OCT,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtma_osm,retinal_imaging_v2,M2-3D Macula 6x6-OCT,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtma_osm1,retinal_imaging_v2,M2-Mac 6x6-360x360-(rep3)-OCTA,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtma_osw,retinal_imaging_v2,M2-3D Wide(H) 12x9-OCT,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtop_odd,retinal_imaging_v2,OptoMed-Disc centered-CFP,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtop_odm,retinal_imaging_v2,OptoMed-Mac centered-CFP,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtop_osd,retinal_imaging_v2,OptoMed-Disc centered-CFP,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtop_osm,retinal_imaging_v2,OptoMed-Mac centered-CFP,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtsm_odc,retinal_imaging_v2,Eidon-UWF Central-CFP,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtsm_odm,retinal_imaging_v2,Eidon-Create Mosaic Image-CFP,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtsm_odn,retinal_imaging_v2,Eidon-UWF Nasal-CFP,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtsm_odt,retinal_imaging_v2,Eidon-UWF Temporal-CFP,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtsm_osc,retinal_imaging_v2,Eidon-UWF Central-CFP,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtsm_osm,retinal_imaging_v2,Eidon- Create Mosaic Image-CFP,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtsm_osn,retinal_imaging_v2,Eidon-UWF Nasal-CFP,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtsm_ost,retinal_imaging_v2,Eidon-UWF temporal-CFP,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtso_odm,retinal_imaging_v2,Spec-Mac-20x20-HS-512 lines-OCTA,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtso_odo,retinal_imaging_v2,Spec-ONH-RC-HR-OCT,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtso_odp,retinal_imaging_v2,Spec-PPole Mac-HR-61 lines-OCT,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtso_osm,retinal_imaging_v2,Spec-Mac-20x20-HS-512 lines-OCTA,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtso_oso,retinal_imaging_v2,Spec-ONH-RC-HR-OCT,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rtso_osp,retinal_imaging_v2,Spec-PPole Mac-HR-61 lines-OCT,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rttr_odm1,retinal_imaging_v2,Triton-Macula 6x6-OCTA,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rttr_odm2,retinal_imaging_v2,Triton-Macula 12x12-OCTA,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rttr_odr,retinal_imaging_v2,Triton-3D(H)+Radial 12x9-OCT,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rttr_osm1,retinal_imaging_v2,Triton-Macula 6x6-OCTA,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rttr_osm2,retinal_imaging_v2,Triton-Macula 12x12-OCTA,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+rttr_osr,retinal_imaging_v2,Triton-3D(H)+Radial 12x9-OCT,yesno,,,"Device or Medical/Surgical Supply, including Health Information Technology (HIT)",LOINC,LA20770-6,Meas Value,0.5
+yob,retinal_imaging_v2,yob,text,=Year of birth,1,,,,,
+ancestry,screening_survey,"What is your ancestry or ethnic origin?(Examples: Italian, Jamaican, African American, Cambodian, Cape Verdean, Cherokee, Navajo, Nez Pearce, Norwegian, Dominican, French Canadian, Haitian, Korean, Lebanese, Polish, Nigerian, Mexican, Taiwanese, Ukrainian, and so on.)",text,,,Your ancestry or national origin,LOINC,LA15574-9,Meas Value,0.5
+cmtrt_a1c,screening_survey,"Do you take pills to control your A1C and blood glucose levels? Examples: Metformin (Glucophage, Glumetza, Fortamet, Riomet), Glucotrol, Amaryl, DiaBeta, Blynase PresTab, Micronase, Actos, Avandia, Precose, Glyset, Prandin, Starlix, Januvia, Onglyza, Tradjenta, Nesina, Invokana, Farxiga, Jardiance, Welchol, and Cyclocet",radio,1=Yes|0=No,2,Diabetic on oral treatment,SNOMED,170746002,Observation,1
+cmtrt_glcs,screening_survey,"Do you use other injections to control your blood glucose levels?  Examples: Victoza, Ozempic, Symlin, Tanzeum, and Trulicity",yesno,,,Diabetic on non-insulin injectable medication,SNOMED,719566006,Observation,1
+cmtrt_insln,screening_survey,Do you inject insulin to control your blood glucose levels?,yesno,,,Diabetic on insulin,SNOMED,170747006,Observation,0.75
+cmtrt_lfst,screening_survey,"Do you use lifestyle changes to control your A1C and blood glucose levels? Examples: regular exercise, avoiding sugary foods and beverages, eating a balanced diet with lots of vegetables, sticking to a consistent eating schedule",yesno,,,Able to modify behavior and lifestyle to support health improvement,SNOMED,1148971005,Condition,0.75
+crcid_scrn,screening_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+ethnic,screening_survey,"Are you of Hispanic, Latina/x or Spanish origin? Please check all that apply.",checkbox,"C41222=No|C67113=Yes, Mexican|C67112=Yes, Puerto Rican|C107608=Yes, Cuban|C67117=Yes, Dominican Republic|C67118=Yes, Central American|C126532=Yes, South American|C999=Yes, Chicano|888=Yes, Other|777=Prefer not to say",10,"Hispanic, latino-a, or spanish origin",LOINC,69854-8,Observation,1
+ethnicot,screening_survey,Other (please specify),text,,,Other (specify),LOINC,LA6310-2,Meas Value,1
+ethnicscore,screening_survey,Hispanic score (needed for demographics screening logic),calc,,,"Hispanic, latino-a, or spanish origin",LOINC,69854-8,Observation,0.75
+mh_a1c,screening_survey,Elevated A1C levels (elevated blood sugars),yesno,mh_a1c_yes=Elevated|mh_a1c_no=Not elevated,2,Hemoglobin A1C - diabetic control interpretation,SNOMED,269823000,Measurement,1
+mh_dm_age,screening_survey,"If yes, at what age were you first diagnosed?",text,,,Age at diagnosis,SNOMED,423493009,Observation,0.75
+mhterm_dm1,screening_survey,Type I Diabetes,yesno,,,Diabetes Type 1,LOINC,LA10551-2,Meas Value,1
+mhterm_dm2,screening_survey,Type II Diabetes,yesno,,,Diabetes Type 2,LOINC,LA10552-0,Meas Value,1
+mhterm_predm,screening_survey,Pre-diabetes,yesno,,,Prediabetes,SNOMED,714628002,Condition,1
+race,screening_survey,How would you describe your race/ethnicity? (check all that apply),checkbox,"C17459=American Indian or Alaska Native|C41260=Asian|C16352=Black or African American|C77820=Middle Eastern|C41219=Native Hawaiian or Pacific Islander|C77813=North African|C41261=White or Caucasian|888=Other race, ethnicity or origin|777=Prefer not to say",9,Race or ethnicity,LOINC,46463-6,Observation,1
+race2,screening_survey,Which one of these groups would you say best represents your race?,radio,"C17459=American Indian or Alaska Native|C41260=Asian|C16352=Black or African American|C77820=Middle Eastern|C41219=Native Hawaiian or other Pacific Islander|C77813=North African|C41261=White or Caucasian|888=Other race, ethnicity or origin|777=Prefer not to say",9,Race,LOINC,32624-9,Observation,1
+raceot,screening_survey,Other (please describe),text,,,Other (specify),LOINC,LA6310-2,Meas Value,1
+racerawvalue_1,screening_survey,Race raw value (checkbox),text,,,,,,,
+racerawvalue_2,screening_survey,Race raw value (radio),text,,,,,,,
+racescore,screening_survey,Race raw value (checkbox & radio),text,,,,,,,
+racetrib,screening_survey,Tribal affiliation (please describe),text,,,Tribal affiliation,LOINC,95370-3,Observation,1
+rp_childpot,screening_survey,Are you currently pregnant?,yesno,,,Currently pregnant,LOINC,LA14670-6,Meas Value,1
+scrcmpdat,screening_survey,Screening survey date (date survey/form opened),text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+scrcmpts,screening_survey,Screening Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+screen_nd,screening_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+scrsex,screening_survey,"What sex were you assigned at birth? That is, what is on your original birth certificate?",radio,F=Female|M=Male|I=Intersex|888=Other|777=Prefer not to say,5,Sex assigned at birth,LOINC,76689-9,Observation,1
+scrsexot,screening_survey,Other (please specify),text,,,Other (specify),LOINC,LA6310-2,Meas Value,1
+scrstartts,screening_survey,Screening Survey Started Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+lbbio,specimen_management,Were all biorepository samples processed as per protocol?,yesno,,,Test protocol used,SNOMED,246423001,Observation,0.5
+lbbioreasn,specimen_management,"If not, please explain (in detail):",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+lbdattim2,specimen_management,Date & Time Draw Performed,text,,,Collection date and time of Specimen,LOINC,68963-8,Observation,1
+lbfrz,specimen_management,"Were serum, plasma, blood, and urine samples placed in -80C storage?",yesno,,,Test protocol used,SNOMED,246423001,Observation,0.5
+lbfrz3,specimen_management,"Were all other biorepository samples scanned, added to spreadsheet, and stored at -80C?",yesno,,,Test protocol used,SNOMED,246423001,Observation,0.5
+lbfrz3reasn,specimen_management,"If not, please explain (in detail):",notes,,,Procedure not completed,SNOMED,1.78291E+14,Observation,0.25
+lbfrzreasn,specimen_management,"If not, please explain (in detail):",notes,,,Procedure not completed,SNOMED,1.78291E+14,Observation,0.5
+lbperf2,specimen_management,Complete blood count,checkbox,,,Complete blood count,SNOMED,26604007,Measurement,0.75
+lbperf_ua,specimen_management,Was urine collected as per protocol?,yesno,,,Test protocol used,SNOMED,246423001,Observation,0.5
+lbperf_uareasn,specimen_management,"If not, please explain (in detail):",notes,,,Procedure not completed,SNOMED,1.78291E+14,Observation,0.5
+lbproc,specimen_management,"Were all samples processed, labeled, scanned, and added to the inventory spreadsheet as per protocol?",yesno,,,Test protocol used,SNOMED,246423001,Observation,0.5
+lbproc_bl,specimen_management,Were all blood samples processed according to protocol?,yesno,,,Test protocol used,SNOMED,246423001,Observation,0.5
+lbproc_bl1,specimen_management,One 3ml EDTA tube collected,yesno,,,Collection of blood specimen for laboratory,SNOMED,82078001,Procedure,0.75
+lbproc_bl2,specimen_management,Two 6ml EDTA tubes collected,yesno,,,Collection of blood specimen for laboratory,SNOMED,82078001,Procedure,0.75
+lbproc_bl3,specimen_management,Two 5.0 ml Serum SST/Gold Top tubes collected,yesno,,,Collection of blood specimen for laboratory,SNOMED,82078001,Procedure,0.75
+lbproc_bl4,specimen_management,One PAXgene RNA tube collected,yesno,,,Collection of blood specimen for laboratory,SNOMED,82078001,Procedure,0.75
+lbproc_bl5,specimen_management,Two CPT tubes collected,yesno,,,Collection of blood specimen for laboratory,SNOMED,82078001,Procedure,0.75
+lbproc_blreasn,specimen_management,"If not, please explain (in detail):",notes,,,Procedure not completed,SNOMED,1.78291E+14,Observation,0.5
+lbproc_blreasn1,specimen_management,"If not, please explain (in detail):",notes,,,,,,,
+lbproc_blreasn2,specimen_management,"If not, please explain (in detail):",notes,,,,,,,
+lbproc_blreasn3,specimen_management,"If not, please explain (in detail):",notes,,,,,,,
+lbproc_blreasn4,specimen_management,"If not, please explain (in detail):",notes,,,,,,,
+lbproc_blreasn5,specimen_management,"If not, please explain (in detail):",notes,,,,,,,
+lbproc_ua,specimen_management,Was urine processed according to protocol?,yesno,,,Test protocol used,SNOMED,246423001,Observation,0.5
+lbproc_uareasn,specimen_management,"If not, please explain (in detail):",notes,,,Procedure not completed,SNOMED,1.78291E+14,Observation,0.5
+lbproc_vac,specimen_management,Were all vacutainers filled according to protocol?,yesno,,,Test protocol used,SNOMED,246423001,Observation,0.5
+lbproc_vacreasn,specimen_management,"If not, please explain (in detail):",notes,,,Procedure not completed,SNOMED,1.78291E+14,Observation,0.5
+lbprocreasn,specimen_management,"If not, please explain (in detail):",notes,,,Procedure not completed,SNOMED,1.78291E+14,Observation,0.5
+lbreasn,specimen_management,"If not performed, please explain why:",notes,,,Procedure not completed,SNOMED,1.78291E+14,Observation,0.5
+lbreasn3,specimen_management,Reason results were not received,notes,,,Procedure not completed,SNOMED,1.78291E+14,Observation,0.25
+lbrslt,specimen_management,Results received,yesno,,,Referral lab test results,LOINC,19146-0,Measurement,0.75
+lbshp1,specimen_management,Shipping label tracking no.,text,,,Shipment tracking number [Identifier],LOINC,97209-1,Observation,1
+lbshp1dat,specimen_management,Date of batch shipment to UW NORC Lab,text,,,Shipping Date,LOINC,97208-3,Observation,0.75
+lbshp2,specimen_management,Shipping label tracking no.,text,,,Shipment tracking number [Identifier],LOINC,97209-1,Observation,1
+lbshp2dat,specimen_management,Date of same-day shipment of CPT and PAXgene tubes to UAB,text,,,Shipping Date,LOINC,97208-3,Observation,0.75
+lbshp2reasn,specimen_management,"If not, please explain (in detail):",notes,,,Procedure not completed,OMOP,1.78291E+14,Observation,0.5
+lbshp2yn,specimen_management,Were CPT and PAXgene tubes shipped for next day air delivery to UAB?,yesno,,,Test protocol used,SNOMED,246423001,Observation,0.5
+lbshp3,specimen_management,Shipping label tracking no.,text,,,Shipment tracking number [Identifier],LOINC,97209-1,Observation,1
+lbshp3dat,specimen_management,Date of batch shipment of biorepository samples to UAB:,text,,,Shipping Date,LOINC,97208-3,Observation,0.5
+lbupld,specimen_management,Were lab results uploaded to database?,yesno,,,Test protocol used,SNOMED,246423001,Observation,0.5
+lbuplddat,specimen_management,Date results were uploaded,text,,,Date,SNOMED,410671006,Observation,0.5
+lbupldreasn,specimen_management,"If not, please explain (in detail):",notes,,,Procedure not completed,SNOMED,1.78291E+14,Observation,0.25
+icfa_attestation,staff_consent_attestation_survey,Consent Attestation,checkbox,,,Written consent completed,SNOMED,5.821E+12,Observation,0.75
+icfa_dat,staff_consent_attestation_survey,Date of Consent Attestation,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+icfa_fname,staff_consent_attestation_survey,Study Staff First Name,text,,,Personnel First (Given) name,LOINC,71739-7,Observation,1
+icfa_lname,staff_consent_attestation_survey,Study Staff Last Name,text,,,Personnel Last (Family) name,LOINC,71740-5,Observation,1
+icfa_sign,staff_consent_attestation_survey,Study Staff Signature,file,,,Consent given for observational study participation,SNOMED,736814000,Observation,0.5
+icfa_version,staff_consent_attestation_survey,Version,text,,,Form version,LOINC,68356-5,Observation,0.75
+icf_reconsent,study_enrollment,Was the participant reconsented?,radio,,,,,,,
+icf_reconsent_v,study_enrollment,"If yes, please specify the version of consent (located in the bottom right corner of the paper ICF).",text,,,,,,,
+studyid,study_enrollment,Participant Study ID,text,,,Participant identifier,LOINC,74015-9,Observation,1
+visdat,study_enrollment,Planned date & time of in-person visit,text,,,Appointment date,SNOMED,185353001,Observation,0.5
+crcid_su,substance_use_survey,Interviewer Code,text,,,,,N/A - operational variable,,
+su_nd,substance_use_survey,No participant response,checkbox,,,No response,LOINC,LA10996-9,Meas Value,1
+sualcage,substance_use_survey,At what age did you start drinking alcohol? (Age started - years old),dropdown,98=More than 60 years old|999=Prefer not to say,2,At which age did you start smoking [PhenX],LOINC,67740-1,Observation,1
+sualcdrv,substance_use_survey,"Do you drive after having a drink, even if it is only one drink?",radio,0=Never|1=Rarely|2=Sometimes|3=Often|4=Always|777=Prefer not to say,6,Risk control behavior: alcohol use,SNOMED,405137009,Observation,0.25
+sualckncf,substance_use_survey,Have you ever consumed alcohol?,radio,1=Yes|0=No|777=Prefer not to say,3,Do you ever drink alcohol - including beer or wine [Reported.PHQ],LOINC,69721-9,Observation,0.75
+subrdosfr,substance_use_survey,"During the average week, how many 12 oz. bottles or cans of beer do you usually drink? (Number of bottles or cans per week)",dropdown,0=Less than 1|22=22 to 28|29=29 to 35|36=36 or more|999=Prefer not to say,5,Details of alcohol drinking behavior,SNOMED,363905002,Observation,0.25
+subrkncf,substance_use_survey,Have you had any beer or ale in the past year?,radio,1=Yes|0=No|777=Prefer not to say,3,Details of alcohol drinking behavior,SNOMED,363905002,Observation,0.25
+sucmpdat,substance_use_survey,Substance use survey date,text,,,Performed on (specify date),LOINC,LA30233-3,Meas Value,0.75
+sucmpts,substance_use_survey,Substance Use Survey Completed Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+sulqdosfr,substance_use_survey,"During the average week, how many 1.5 oz. of liquor do you usually drink, either as shots or in mixed cocktails? (Number of drinks per week)",dropdown,0=Less than 1|22=22 to 28|29=29 to 35|36=36 or more|777=Prefer not to say,5,Details of alcohol drinking behavior,SNOMED,363905002,Observation,0.25
+sulqkncf,substance_use_survey,"Have you had any liquor in the past year, such as brandy, whiskey, vodka, gin, schnapps, cocktails, or liqueurs?",radio,1=Yes|0=No|777=Prefer not to say,3,Details of alcohol drinking behavior,SNOMED,363905002,Observation,0.25
+sumrjcdur,substance_use_survey,Do you use marijuana now?,radio,1=Yes|0=No|777=Prefer not to say,3,Marijuana user,SNOMED,733460004,Condition,1
+sumrjceddur,substance_use_survey,How many total years have you used marijuana?,dropdown,98=More than 50 years|999=Prefer not to say,2,Marijuana user,SNOMED,733460004,Condition,0.5
+sumrjfr,substance_use_survey,"When you used marijuana, approximately how many days in a typical week would you use it?",dropdown,999=Prefer not to say,1,Marijuana user,SNOMED,733460004,Condition,0.5
+sumrjkncf,substance_use_survey,"Have you ever used marijuana (cannabis)? (This includes smoking marijuana, using cannabis concentrates, and edibles.)",radio,1=Yes|0=No|777=Prefer not to say,3,Marijuana user,SNOMED,733460004,Condition,0.5
+sumrjstage,substance_use_survey,At what age did you start using marijuana? (Age started - years old),dropdown,98=More than 60 years old|999=Prefer not to say,2,Age when first used marijuana,LOINC,91384-8,Observation,1
+sumrjtrt,substance_use_survey,In what form do you usually use marijuana?  (check all that apply),checkbox,"1=Inhaled/Smoked (for example: joints, blunts, bongs, vaping, dabs, )|2=Oral/Edibles (for example: oils, tinctures, beverages, capsules, sprays)|3=Topical (for example: sprays or oils)|777=Prefer not to say",4,Marijuana user,SNOMED,733460004,Condition,0.5
+susmkcdur,substance_use_survey,Do you smoke now?,radio,1=Yes|0=No|777=Prefer not to say,3,Current smoker,LOINC,64234-8,Observation,1
+susmkdosfr,substance_use_survey,On average how many cigarettes do/did you usually smoke in a day? (Number of cigarettes | 20 cigarettes = 1 pack),dropdown,21=21-30 (up to 1.5 packs)|31=31-40 (up to 2 packs)|41=41-50 (up to 2.5 packs)|51=More than 50 (3 or more packs)|999=Prefer not to say,5,How many of these do you smoke per day [#] [PhenX],LOINC,66548-9,Observation,1
+susmkncf,substance_use_survey,Have you smoked at least 100 cigarettes or more in your lifetime?  (100 cigarettes = 5 packs),radio,1=Yes|0=No|777=Prefer not to say,3,Smoked at least 100 cigarettes in entire life,LOINC,63581-3,Observation,1
+susmkstaage,substance_use_survey,At what age did you start smoking? (Age started - years old),dropdown,98=More than 60 years old|999=Prefer not to say,2,At which age did you start smoking [PhenX],LOINC,67740-1,Observation,1
+susmkstoage,substance_use_survey,How many total years have you smoked?,dropdown,98=More than 60 years old|999=Prefer not to say,2,Tobacco use duration,LOINC,88029-4,Observation,0.5
+sustartts,substance_use_survey,Substance Use Survey Started Timestamp (from REDCap),text,,,Time to complete survey,LOINC,99423-6,Observation,0.5
+suvpcdur,substance_use_survey,Do you vape or use e-cigarettes now?,radio,1=Yes|0=No|777=Prefer not to say,3,Electronic cigarette smoker,OMOP Extension,OMOP5181836,Observation,0.25
+suvpdosfr,substance_use_survey,"When you vaped or used e-cigarettes, approximately how many days in a typical week would you use it?",dropdown,999=Prefer not to say,1,Duration,SNOMED,103335007,Observation,0.5
+suvpkncf1,substance_use_survey,Have you ever vaped or used e-cigarettes?,radio,1=Yes|0=No|777=Prefer not to say,3,Electronic cigarette smoker,SNOMED,OMOP5181836,Observation,0.25
+suvpstage,substance_use_survey,At what age did you start vaping or using e-cigarettes? (Age started - years old),dropdown,98=More than 60 years old|999=Prefer not to say,2,Electronic cigarette smoker,OMOP Extension,OMOP5181836,Observation,0.25
+suvptoage,substance_use_survey,How many total years have you vaped or used e-cigarettes?,dropdown,98=More than 20 years|999=Prefer not to say,2,Electronic cigarette smoker,OMOP Extension,OMOP5181836,Observation,0.25
+suvptoyr,substance_use_survey,How many total years have you consumed alcohol?,dropdown,98=More than 60 years old|999=Prefer not to say,2,Number of years alcohol consumed [Time],LOINC,74012-6,Observation,0.75
+suwndosfr,substance_use_survey,"During the average week, how many 5 oz. glasses of wine do you usually drink?  The average wine bottle has 5 servings. (Number of glasses per week)",dropdown,0=Less than 1|21=21-25 (5 bottles)|26=26-30 (6 bottles)|31=31-35 (7 bottles)|35=More than 36 (greater than 7 bottles)|777=Prefer not to say,6,Details of alcohol drinking behavior,SNOMED,363905002,Observation,0.25
+suwnkncf,substance_use_survey,Have you had any wine in the past year?,radio,1=Yes|0=No|777=Prefer not to say,3,Details of alcohol drinking behavior,SNOMED,363905002,Observation,0.25
