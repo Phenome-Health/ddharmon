@@ -29,6 +29,38 @@ API key.
 > it or use your own, run `scripts/flatten_cde_repo.py <All-CDEs.json> <out.tsv>`. Without a CDE catalog,
 > ddharmon still clusters your variables — it just won't assign CDEs.
 
+## Command-line usage
+
+Besides the notebook, ddharmon ships two subcommands. Both take dictionaries inline as `NAME=path` or via
+a JSON `--config`.
+
+**`ddharmon harmonize`** — the full split-aware pipeline (embed → cluster → retrieve → generate-ideal →
+split → assign/route → transform specs → EITL campaign):
+
+```bash
+# harmonize two cohorts against a CDE backbone
+ddharmon harmonize AoU=all_of_us_surveys.csv CLSA=clsa_baseline.csv --cde all_cdes_flat.tsv -o out/
+
+# reproduce the bundled example (All of Us + CLSA vs the NIH CDE catalog)
+ddharmon harmonize --config data/examples/harmonize_example.json -o out/
+
+# $0 dry run: build the generate-ideal prompts without calling the LLM
+ddharmon harmonize --config data/examples/harmonize_example.json --dry-run -o out/
+```
+
+Set `ANTHROPIC_API_KEY` for the full run; without it (or with `--dry-run`) ddharmon writes the stage-1
+prompts for later batch submission. Outputs a `records.json` plus an `eitl/` expert-review campaign. Cost
+knobs: `--max-clusters N` (harmonize the N largest clusters first), `--top-k`, `--min-cluster-size`.
+
+**`ddharmon cluster`** — cluster equivalent variables only ($0, no LLM):
+
+```bash
+ddharmon cluster AoU=all_of_us_surveys.csv CLSA=clsa_baseline.csv -o clusters.json
+```
+
+Columns are auto-detected; override them per dictionary in the `--config` `columns` block (keys are
+`load_dictionary`'s kwargs).
+
 ## How it works
 
 ddharmon leads with **assignment to the existing CDE backbone** for concepts that are already covered, and
@@ -70,6 +102,47 @@ element-by-element. ddharmon targets harmonizing **many studies at once**:
   review; nothing is applied automatically.
 - **Reproducible evaluation.** Standing, $0, no-proprietary-data benchmarks (see [`benchmarks/`](benchmarks))
   gate retrieval and clustering quality on every change.
+
+## Limitations & measured quality
+
+ddharmon is a **data-*dictionary* harmonizer**: it works on metadata (field names, descriptions, value
+codings) from public catalogs, never participant-level data. It **proposes; humans decide** — every
+recommendation carries a confidence and verdict and is routed to expert-in-the-loop review. It **emits**
+transform specs (including parameterized specs for data-dependent transforms) but does not execute them on
+data. And it scores **cross-dictionary harmonization** (pooling equivalent fields across ≥2 dictionaries)
+separately from **single-dictionary CDE assignment** (the CDEMapper / DIVER task).
+
+**Measured quality** — BioLORD-2023 encoder + hybrid BM25⊕dense retrieval + split-aware LLM assignment.
+These are current baselines, not ceilings; dev-vs-held-out is labelled, and dev numbers (measured on the
+set we tuned against) should be read as optimistic:
+
+| Signal | Number | Gold set | Held-out? |
+|--------|--------|----------|-----------|
+| Candidate retrieval recall@5 / @100 | 0.674 / 0.926 | CDEMapper | dev (tuned on it) |
+| In-backbone CDE assignment | 0.521 | CDEMapper | dev |
+| Cross-cohort separability Δ | 0.611 | PhenX | held-out |
+| Variable → concept recall@5 / @100 | 0.655 / 0.914 | AI-READI OMOP/CDE | held-out |
+| Value-recode pair accuracy | 0.869 | ATHLOS | held-out |
+| N1 unit-conversion accuracy | 1.00 | curated UCUM gold | deterministic |
+
+On a full public 5-cohort run (18,128 fields), 97.5% of fields reach a record, 60.7% land in a
+real-concept group, and 41.9% of records are assigned to a CDE — a coverage snapshot of what a run
+produces, not a gold-accuracy score.
+
+**Known limitations:**
+
+- **We do not outperform dedicated CDE mappers on retrieval recall, and don't claim to.** ddharmon is a
+  convergent method with extended scope (cross-dictionary pooling + transform-spec generation). CDEMapper is
+  also our tuning set, so its numbers are optimistic; PhenX and AI-READI are the held-out generalization checks.
+- **The adopt / refine / novel router is conservative and uncalibrated, by design** — a strict cutoff plus a
+  0.30 retrieval floor. Expect over-routing to review (novel-precision ≈ 0.5): a recall-favoring safety bias.
+  Calibrating the thresholds against human review verdicts is a planned follow-up, not part of this release.
+- **Numeric transforms are partial by construction:** unit (N1) and arithmetic (N2) specs are authored and
+  gold-gated; data-dependent transforms (quantile binning, normalization) are *detected* and emitted as a
+  *parameterized* spec routed to review — not authored with final values.
+- **Pairwise 1:1 mapping** is not yet a first-class surface (the engine exists).
+- **Clustering is not bit-reproducible** across machines (UMAP / HDBSCAN); reproducibility comes from freezing
+  the clustering substrate and caching the LLM responses.
 
 ## Related work
 
@@ -155,8 +228,8 @@ retrieval), PhenX (cross-cohort co-clustering), and ATHLOS (value-recode correct
   shipping as part of **biomapper-ui**.
 - **Pairwise 1:1 mapping** as a first-class surface (the engine is built).
 - **Standards mapping** (LOINC / SNOMED / OMOP).
-- **Value-recode / transform-spec authoring**, with adopt/refine/novel thresholds calibrated from expert
-  review verdicts.
+- **Calibrated adopt/refine/novel thresholds** — tuned from expert-review verdicts (the router ships
+  conservative today; transform-spec authoring already generates categorical + unit/arithmetic specs).
 
 ## License
 
