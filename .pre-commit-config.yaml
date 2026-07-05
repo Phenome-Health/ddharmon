@@ -1,0 +1,17 @@
+# Optional local hooks for the public ddharmon repo. Install once:
+#   pip install pre-commit && pre-commit install
+# The authoritative "ship clean" gate is the leak-scan CI on pull requests; these run the
+# same scan locally and strip notebook outputs before they can be committed.
+repos:
+  - repo: https://github.com/kynan/nbstripout
+    rev: "0.7.1"
+    hooks:
+      - id: nbstripout
+  - repo: local
+    hooks:
+      - id: leak-scan
+        name: leak-scan (public profile)
+        entry: python3 scripts/leak_scan.py --staged --profile public
+        language: system
+        pass_filenames: false
+        always_run: true
