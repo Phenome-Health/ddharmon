@@ -11,7 +11,7 @@ out of v1 (publication-pending). Verdicts are routed to EITL for human review.
 
 The clustering step is split out (``prepare_from_clusters``) so the
 sub-cluster -> anchor -> gate -> prompt logic is testable without BERTopic, and
-so callers can run the LLM inline *or* export prompts for the secure-server
+so callers can run the LLM inline *or* export prompts for the air-gapped
 Batch API workflow and assemble verdicts later.
 """
 

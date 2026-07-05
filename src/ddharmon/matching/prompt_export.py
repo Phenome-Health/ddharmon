@@ -1,7 +1,7 @@
 """Export and import LLM reranking prompts for offline processing.
 
-Workflow (secure server → local machine → secure server):
-    1. ``export_reranking_prompts()`` on the secure server → prompts.jsonl
+Workflow (air-gapped host → local machine → air-gapped host):
+    1. ``export_reranking_prompts()`` on the air-gapped host → prompts.jsonl
     2. Download prompts.jsonl, run ``scripts/process_prompts.sh`` locally
     3. Upload responses.jsonl, use ``CachedLLMClient(responses.jsonl)``
 """
