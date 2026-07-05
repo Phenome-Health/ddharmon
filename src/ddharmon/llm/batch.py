@@ -28,10 +28,7 @@ _CUSTOM_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 def _safe_custom_id(original: str, used: set[str]) -> str:
     """Map an arbitrary record id to a Batch-API-legal, batch-unique custom_id."""
-    if _CUSTOM_ID_RE.match(original):
-        candidate = original
-    else:
-        candidate = re.sub(r"[^a-zA-Z0-9_-]", "_", original)[:64] or "id"
+    candidate = original if _CUSTOM_ID_RE.match(original) else re.sub(r"[^a-zA-Z0-9_-]", "_", original)[:64] or "id"
     if candidate in used:
         base = candidate[:60]
         i = 1
@@ -44,8 +41,9 @@ def _safe_custom_id(original: str, used: set[str]) -> str:
 
 # Default schema instruction for prompts that don't carry their own ``schema``
 # field (back-compat with pairwise-reranker exports from before per-prompt
-# schemas existed). Per-prompt schemas supersede this when the record sets a
-# ``schema`` field. Mirrors ``scripts/process_prompts.sh``.
+# schemas existed). Per-prompt schemas — used by nb 05's four-pass pipeline
+# (j-signal, labels, harmonize-classify, harmonize-spec) — supersede this when
+# the record sets a ``schema`` field. Mirrors ``scripts/process_prompts.sh``.
 _DEFAULT_PAIRWISE_SCHEMA = """{
   "judgments": [
     {
@@ -69,6 +67,7 @@ def submit_batch(
     *,
     model: str | None = None,
     max_tokens: int = 2048,
+    temperature: float = 0.0,
     manifest_path: str | Path | None = None,
 ) -> str:
     """Submit exported prompts to the Anthropic Message Batches API.
@@ -86,11 +85,16 @@ def submit_batch(
     Args:
         prompts_path: Path to JSONL file with records ``{id, system_prompt,
             user_prompt, schema?, model_tag?}``. Compatible with both
-            ``export_reranking_prompts()`` (no schema/model_tag) and the
-            multi-pass pipeline (per-record schema + model_tag).
+            ``export_reranking_prompts()`` (no schema/model_tag) and nb 05's
+            four-pass pipeline (per-record schema + model_tag).
         model: Optional override applied to every request. When ``None`` (the
             default), each request uses its own ``model_tag``.
         max_tokens: Max response tokens per request.
+        temperature: Sampling temperature (default ``0.0``). ddharmon's LLM
+            stages are extraction/classification, so greedy decoding is the
+            right default and minimises run-to-run generation variance. (Note:
+            Anthropic does not *guarantee* bitwise reproducibility even at 0;
+            exact replay comes from the cached responses file, not the API.)
         manifest_path: Where to save batch metadata. Defaults to
             ``<prompts_dir>/batch_manifest.json``.
 
@@ -133,6 +137,7 @@ def submit_batch(
                     "params": {
                         "model": req_model,
                         "max_tokens": req_max_tokens,
+                        "temperature": temperature,
                         "system": system,
                         "messages": [{"role": "user", "content": record["user_prompt"]}],
                     },
@@ -218,13 +223,17 @@ def retrieve_batch(
         return 0
 
     # Batch is done — stream results
+    from anthropic.types import TextBlock
+
     written = 0
     errors = 0
     with open(output_path, "w") as f:
         for result in client.messages.batches.results(batch_id):
             original_id = id_map.get(result.custom_id, result.custom_id)
             if result.result.type == "succeeded":
-                text = result.result.message.content[0].text
+                # message.content is a union of block types; only TextBlock carries .text
+                block = result.result.message.content[0]
+                text = block.text if isinstance(block, TextBlock) else ""
                 try:
                     parsed = _parse_response_text(text)
                     record = {"id": original_id, "response": parsed}
@@ -261,6 +270,7 @@ def submit_and_wait(
     *,
     model: str | None = None,
     max_tokens: int = 2048,
+    temperature: float = 0.0,
     poll_secs: int = 60,
     manifest_path: str | Path | None = None,
 ) -> int:
@@ -287,7 +297,9 @@ def submit_and_wait(
     if manifest_path is None:
         manifest_path = prompts_path.parent / f"{prompts_path.name}.batch_manifest.json"
 
-    batch_id = submit_batch(prompts_path, model=model, max_tokens=max_tokens, manifest_path=manifest_path)
+    batch_id = submit_batch(
+        prompts_path, model=model, max_tokens=max_tokens, temperature=temperature, manifest_path=manifest_path
+    )
     print(f"Submitted batch {batch_id}; polling every {poll_secs}s until it ends...")
 
     client = anthropic.Anthropic()
@@ -319,6 +331,7 @@ def resume_and_wait(
     *,
     model: str | None = None,
     max_tokens: int = 2048,
+    temperature: float = 0.0,
     poll_secs: int = 60,
 ) -> int:
     """Submit ONLY the prompts whose ids are missing from an existing responses
@@ -346,7 +359,9 @@ def resume_and_wait(
 
     # No prior responses to resume from → just run the full pass.
     if not output_path.exists():
-        return submit_and_wait(prompts_path, output_path, model=model, max_tokens=max_tokens, poll_secs=poll_secs)
+        return submit_and_wait(
+            prompts_path, output_path, model=model, max_tokens=max_tokens, temperature=temperature, poll_secs=poll_secs
+        )
 
     have = _ids_in_jsonl(output_path)
     missing_lines: list[str] = []
@@ -377,6 +392,7 @@ def resume_and_wait(
             gap_responses,
             model=model,
             max_tokens=max_tokens,
+            temperature=temperature,
             poll_secs=poll_secs,
             manifest_path=gap_manifest,
         )

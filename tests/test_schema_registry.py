@@ -93,14 +93,14 @@ class TestSchemaRegistryGeneric:
         assert result.overall_confidence >= 0.9
 
 
-class TestSchemaRegistryStudyColumns:
-    """Tests for study-style column format detection.
+class TestSchemaRegistryTwinsUK:
+    """Tests for TwinsUK column format detection.
 
-    Columns: Data_Type, Historical_ID, Phenotype_Description,
+    TwinsUK columns: Data_Type, Historical_ID, Phenotype_Description,
     snomed_term_1, snomed_term_2, snomed_term_3, snomed_term_4
     """
 
-    def _get_study_columns(self) -> list[str]:
+    def _get_twinsuk_columns(self) -> list[str]:
         return [
             "Data_Type",
             "Historical_ID",
@@ -116,7 +116,7 @@ class TestSchemaRegistryStudyColumns:
         from ddharmon.models.enums import FieldRole
 
         registry = SchemaRegistry()
-        result = registry.detect_roles(self._get_study_columns())
+        result = registry.detect_roles(self._get_twinsuk_columns())
         assert result.role_map["Historical_ID"].role == FieldRole.VARIABLE_NAME
 
     def test_phenotype_description_is_description(self) -> None:
@@ -124,7 +124,7 @@ class TestSchemaRegistryStudyColumns:
         from ddharmon.models.enums import FieldRole
 
         registry = SchemaRegistry()
-        result = registry.detect_roles(self._get_study_columns())
+        result = registry.detect_roles(self._get_twinsuk_columns())
         assert result.role_map["Phenotype_Description"].role == FieldRole.DESCRIPTION
 
     def test_snomed_columns_are_standard_code(self) -> None:
@@ -132,12 +132,12 @@ class TestSchemaRegistryStudyColumns:
         from ddharmon.models.enums import FieldRole
 
         registry = SchemaRegistry()
-        result = registry.detect_roles(self._get_study_columns())
+        result = registry.detect_roles(self._get_twinsuk_columns())
         for col in ["snomed_term_1", "snomed_term_2", "snomed_term_3", "snomed_term_4"]:
             assert result.role_map[col].role == FieldRole.STANDARD_CODE, f"{col} should be STANDARD_CODE"
 
     def test_data_type_detection(self) -> None:
-        """Data_Type in this context -- schema registry should detect it.
+        """Data_Type in TwinsUK context -- schema registry should detect it.
 
         The registry returns its best-guess (DATA_TYPE or SECTION); callers
         use hints to override when they know it's actually a section.
@@ -146,7 +146,7 @@ class TestSchemaRegistryStudyColumns:
         from ddharmon.models.enums import FieldRole
 
         registry = SchemaRegistry()
-        result = registry.detect_roles(self._get_study_columns())
+        result = registry.detect_roles(self._get_twinsuk_columns())
         # Data_Type matches DATA_TYPE pattern with score 1.0
         # It also matches SECTION pattern with score 0.7
         # The registry picks the highest score
@@ -159,7 +159,7 @@ class TestSchemaRegistryStudyColumns:
 
         registry = SchemaRegistry()
         hints = {"Data_Type": FieldRole.CATEGORY}
-        result = registry.detect_roles(self._get_study_columns(), hints=hints)
+        result = registry.detect_roles(self._get_twinsuk_columns(), hints=hints)
         assert result.role_map["Data_Type"].role == FieldRole.CATEGORY
 
     def test_multiple_standard_code_columns(self) -> None:
@@ -168,7 +168,7 @@ class TestSchemaRegistryStudyColumns:
         from ddharmon.models.enums import FieldRole
 
         registry = SchemaRegistry()
-        result = registry.detect_roles(self._get_study_columns())
+        result = registry.detect_roles(self._get_twinsuk_columns())
         standard_code_cols = [name for name, match in result.role_map.items() if match.role == FieldRole.STANDARD_CODE]
         assert len(standard_code_cols) >= 4
 

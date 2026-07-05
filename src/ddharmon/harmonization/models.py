@@ -1,6 +1,6 @@
 """Data models for sub-cluster-anchored CDE harmonization (v1).
 
-Plain dataclasses (not Pydantic), with __post_init__ validation. The v1 pipeline:
+Dataclasses following biomapper2 conventions. The v1 pipeline:
 
     semantic cluster  ->  value sub-cluster  ->  CDE anchor  ->  adopt/refine/novel
 
@@ -12,6 +12,7 @@ without re-deriving anything from the notebook globals the logic used to live in
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from ddharmon.models.cluster import FieldReference
 from ddharmon.models.data_dictionary import Field
@@ -72,6 +73,77 @@ class HarmonizationVerdict:
     raw: dict = field(default_factory=dict)
 
 
+class TransformKind(StrEnum):
+    """How a source field's values map onto the matched CDE's value set (the transform layer).
+
+    For 1.0: CATEGORICAL is authored (C1); UNIT (N1) + ARITHMETIC (N2) are authored in C2; DATA_DEPENDENT
+    (N3) is detected + parameterized but its values are computed at apply-time, never here.
+    """
+
+    IDENTITY = "identity"  # source already aligned — no recode needed
+    CATEGORICAL = "categorical"  # source code -> target code recode
+    UNIT = "unit"  # N1: linear unit/scale conversion (target = source * factor + offset)
+    ARITHMETIC = "arithmetic"  # N2: deterministic formula derivation
+    DATA_DEPENDENT = "data_dependent"  # N3: detected + parameterized; needs row data (not authored here)
+    WIDE_TO_LONG = "wide_to_long"  # structural: N numbered occurrence columns -> ONE repeated field
+    NONE = "none"  # could not author a spec
+
+
+@dataclass
+class TransformSpec:
+    """A metadata-level recipe for converting ONE source field's values to a target CDE's value set.
+
+    Per the harmonization boundary this is EMITTED, never executed on row data. One TransformSpec per
+    source member of an adopt/refine group — i.e. one Sankey edge (source var -> CDE). ``coverage`` is the
+    verification signal: the fraction of source codes the recode actually maps. Low coverage on a refine
+    sets ``needs_review`` but never overrides the assign verdict.
+    """
+
+    source_variable: str  # "cohort:var" — the edge this recode is for
+    target_cde_id: str
+    kind: TransformKind
+    confidence: float = 0.0
+    coverage: float = 0.0  # fraction of source codes mapped (verification signal)
+    needs_units: bool = False
+    needs_data: bool = False
+    needs_review: bool = False
+    rationale: str = ""
+    generated_by: str = "llm"  # llm | rule
+    # categorical (C1)
+    code_map: dict[str, str] = field(default_factory=dict)  # source code -> target code
+    unmapped_source_codes: list[str] = field(default_factory=list)
+    # unit / N1 (C2):  target = source * factor + offset
+    factor: float | None = None
+    offset: float | None = None
+    source_unit: str | None = None
+    target_unit: str | None = None
+    # arithmetic / N2 (C2)
+    formula: str | None = None
+    inputs: list[str] = field(default_factory=list)
+    # data-dependent / N3 (C3)
+    method: str | None = None
+    params: dict = field(default_factory=dict)
+
+
+@dataclass
+class CandidateCDE:
+    """One retrieved+ranked CDE candidate the assign stage evaluated, persisted for the review UI.
+
+    The v1 pipeline discarded these (only the chosen ``cde_id`` + orphan ``ranking`` indices survived);
+    the candidate-review workbench needs the ranked set to render. Minimal fields taken from the
+    assign-stage retrieval context; permissible values / steward are intentionally omitted for now (this
+    stays a metadata-level record — the chosen CDE's value set flows via ``TransformSpec``).
+    """
+
+    rank: int  # 1-based, best-first (LLM ranking order; retrieval order as fallback)
+    cde_id: str  # designation / variable name
+    cde_external_id: str | None = None  # external/catalog id (tinyId / standard code) for link-out
+    definition: str = ""  # rich candidate text (definition/question context) shown in the panel
+    cosine: float = 0.0  # dense cosine of this candidate to the group centroid
+    is_chosen: bool = False  # the adopted/refined candidate for this group
+    llm_suggested: bool = False  # the LLM's top-ranked candidate
+
+
 @dataclass
 class LeanBRecord:
     """One harmonization decision from the v2 lean head/tail pipeline — per concept-GROUP.
@@ -102,9 +174,16 @@ class LeanBRecord:
     chosen_cos: float | None = None  # dense cosine of the CHOSEN candidate (the match's geometric support)
     coverage_gap: bool = False  # diagnostic: novel & top1_cos < COVERAGE_GAP_TAU
     floored: bool = False  # the retrieval floor downgraded an adopt/refine -> novel (chosen_cos < floor)
+    adopt_demoted: bool = (
+        False  # M5 adopt_floor demoted a weak-support adopt -> refine (retrieval_floor<=cos<adopt_floor)
+    )
+    coherence_gap: bool = False  # M3: coded edges mostly unmappable (NONE) -> over-broad match, flagged/demoted
+    concept_mismatch: bool = False  # M7: assigned CDE fails the concept-match gate (right values, wrong concept)
     member_variable_names: list[str] = field(default_factory=list)  # this group's members as "cohort:var"
     cohorts: list[str] = field(default_factory=list)
     cross_cohort: bool = False
     n_members: int = 0  # the GROUP's member count
+    transforms: list[TransformSpec] = field(default_factory=list)  # per-source-var recodes (C1+); one per edge
+    candidates: list[CandidateCDE] = field(default_factory=list)  # ranked CDE candidates the assign stage saw
     decided_by: str = "llm"  # llm | deterministic
     raw: dict = field(default_factory=dict)

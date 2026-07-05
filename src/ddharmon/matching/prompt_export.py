@@ -1,9 +1,9 @@
 """Export and import LLM reranking prompts for offline processing.
 
-Workflow (export → process → import):
-    1. ``export_reranking_prompts()`` → prompts.jsonl
-    2. Run ``scripts/process_prompts.sh`` → responses.jsonl
-    3. Use ``CachedLLMClient(responses.jsonl)``
+Workflow (secure server → local machine → secure server):
+    1. ``export_reranking_prompts()`` on the secure server → prompts.jsonl
+    2. Download prompts.jsonl, run ``scripts/process_prompts.sh`` locally
+    3. Upload responses.jsonl, use ``CachedLLMClient(responses.jsonl)``
 """
 
 from __future__ import annotations

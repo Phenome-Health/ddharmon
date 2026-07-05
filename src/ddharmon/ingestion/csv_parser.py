@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from ddharmon.ingestion.hierarchy import detect_hierarchy
+from ddharmon.ingestion.hierarchy import detect_hierarchy as _detect_hierarchy
 from ddharmon.models.data_dictionary import DataDictionary, Field
 from ddharmon.models.enums import FieldRole
 from ddharmon.values.response_parser import parse_value_encoding
@@ -33,6 +33,9 @@ class GenericCSVParser:
         path: Path | str,
         cohort_name: str | None = None,
         column_map: dict[str, FieldRole] | None = None,
+        *,
+        detect_hierarchy: bool = True,
+        hierarchy_delimiter: str = "\\",
     ) -> DataDictionary:
         """Load a CSV data dictionary and return a structured DataDictionary.
 
@@ -41,12 +44,17 @@ class GenericCSVParser:
         2. Map columns to roles using the provided column_map.
         3. Construct Field objects from mapped roles.
         4. Extract SNOMED codes from standard_code columns.
-        5. Apply hierarchy detection.
+        5. Apply hierarchy detection (skipped when detect_hierarchy=False).
         Args:
             path: Path to the CSV or TSV file.
-            cohort_name: Optional cohort/study name (e.g., "study_a").
+            cohort_name: Optional cohort name (e.g., "TwinsUK").
             column_map: Dict mapping column name -> FieldRole. Only mapped
                         columns are used; unmapped columns go to Field.metadata.
+            detect_hierarchy: Whether to run prefix-based parent/child hierarchy
+                detection (Step 5). Default True (current behavior). Set False to
+                skip it entirely — no synthetic parents, no parent-context links.
+            hierarchy_delimiter: Delimiter used to split descriptions into
+                hierarchy levels. Default ``"\\"`` (backslash) for back-compat.
 
         Returns:
             DataDictionary with all fields populated.
@@ -75,8 +83,7 @@ class GenericCSVParser:
             missing = [col for col in column_map if col not in actual_cols]
             if missing:
                 raise ValueError(
-                    f"Column(s) not found in {path.name}: {missing}\n"
-                    f"Available columns: {list(df.columns)}"
+                    f"Column(s) not found in {path.name}: {missing}\n" f"Available columns: {list(df.columns)}"
                 )
 
         # Step 2: Build role -> column_name(s) lookup from column_map
@@ -120,7 +127,9 @@ class GenericCSVParser:
                 description = self._get_cell_value(row, short_label_col)
             if description is None:
                 description = var_name if var_name and not var_name.startswith("_ROW_") else None
-            if var_name is None and description is None:
+            # var_name is always set (synthetic _ROW_ fallback above); a None description here
+            # means the row had no usable text at all — skip it (Field requires a description).
+            if description is None:
                 continue
 
             # Get optional fields
@@ -175,8 +184,11 @@ class GenericCSVParser:
 
         logger.info("Parsed %d fields from %d CSV rows", len(fields), len(df))
 
-        # Step 4: Apply hierarchy detection
-        fields = detect_hierarchy(fields)
+        # Step 4: Apply hierarchy detection (opt-out)
+        if detect_hierarchy:
+            fields = _detect_hierarchy(fields, delimiter=hierarchy_delimiter)
+        else:
+            logger.info("Hierarchy detection disabled (detect_hierarchy=False)")
 
         # Step 5: Build DataDictionary
         field_dict = {f.variable_name: f for f in fields}
@@ -257,7 +269,7 @@ class GenericCSVParser:
     ) -> dict[str, list[str]]:
         """Extract SNOMED codes from pipe-delimited standard code columns.
 
-        Pipe-delimited format: "1002561000000109 | Serum cystatin C level (observable entity) |"
+        TwinsUK format: "1002561000000109 | Serum cystatin C level (observable entity) |"
         Extracts the numeric code before the first pipe.
         """
         codes: list[str] = []

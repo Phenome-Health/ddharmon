@@ -1,6 +1,6 @@
 """Core data models for ddharmon data dictionary harmonization.
 
-Plain dataclasses (not Pydantic) with __post_init__ validation.
+Dataclasses following biomapper2 conventions with __post_init__ validation.
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+
 
 @dataclass
 class ResponseOption:
@@ -72,7 +73,12 @@ class Field:
     # Extra
     metadata: dict[str, str] = field(default_factory=dict)  # Unmapped columns stored here
     _synthetic: bool = field(default=False, repr=False)  # True for inferred parent fields
-    _embed_variable_name: bool = field(default=True, repr=False)  # Include variable_name in embedding text
+    # Whether variable_name may be used in embedding text as a *fallback*:
+    #   True  — use it only when there is no usable primary text (question_text/description)
+    #   False — never use it (identity-only opaque codes like "FUL_STDUP_TRM"); empty primary -> ""
+    # The name is never prepended alongside present primary text — the question/
+    # description is assumed semantically richer.
+    _embed_variable_name: bool = field(default=True, repr=False)
 
     # Raw (pre-preprocessing) text — populated by preprocess_dictionary()
     raw_variable_name: str | None = field(default=None, repr=False)
@@ -91,8 +97,14 @@ class Field:
         """Compose rich text for semantic embedding generation.
 
         Primary text is question_text if populated, else description (fallback).
-        variable_name is prepended unless _embed_variable_name is False or it
-        duplicates the primary text. Category may be appended via include=.
+        variable_name is used ONLY as a fallback when primary_text is empty
+        (missing, or stripped by preprocessing), and only if _embed_variable_name
+        is True — it is never prepended alongside present primary_text (the
+        question/description is assumed richer). When _embed_variable_name is
+        False (identity-only opaque codes) and primary_text is empty, the field
+        embeds empty text and lands in the no-information group rather than a
+        name-artifact cluster.
+        Category may be appended via include=.
 
         Response options, data_type, and units are intentionally omitted — they
         belong to the value vector (compose_value_text), not the semantic vector.
@@ -106,11 +118,16 @@ class Field:
         """
         primary_text = self.question_text or self.description or ""
 
-        # Drop variable_name if it duplicates primary_text (case/whitespace-insensitive).
-        if self._embed_variable_name and self.variable_name.strip().lower() != primary_text.strip().lower():
-            parts = [self.variable_name, primary_text]
-        else:
+        if primary_text.strip():
+            # Primary text is assumed richer than the name — embed it alone.
             parts = [primary_text]
+        elif self._embed_variable_name:
+            # No usable primary text — fall back to the (cleaned) variable_name.
+            parts = [self.variable_name]
+        else:
+            # Identity-only code with no primary text — embed nothing, so the field
+            # lands in the no-information group, not a name-artifact cluster.
+            parts = [""]
 
         if (include is None or "category" in include) and self.category:
             parts.append(f"Category: {self.category}")

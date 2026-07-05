@@ -61,12 +61,8 @@ def retrieve_candidates(
     # Pre-compute which fields have response_options (rich value signal).
     # Fields with only data_type/encoding metadata produce weak value vectors
     # that can penalize good semantic matches (e.g., free-text targets).
-    src_has_options = {
-        name for name, fld in source.dictionary.fields.items() if fld.response_options
-    }
-    tgt_has_options = {
-        name for name, fld in target.dictionary.fields.items() if fld.response_options
-    }
+    src_has_options = {name for name, fld in source.dictionary.fields.items() if fld.response_options}
+    tgt_has_options = {name for name, fld in target.dictionary.fields.items() if fld.response_options}
 
     for src_name in sorted(source.embeddings.keys()):
         query_vec = source.embeddings[src_name]
@@ -128,11 +124,7 @@ def build_field_context(field: Field, dictionary: DataDictionary) -> dict[str, s
     """
     # Description block: show both question_text and description when both are
     # populated and differ. Fall back to whichever one is present otherwise.
-    if (
-        field.question_text
-        and field.description
-        and field.question_text.strip() != field.description.strip()
-    ):
+    if field.question_text and field.description and field.question_text.strip() != field.description.strip():
         description = f"{field.question_text}\n  Definition: {field.description}"
     else:
         description = field.question_text or field.description or ""

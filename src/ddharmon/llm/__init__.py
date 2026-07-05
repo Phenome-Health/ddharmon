@@ -3,9 +3,9 @@
 Public types are re-exported **lazily** (PEP 562) so lightweight entry points
 don't drag in the whole stack. In particular the Batch API submitter
 (``submit_batch`` / ``retrieve_batch``) needs only ``anthropic`` + stdlib — it
-must stay importable in a thin environment that has no pydantic / no
-sentence-transformers, which is the whole point of the offline "export prompts
-anywhere, submit the batch separately" workflow.
+must stay importable in a thin laptop env that has no pydantic / no
+sentence-transformers, which is the whole point of the "export prompts on the
+secure server, submit the batch from anywhere" workflow.
 
 The heavy (pydantic-backed) modules — ``base``, ``prompts``, ``cached_client``
 — are imported only on first access of the symbol that needs them, e.g.
@@ -34,6 +34,7 @@ __all__ = [
 if TYPE_CHECKING:  # import-time only for type checkers; never at runtime
     from ddharmon.llm.anthropic_client import AnthropicClient
     from ddharmon.llm.base import BaseLLMClient
+    from ddharmon.llm.batch import resume_and_wait, retrieve_batch, submit_and_wait, submit_batch
     from ddharmon.llm.cached_client import CachedLLMClient
     from ddharmon.llm.openai_client import OpenAIClient
     from ddharmon.llm.prompts import CandidateJudgment, RerankerResponse

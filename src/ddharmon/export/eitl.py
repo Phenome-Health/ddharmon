@@ -35,9 +35,15 @@ import re
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from ddharmon.harmonization.leanb import LeanBResult
 from ddharmon.models.data_dictionary import DataDictionary, Field
+
+if TYPE_CHECKING:
+    # Import-time-only: a runtime import would close a cycle (harmonization.transform imports this module),
+    # so importing ``ddharmon.export.eitl`` before ``ddharmon.harmonization`` would fail. LeanBResult is
+    # used only in annotations (strings under ``from __future__ import annotations``).
+    from ddharmon.harmonization.leanb import LeanBResult
 
 # --- A→B import contract --------------------------------------------------------
 LS = "\u2028"  # LINE SEPARATOR — survives CSV import, renders as a line break in the review UI.

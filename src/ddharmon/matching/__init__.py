@@ -1,7 +1,13 @@
 """Matching pipeline: candidate retrieval, LLM reranking, confidence scoring, and orchestration."""
 
 from ddharmon.matching.candidate_retrieval import build_field_context, retrieve_candidates
-from ddharmon.matching.confidence import ConfidenceConfig, score_mapping, triage_mapping
+from ddharmon.matching.confidence import (
+    ConfidenceConfig,
+    TransformConfidenceConfig,
+    score_mapping,
+    score_transform_spec,
+    triage_mapping,
+)
 from ddharmon.matching.lexical import BM25, hybrid_topk, reciprocal_rank_fusion, tokenize
 from ddharmon.matching.pairwise_mapper import MatchingConfig, match_dictionaries
 from ddharmon.matching.prompt_export import export_reranking_prompts
@@ -11,6 +17,7 @@ __all__ = [
     "BM25",
     "ConfidenceConfig",
     "MatchingConfig",
+    "TransformConfidenceConfig",
     "build_field_context",
     "export_reranking_prompts",
     "hybrid_topk",
@@ -19,6 +26,7 @@ __all__ = [
     "rerank_candidates",
     "retrieve_candidates",
     "score_mapping",
+    "score_transform_spec",
     "tokenize",
     "triage_mapping",
 ]

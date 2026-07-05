@@ -105,3 +105,93 @@ class TestTriageMapping:
         assert triage_mapping(0.91, config=config) == ReviewStatus.PENDING_REVIEW
         # 0.2 would normally be auto_rejected, but with 0.1 threshold it's pending
         assert triage_mapping(0.2, config=config) == ReviewStatus.PENDING_REVIEW
+
+
+class TestScoreTransformSpec:
+    """C2 units-driven transform-spec confidence + triage routing."""
+
+    def _spec(self, **kw):
+        from ddharmon.harmonization.models import TransformKind, TransformSpec
+
+        base = {"source_variable": "C:v", "target_cde_id": "CDE", "kind": TransformKind.UNIT}
+        base.update(kw)
+        return TransformSpec(**base)
+
+    def test_none_scores_zero_and_rejects(self):
+        from ddharmon.harmonization.models import TransformKind
+        from ddharmon.matching.confidence import score_transform_spec, triage_mapping
+
+        s = self._spec(kind=TransformKind.NONE)
+        assert score_transform_spec(s) == 0.0
+        assert triage_mapping(score_transform_spec(s)) == ReviewStatus.AUTO_REJECTED
+
+    def test_identity_is_high(self):
+        from ddharmon.harmonization.models import TransformKind
+        from ddharmon.matching.confidence import score_transform_spec
+
+        assert score_transform_spec(self._spec(kind=TransformKind.IDENTITY)) == 0.9
+
+    def test_unit_known_conversion_is_high_and_approves(self):
+        from ddharmon.matching.confidence import score_transform_spec, triage_mapping
+
+        s = self._spec(factor=2.2046, offset=0.0, source_unit="kg", target_unit="lb")
+        assert score_transform_spec(s) == 0.9
+        assert triage_mapping(score_transform_spec(s)) == ReviewStatus.AUTO_APPROVED
+
+    def test_unit_missing_units_is_low_and_reviews_not_rejects(self):
+        from ddharmon.matching.confidence import score_transform_spec, triage_mapping
+
+        s = self._spec(needs_units=True)
+        assert score_transform_spec(s) == 0.4  # low band, but ABOVE the 0.3 reject cutoff
+        assert triage_mapping(score_transform_spec(s)) == ReviewStatus.PENDING_REVIEW
+
+    def test_unit_inferred_is_medium(self):
+        from ddharmon.matching.confidence import score_transform_spec
+
+        # a UNIT spec with no recognized units/factor -> inferred -> medium
+        assert score_transform_spec(self._spec()) == 0.6
+
+    def test_arithmetic_unverified_is_medium(self):
+        from ddharmon.harmonization.models import TransformKind
+        from ddharmon.matching.confidence import score_transform_spec
+
+        s = self._spec(kind=TransformKind.ARITHMETIC, formula="source / 12")
+        assert score_transform_spec(s) == 0.6
+
+    def test_arithmetic_verified_keeps_higher_inline_confidence(self):
+        from ddharmon.harmonization.models import TransformKind
+        from ddharmon.matching.confidence import score_transform_spec
+
+        s = self._spec(kind=TransformKind.ARITHMETIC, formula="source / 12", confidence=0.95)
+        assert score_transform_spec(s) == 0.95
+
+    def test_data_dependent_is_low(self):
+        from ddharmon.harmonization.models import TransformKind
+        from ddharmon.matching.confidence import score_transform_spec
+
+        assert score_transform_spec(self._spec(kind=TransformKind.DATA_DEPENDENT)) == 0.4
+
+    def test_categorical_respects_inline_confidence(self):
+        from ddharmon.harmonization.models import TransformKind
+        from ddharmon.matching.confidence import score_transform_spec
+
+        s = self._spec(kind=TransformKind.CATEGORICAL, confidence=0.83, coverage=0.9)
+        assert score_transform_spec(s) == 0.83  # C1 owns categorical confidence
+
+    def test_categorical_fallback_to_coverage_band(self):
+        from ddharmon.harmonization.models import TransformKind
+        from ddharmon.matching.confidence import score_transform_spec
+
+        full = self._spec(kind=TransformKind.CATEGORICAL, confidence=0.0, coverage=1.0)
+        partial = self._spec(kind=TransformKind.CATEGORICAL, confidence=0.0, coverage=0.5)
+        empty = self._spec(kind=TransformKind.CATEGORICAL, confidence=0.0, coverage=0.0)
+        assert score_transform_spec(full) == 0.9
+        assert score_transform_spec(partial) == 0.6
+        assert score_transform_spec(empty) == 0.4
+
+    def test_custom_bands(self):
+        from ddharmon.harmonization.models import TransformKind
+        from ddharmon.matching.confidence import TransformConfidenceConfig, score_transform_spec
+
+        cfg = TransformConfidenceConfig(high=0.8, medium=0.5, low=0.35)
+        assert score_transform_spec(self._spec(kind=TransformKind.IDENTITY), cfg) == 0.8

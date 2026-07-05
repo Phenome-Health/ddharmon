@@ -42,9 +42,7 @@ class EmbeddingCache:
 
     def _get_schema_version(self) -> int:
         """Query metadata table for current schema version."""
-        row = self._conn.execute(
-            "SELECT value FROM metadata WHERE key = 'schema_version'"
-        ).fetchone()
+        row = self._conn.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()
         if row is None:
             return 1
         return int(row[0])
@@ -76,9 +74,7 @@ class EmbeddingCache:
             """)
             self._conn.execute("DROP TABLE embeddings")
             self._conn.execute("ALTER TABLE embeddings_v2 RENAME TO embeddings")
-            self._conn.execute(
-                "UPDATE metadata SET value = '2' WHERE key = 'schema_version'"
-            )
+            self._conn.execute("UPDATE metadata SET value = '2' WHERE key = 'schema_version'")
             self._conn.commit()
             logger.info("Migration to schema v2 complete")
         except Exception:
@@ -113,9 +109,7 @@ class EmbeddingCache:
         self._conn.execute("INSERT OR IGNORE INTO metadata (key, value) VALUES ('schema_version', '2')")
         self._conn.commit()
 
-    def get(
-        self, model_name: str, content_hash: str, vector_type: str = "semantic"
-    ) -> NDArray[np.float32] | None:
+    def get(self, model_name: str, content_hash: str, vector_type: str = "semantic") -> NDArray[np.float32] | None:
         """Retrieve a single embedding by (model_name, content_hash, vector_type).
 
         Args:

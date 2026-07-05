@@ -35,6 +35,21 @@ def _parse_json_response(text: str) -> RerankerResponse:
     return RerankerResponse.model_validate(json.loads(text))
 
 
+def _message_text(message) -> str:
+    """Concatenate text from an Anthropic message's TextBlock content blocks.
+
+    ``Message.content`` is a union of block types (text, thinking, tool-use, …);
+    only ``TextBlock`` carries ``.text``. These reranking/labeling calls always
+    return text, so a response with no TextBlock is an error worth surfacing.
+    """
+    from anthropic.types import TextBlock
+
+    parts = [block.text for block in message.content if isinstance(block, TextBlock)]
+    if not parts:
+        raise ValueError("Anthropic response contained no text content")
+    return "".join(parts)
+
+
 class AnthropicClient(BaseLLMClient):
     """LLM client using the Anthropic Claude API.
 
@@ -82,6 +97,8 @@ class AnthropicClient(BaseLLMClient):
                     output_format=RerankerResponse,
                 )
                 self._use_structured = True
+                if response.parsed_output is None:
+                    raise ValueError("Anthropic structured output returned no parsed result")
                 return response.parsed_output
             except Exception as e:
                 err_msg = str(e).lower()
@@ -100,7 +117,7 @@ class AnthropicClient(BaseLLMClient):
             system=RERANKER_SYSTEM_PROMPT + _JSON_INSTRUCTION,
             messages=[{"role": "user", "content": user_prompt}],
         )
-        return _parse_json_response(response.content[0].text)
+        return _parse_json_response(_message_text(response))
 
     def complete(self, prompt: str, *, system: str | None = None, max_tokens: int = 512) -> str:
         """Send a plain text prompt and return a plain text response."""
@@ -113,4 +130,4 @@ class AnthropicClient(BaseLLMClient):
         if system:
             kwargs["system"] = system
         response = self._client.messages.create(**kwargs)
-        return response.content[0].text
+        return _message_text(response)

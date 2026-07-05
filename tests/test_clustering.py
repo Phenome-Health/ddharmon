@@ -6,15 +6,12 @@ needing the sentence-transformers model.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
 import numpy as np
 import pytest
 from numpy.typing import NDArray
 
 from ddharmon.models.cluster import ClusterHierarchy, CutSuggestion, FieldCluster, FieldReference
 from ddharmon.models.data_dictionary import DataDictionary, Field
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -40,8 +37,7 @@ def _make_embedded_dict(
     from ddharmon.embedding.service import EmbeddedDictionary
 
     fields = {
-        var: Field(variable_name=var, description=desc)
-        for var, desc in zip(variables, descriptions)
+        var: Field(variable_name=var, description=desc) for var, desc in zip(variables, descriptions, strict=False)
     }
     dd = DataDictionary(name=name, fields=fields, cohort_name=cohort_name or name)
     embeddings = {var: vectors[i] for i, var in enumerate(variables)}
@@ -110,7 +106,7 @@ def test_compute_linkage_ward():
 
 def test_suggest_cuts():
     """suggest_cuts returns CutSuggestion list with valid fields."""
-    from ddharmon.clustering.hierarchical import suggest_cuts, compute_linkage
+    from ddharmon.clustering.hierarchical import compute_linkage, suggest_cuts
 
     vecs = _random_l2_vectors(25, seed=3)
     Z = compute_linkage(vecs)
@@ -125,7 +121,7 @@ def test_suggest_cuts():
 
 def test_suggest_cuts_filters_extremes():
     """Thresholds producing <2 or >N/2 clusters are excluded."""
-    from ddharmon.clustering.hierarchical import suggest_cuts, compute_linkage
+    from ddharmon.clustering.hierarchical import compute_linkage, suggest_cuts
 
     vecs = _random_l2_vectors(20, seed=4)
     Z = compute_linkage(vecs)
@@ -137,7 +133,7 @@ def test_suggest_cuts_filters_extremes():
 
 def test_extract_clusters():
     """extract_clusters returns FieldCluster list with valid members and coverage."""
-    from ddharmon.clustering.hierarchical import extract_clusters, compute_linkage
+    from ddharmon.clustering.hierarchical import compute_linkage, extract_clusters
 
     vecs = _random_l2_vectors(10, seed=5)
     refs = [
@@ -207,7 +203,7 @@ def test_cluster_dictionaries_cohort_coverage(two_dicts):
     result = cluster_dictionaries([dict_a, dict_b])
     assert set(result.all_cohort_names) == {"CohortA", "CohortB"}
     # At least one cut should have clusters
-    for distance, clusters in result.clusters_at_cuts.items():
+    for _distance, clusters in result.clusters_at_cuts.items():
         for c in clusters:
             # Every member's dictionary_name should be in all_cohort_names
             for m in c.members:
@@ -224,7 +220,7 @@ def test_cluster_dictionaries_no_llm(two_dicts):
 
     dict_a, dict_b = two_dicts
     result = cluster_dictionaries([dict_a, dict_b])
-    for distance, clusters in result.clusters_at_cuts.items():
+    for _distance, clusters in result.clusters_at_cuts.items():
         for c in clusters:
             # Labels should not be empty or generic "Cluster N"
             assert c.label
@@ -254,7 +250,7 @@ def test_cluster_dictionaries_with_llm_client(two_dicts):
 
     dict_a, dict_b = two_dicts
     result = cluster_dictionaries([dict_a, dict_b], llm_client=MockLLMClient())
-    for dist, clusters in result.clusters_at_cuts.items():
+    for _dist, clusters in result.clusters_at_cuts.items():
         for c in clusters:
             assert c.label == "LLM Generated Label"
 
@@ -282,7 +278,7 @@ def test_cluster_dictionaries_llm_no_complete(two_dicts):
     dict_a, dict_b = two_dicts
     result = cluster_dictionaries([dict_a, dict_b], llm_client=NoCompleteLLMClient())
     # Should not crash, should have derived labels
-    for dist, clusters in result.clusters_at_cuts.items():
+    for _dist, clusters in result.clusters_at_cuts.items():
         for c in clusters:
             assert c.label
             assert c.label != "LLM Generated Label"

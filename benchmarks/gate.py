@@ -1,13 +1,14 @@
 """WS4 — standing-benchmark release gate: run the $0 benchmarks and assert regression floors.
 
-Runs Benchmark A (CDEMapper retrieval recall) + Benchmark B (PhenX cross-cohort co-clustering) as isolated
-subprocesses (reproducible under ``PYTHONHASHSEED=0``), then checks their result JSONs against floors. Exits
-non-zero if any HARD floor is breached.
+Runs Benchmark A (CDEMapper retrieval recall), Benchmark B (PhenX cross-cohort co-clustering) and
+Benchmark D (AI-READI var->concept retrieval) as isolated subprocesses (reproducible under
+``PYTHONHASHSEED=0``), then checks their result JSONs against floors. Exits non-zero if any HARD floor is
+breached.
 
-HARD gates are DETERMINISTIC signals only: CDEMapper hybrid recall (dense cosine + BM25 + RRF, no
-randomness) and the PhenX cut-INDEPENDENT embedding separability Δ (computed on the raw normalized
-embeddings with seeded sampling). The PhenX co-clustering macro/micro use UMAP+HDBSCAN, which is not
-bit-reproducible across processes, so they are ADVISORY — reported, never gating.
+HARD gates are DETERMINISTIC signals only: CDEMapper hybrid recall, AI-READI dense recall (both dense
+cosine / BM25 / RRF, no randomness) and the PhenX cut-INDEPENDENT embedding separability Δ (computed on
+the raw normalized embeddings with seeded sampling). The PhenX co-clustering macro/micro use UMAP+HDBSCAN,
+which is not bit-reproducible across processes, so they are ADVISORY — reported, never gating.
 
 Floors are set with margin below the committed BioLORD-2023 baselines (see benchmarks/README.md); they are
 REGRESSION guards, not targets. Lowering one requires a re-baseline + a written reason.
@@ -31,6 +32,13 @@ HARD: list[tuple[str, tuple[str, ...], float, str]] = [
     ("cdemapper", ("hybrid", "@5"), 0.63, "CDEMapper hybrid recall@5"),
     ("cdemapper", ("hybrid", "@100"), 0.90, "CDEMapper hybrid recall@100"),
     ("phenx", ("embedding_signal", "separation"), 0.55, "PhenX separability Δ (cut-independent)"),
+    # AI-READI dense beats hybrid here (BM25 hurts on short standardized concept names) → gate dense.
+    ("aireadi", ("dense", "@5"), 0.58, "AI-READI var→concept dense recall@5 (held-out)"),
+    ("aireadi", ("dense", "@100"), 0.85, "AI-READI var→concept dense recall@100 (held-out)"),
+    # C2 numeric transform specs — deterministic, no encoder/keys. N1 = curated unit-conversion gold;
+    # N2 = the formula-verifier's oracle self-check (correct formulas must verify at 1.0).
+    ("units", ("n1", "accuracy"), 0.95, "C2 N1 unit-conversion accuracy (curated gold)"),
+    ("units", ("n2", "oracle_accuracy"), 0.99, "C2 N2 formula-verify oracle self-check"),
 ]
 # ADVISORY — UMAP/HDBSCAN-cut-dependent (run-to-run variable); reported, never gating.
 ADVISORY: list[tuple[str, tuple[str, ...], float, str]] = [
@@ -60,9 +68,13 @@ def main() -> None:
     print(f"WS4 benchmark gate — running standing benchmarks (encoder default: {ENCODER})…\n")
     _run("benchmarks.cdemapper")
     _run("benchmarks.phenx", "--level", "pxvar")
+    _run("benchmarks.aireadi")
+    _run("benchmarks.units")
     results = {
         "cdemapper": json.loads((common.CACHE_DIR / "cdemapper_result.json").read_text()),
         "phenx": json.loads((common.CACHE_DIR / "phenx_result.json").read_text()),
+        "aireadi": json.loads((common.CACHE_DIR / "aireadi_result.json").read_text()),
+        "units": json.loads((common.CACHE_DIR / "units_result.json").read_text()),
     }
 
     print(f"\n{'=' * 66}\nWS4 BENCHMARK GATE\n{'=' * 66}")

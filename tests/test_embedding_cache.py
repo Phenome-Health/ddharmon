@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 import numpy as np
 import pytest
 
@@ -103,8 +105,8 @@ class TestEmbeddingCache:
         """close() closes the connection cleanly."""
         cache = EmbeddingCache(tmp_path / "test.db", dimension=128)
         cache.close()
-        # After close, operations should fail
-        with pytest.raises(Exception):
+        # After close, operations on the closed sqlite3 connection should fail
+        with pytest.raises(sqlite3.ProgrammingError):
             cache.get("model-a", "hash123")
 
 
@@ -119,9 +121,7 @@ class TestCacheSchemaV2:
     def test_new_cache_creates_v2_schema(self, tmp_path) -> None:
         """New cache (no existing DB) creates schema_version=2."""
         cache = EmbeddingCache(tmp_path / "new.db", dimension=768)
-        row = cache._conn.execute(
-            "SELECT value FROM metadata WHERE key = 'schema_version'"
-        ).fetchone()
+        row = cache._conn.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()
         assert row is not None
         assert row[0] == "2"
         cache.close()
@@ -245,9 +245,7 @@ class TestCacheV1ToV2Migration:
         db_path = tmp_path / "v1.db"
         self._create_v1_db(db_path)
         cache = EmbeddingCache(db_path, dimension=768)
-        row = cache._conn.execute(
-            "SELECT value FROM metadata WHERE key = 'schema_version'"
-        ).fetchone()
+        row = cache._conn.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()
         assert row is not None
         assert row[0] == "2"
         cache.close()

@@ -1,6 +1,7 @@
 """Parse LLM responses for the classify-only adopt/refine/novel pass.
 
-Robust JSON extraction: models occasionally narrate before the JSON, wrap
+Robust JSON extraction lifted from nb 05 (``_extract_json`` /
+``_payload_from_response``): models occasionally narrate before the JSON, wrap
 it in ``` fences, or append trailing commentary. We never drop a sub-cluster
 over our own parse strictness.
 """

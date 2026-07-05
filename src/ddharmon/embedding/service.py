@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -100,6 +101,19 @@ class EmbeddedDictionary:
         return sorted(self.value_embeddings.keys())
 
 
+def _default_cache_dir() -> Path:
+    """Stable, cwd-independent default location for the embedding cache.
+
+    Resolved from ``$DDHARMON_CACHE`` if set, else ``~/.ddharmon``. Anchoring to a
+    fixed root rather than the current working directory avoids silently
+    re-embedding everything when the process runs from a different directory — e.g.
+    under nbconvert, which sets cwd to the notebook's folder and would otherwise
+    miss a warm cache at the repo root.
+    """
+    env = os.environ.get("DDHARMON_CACHE")
+    return Path(env) if env else Path.home() / ".ddharmon"
+
+
 def embed_dictionary(
     dictionary: DataDictionary,
     *,
@@ -116,7 +130,9 @@ def embed_dictionary(
     Args:
         dictionary: The DataDictionary to embed.
         provider: Embedding provider (defaults to SentenceTransformerProvider).
-        cache_dir: Directory for the SQLite embedding cache (defaults to .ddharmon).
+        cache_dir: Directory for the SQLite embedding cache. Defaults to a stable,
+            cwd-independent root ($DDHARMON_CACHE, else ~/.ddharmon) so a warm cache
+            is reused regardless of the working directory — see _default_cache_dir().
         text_composer: Custom text composition function. If None, uses
             compose_embedding_text() with parent context injection.
 
@@ -126,7 +142,7 @@ def embed_dictionary(
     if provider is None:
         provider = SentenceTransformerProvider()
     if cache_dir is None:
-        cache_dir = Path(".ddharmon")
+        cache_dir = _default_cache_dir()
 
     cache = EmbeddingCache(cache_dir / "embeddings.db", provider.dimension)
 
@@ -175,9 +191,7 @@ def _embed_with_cache(
 
     short_text_count = sum(1 for t in sem_texts.values() if len(t) < 20)
 
-    embeddings = _embed_pass(
-        dictionary, provider, cache, sem_texts, sem_hashes, vector_type="semantic"
-    )
+    embeddings = _embed_pass(dictionary, provider, cache, sem_texts, sem_hashes, vector_type="semantic")
 
     # --- Pass 2: Value embeddings (only with default composer) ---
     value_embeddings: dict[str, NDArray[np.float32]] = {}
@@ -196,12 +210,9 @@ def _embed_with_cache(
             val_hashes[var_name] = compose_value_content_hash(fld)
 
         if val_texts:
-            value_embeddings = _embed_pass(
-                dictionary, provider, cache, val_texts, val_hashes, vector_type="value"
-            )
+            value_embeddings = _embed_pass(dictionary, provider, cache, val_texts, val_hashes, vector_type="value")
 
     total = len(dictionary.fields)
-    sem_cached = total - sum(1 for v in embeddings.values() if v is not None) + len(embeddings)
     val_total = len(value_embeddings)
     if short_text_count > 0:
         logger.warning(

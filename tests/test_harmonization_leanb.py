@@ -14,17 +14,33 @@ import pytest
 
 from ddharmon.clustering.topic_engine import collect_inputs
 from ddharmon.harmonization.leanb import (
+    DEFAULT_ADOPT_FLOOR,
+    MAX_SHOW,
     CdeBackbone,
     PromptRecord,
+    _clean_cde_text,
+    _member_prompt_text,
+    _member_text,
+    _parse_split_groups,
+    _value_set_text,
     assemble_leanb,
     export_leanb_eitl_queue,
+    harmonize_leanb,
     prepare_group_assign,
     prepare_leanb,
     prepare_split,
+    recover_outlier_clusters,
     write_records_json,
 )
-from ddharmon.harmonization.leanb_prompts import SYS_SPLIT
+from ddharmon.harmonization.leanb_prompts import (
+    SYS_GROUP_REASSIGN,
+    SYS_SPLIT,
+    group_reassign_system_prompt,
+    split_system_prompt,
+)
+from ddharmon.harmonization.substrate import ClusteringSubstrate, build_substrate, clusters_from_substrate
 from ddharmon.models.cluster import FieldCluster, FieldReference
+from ddharmon.models.data_dictionary import Field, ResponseOption
 
 
 @pytest.fixture
@@ -121,13 +137,49 @@ def test_cde_backbone_from_embedded(world):
     assert "age" in bb.rich_texts[age_i].lower() and "years" in bb.rich_texts[age_i].lower()
 
 
+# ── M5 index hygiene (_clean_cde_text + CdeBackbone clean_text) ──
+
+
+def test_clean_cde_text_strips_instruction_boilerplate():
+    cleaned = _clean_cde_text("Ethnicity of participant READ IF NECESSARY select all that apply")
+    assert "read if necessary" not in cleaned.lower()
+    assert "select all that apply" not in cleaned.lower()
+    assert "ethnicity" in cleaned.lower()
+
+
+def test_clean_cde_text_drops_leading_opaque_code_keeps_concept():
+    assert _clean_cde_text("PHX0001010203 Current cigarette smoking status") == "Current cigarette smoking status"
+
+
+def test_clean_cde_text_keeps_opaque_code_when_no_concept_remains():
+    # never blank out a candidate: a bare code with no concept text is left intact
+    assert _clean_cde_text("PHX0001") == "PHX0001"
+
+
+def test_clean_cde_text_noop_on_clean_text():
+    assert _clean_cde_text("Age in years") == "Age in years"
+
+
+def test_backbone_clean_text_cleans_candidate_pool(hf):
+    # a CDE whose only distinctive text is instruction boilerplate — the M5 audit's ethnicity@0.45 case
+    cde = hf.field("ETHN_01", "Ethnicity READ IF NECESSARY", question_text="Ethnicity", field_id="cde_ethn")
+    ed = hf.embedded_dict("NIH_CDE", [cde], sem_vecs=hf.l2(np.array([[1, 0, 0]], float)))
+    fields = {f.variable_name: f for f in ed.dictionary.fields.values()}
+    dirty = CdeBackbone.from_embedded(ed, fields).rich_texts[0]
+    clean = CdeBackbone.from_embedded(ed, fields, clean_text=True).rich_texts[0]
+    assert "read if necessary" in dirty.lower() and "ETHN_01" in dirty
+    assert "read if necessary" not in clean.lower() and "ethnicity" in clean.lower()
+    assert "ETHN_01" not in clean  # opaque lead code dropped once concept text remains
+
+
 def test_prepare_leanb_builds_ideal_prompts_with_candidates(world):
     embedded, embeddings, field_refs, by_key = world
     age = _cluster(0, [by_key[("CohortA", "age")], by_key[("CohortB", "age_yrs")]])
     recs = prepare_leanb([age], embedded, embeddings, field_refs, top_k=4)
     assert len(recs) == 1
     rec = recs[0]
-    assert rec.id == "leanb:ideal:0"
+    assert rec.context["cluster_id"].startswith("c")  # content-addressed id, not the HDBSCAN ordinal
+    assert rec.id == f"leanb:ideal:{rec.context['cluster_id']}"
     assert "ideal" in rec.system_prompt.lower() and "Age in years" in rec.user_prompt
     cands = rec.context["candidates"]
     assert cands[0]["designation"] == "AgeCDE" and cands[0]["external_id"] == "cde_age"
@@ -155,6 +207,69 @@ def test_cde_only_cluster_is_skipped(world):
     assert prepare_leanb([cde_only], embedded, embeddings, field_refs) == []
 
 
+def test_substrate_reload_reproduces_prompt_ids(world):
+    """L2 cache-hit property: clusters reloaded from a frozen substrate yield IDENTICAL prompt ids."""
+    from ddharmon.harmonization.substrate import build_substrate, clusters_from_substrate
+
+    embedded, embeddings, field_refs, by_key = world
+    clusters = [
+        _cluster(0, [by_key[("CohortA", "age")], by_key[("CohortB", "age_yrs")]]),
+        _cluster(1, [by_key[("CohortA", "home_residence_zip")]]),
+    ]
+    ids_before = [r.id for r in prepare_leanb(clusters, embedded, embeddings, field_refs, top_k=4)]
+
+    sub = build_substrate(clusters, min_cluster_size=15)
+    reloaded = clusters_from_substrate(sub, field_refs)  # the replay path (no re-clustering)
+    ids_after = [r.id for r in prepare_leanb(reloaded, embedded, embeddings, field_refs, top_k=4)]
+
+    assert ids_before == ids_after  # same partition -> same content-addressed ids -> the Batch cache hits
+    assert ids_after and all(i.startswith("leanb:ideal:c") for i in ids_after)
+
+
+def test_replay_from_frozen_substrate_is_byte_identical(world, tmp_path):
+    """End-to-end replay determinism: a frozen partition + fixed LLM responses -> byte-identical records.json.
+
+    ``test_substrate_reload_reproduces_prompt_ids`` proves the frozen substrate yields identical prompt ids
+    (so the Batch cache hits and the responses are identical run-to-run). This proves the *rest* of the
+    chain — prepare -> assemble -> serialize — introduces no dict/set-ordering or timestamp nondeterminism,
+    so the full pipeline reproduces its output byte-for-byte. Together they back the "fully deterministic
+    (by construction)" claim.
+    """
+    from ddharmon.harmonization.substrate import build_substrate, clusters_from_substrate
+
+    embedded, embeddings, field_refs, by_key = world
+    clusters = [
+        _cluster(
+            0,
+            [
+                by_key[("CohortA", "home_residence_zip")],
+                by_key[("CohortA", "employer_workplace_zip")],
+                by_key[("CohortB", "age_yrs")],
+            ],
+        )
+    ]
+    sub = build_substrate(clusters, min_cluster_size=15)
+
+    def run_once(path):
+        cl = clusters_from_substrate(sub, field_refs)  # the replay path — no re-clustering
+        ideal = prepare_leanb(cl, embedded, embeddings, field_refs, top_k=4)
+        split = prepare_split(ideal, _ideal_resp(ideal))
+        split_resp = {
+            split[0].id: {
+                "groups": [{"member_ids": ["m1", "m2", "m3"], "concept": "ZIP code", "verdict": "adopt", "cde_id": "1"}]
+            }
+        }
+        grp = prepare_group_assign(split, split_resp, embedded, embeddings, field_refs, top_k=4)
+        responses = {r.id: {"verdict": "adopt", "cde_id": "1", "ranking": [1]} for r in grp}
+        write_records_json(assemble_leanb(grp, responses, retrieval_floor=0.0), path)
+        return path
+
+    a, b = tmp_path / "records_a.json", tmp_path / "records_b.json"
+    run_once(a)
+    run_once(b)
+    assert a.read_bytes() == b.read_bytes()  # byte-for-byte identical across independent replays
+
+
 # ── stage 2: prepare_split ──────────────────────────────────────
 
 
@@ -165,12 +280,30 @@ def test_prepare_split_carries_members_and_candidates(world):
     split_recs = prepare_split(ideal_recs, _ideal_resp(ideal_recs))
     assert len(split_recs) == 1
     sr = split_recs[0]
-    assert sr.id == "leanb:split:0"
+    cid = sr.context["cluster_id"]
+    assert sr.id == f"leanb:split:{cid}"
     # ideal threaded into the prompt + context; the [mK]-prefixed members + candidates are in the prompt
-    assert "ideal for 0" in sr.user_prompt and sr.context["ideal_cde"] == "ideal for 0"
+    assert f"ideal for {cid}" in sr.user_prompt and sr.context["ideal_cde"] == f"ideal for {cid}"
     assert "[m1]" in sr.user_prompt and "Age in years" in sr.user_prompt
     assert "AgeCDE" in sr.user_prompt  # candidate block carried forward
     assert sr.context["members"] == ideal_recs[0].context["members"]
+
+
+def test_prepare_split_respects_max_show(world):
+    # M2: max_show caps the members shown to the split LLM in one call (chunking keeps every unit <= it).
+    embedded, embeddings, field_refs, by_key = world
+    zips = _cluster(
+        3,
+        [
+            by_key[("CohortA", "home_residence_zip")],
+            by_key[("CohortA", "employer_workplace_zip")],
+            by_key[("CohortB", "age_yrs")],
+        ],
+    )
+    ideal_recs = prepare_leanb([zips], embedded, embeddings, field_refs, top_k=4)
+    split_recs = prepare_split(ideal_recs, _ideal_resp(ideal_recs), max_show=2)
+    prompt = split_recs[0].user_prompt
+    assert "[m1]" in prompt and "[m2]" in prompt and "[m3]" not in prompt  # only 2 of 3 members shown
 
 
 # ── stage 3: prepare_group_assign ───────────────────────────────
@@ -190,9 +323,11 @@ def _split_recs_for_zip(world):
     return embedded, embeddings, field_refs, prepare_split(ideal_recs, _ideal_resp(ideal_recs))
 
 
-def test_prepare_group_assign_splits_into_two_groups_with_own_candidates(world):
+def test_prepare_group_assign_splits_into_groups_with_own_candidates_plus_residual(world):
     embedded, embeddings, field_refs, split_recs = _split_recs_for_zip(world)
-    # mock split: partition the cluster into 2 distinct-concept groups
+    # mock split: two distinct-concept groups covering m1 (home) + m2 (employer). m3 (age filler) is
+    # enumerated by NEITHER group -> M1 residual completion recovers it into a trailing residual group
+    # instead of dropping it (the multi-group partial-coverage failure mode).
     split_resp = {
         split_recs[0].id: {
             "groups": [
@@ -202,16 +337,39 @@ def test_prepare_group_assign_splits_into_two_groups_with_own_candidates(world):
         }
     }
     grp_recs = prepare_group_assign(split_recs, split_resp, embedded, embeddings, field_refs, top_k=4)
-    assert len(grp_recs) == 2
-    assert [r.id for r in grp_recs] == ["leanb:groupassign:3:0", "leanb:groupassign:3:1"]
-    g0, g1 = grp_recs
+    assert len(grp_recs) == 3  # 2 concept groups + 1 M1 residual
+    cid = grp_recs[0].context["cluster_id"]
+    assert [r.id for r in grp_recs] == [
+        f"leanb:groupassign:{cid}:0",
+        f"leanb:groupassign:{cid}:1",
+        f"leanb:groupassign:{cid}:2",
+    ]
+    g0, g1, g2 = grp_recs
     assert g0.context["concept"] == "Home address ZIP code"
     assert g0.context["member_variable_names"] == ["CohortA:home_residence_zip"]
     assert g1.context["member_variable_names"] == ["CohortA:employer_workplace_zip"]
-    # each group re-retrieved its OWN candidates and the concept reached the prompt
+    # each concept group re-retrieved its OWN candidates and the concept reached the prompt
     assert g0.context["candidates"] and g0.context["candidates"][0]["designation"] == "ZipCDE"
     assert "Home address ZIP code" in g0.user_prompt
-    assert g0.context["group_id"] == "3#g0" and g1.context["group_id"] == "3#g1"
+    assert g0.context["group_id"] == f"{cid}#g0" and g1.context["group_id"] == f"{cid}#g1"
+    # M1: the uncovered member is recovered into a residual group (concept "") — not dropped
+    assert g2.context["concept"] == "" and g2.context["member_variable_names"] == ["CohortB:age_yrs"]
+
+
+def test_multigroup_split_covering_all_members_adds_no_residual(world):
+    """M1 is a no-op when a multi-group split already covers every member — no spurious residual group."""
+    embedded, embeddings, field_refs, split_recs = _split_recs_for_zip(world)
+    split_resp = {
+        split_recs[0].id: {
+            "groups": [
+                {"member_ids": ["m1", "m2"], "concept": "ZIP code", "verdict": "refine", "cde_id": "1"},
+                {"member_ids": ["m3"], "concept": "Age", "verdict": "novel", "cde_id": None},
+            ]
+        }
+    }
+    grp_recs = prepare_group_assign(split_recs, split_resp, embedded, embeddings, field_refs, top_k=4)
+    assert len(grp_recs) == 2  # every member covered -> no residual appended
+    assert sum(r.context["n_members"] for r in grp_recs) == 3
 
 
 def test_no_split_yields_single_group_over_all_members(world):
@@ -232,14 +390,52 @@ def test_unparseable_split_falls_back_to_single_group(world):
     embedded, embeddings, field_refs, split_recs = _split_recs_for_zip(world)
     grp_recs = prepare_group_assign(split_recs, {}, embedded, embeddings, field_refs, top_k=4)  # no split response
     assert len(grp_recs) == 1
-    assert grp_recs[0].context["group_id"] == "3#g0"
+    assert grp_recs[0].context["group_id"] == f"{grp_recs[0].context['cluster_id']}#g0"
     assert grp_recs[0].context["n_members"] == 3  # all members retained
+
+
+# ── tolerant split parse: the Batch schema is soft, the LLM drops the {"groups":[…]} wrapper (~35%) ──
+
+
+class TestSplitWrapperDrop:
+    def test_parse_recovers_bare_single_group(self):
+        """A bare single-group object (no ``groups`` wrapper) is recovered as one group, not discarded."""
+        bare = {"member_ids": ["m1", "m2"], "concept": "Home ZIP", "verdict": "refine", "cde_id": "1"}
+        groups = _parse_split_groups(bare)
+        assert len(groups) == 1
+        assert groups[0]["member_ids"] == ["m1", "m2"] and groups[0]["concept"] == "Home ZIP"
+
+    def test_parse_still_reads_proper_wrapper(self):
+        groups = _parse_split_groups({"groups": [{"member_ids": ["m1"], "concept": "ok"}]})
+        assert len(groups) == 1 and groups[0]["concept"] == "ok"
+
+    def test_parse_rejects_non_group_dict(self):
+        assert _parse_split_groups({"rationale": "no groups here"}) == []
+
+    def test_wrapper_drop_recovers_group_plus_residual(self, world):
+        """The real bug: the split LLM returns a bare group covering a SUBSET. We recover that group AND add a
+        residual group for the uncovered members — instead of collapsing the whole cluster to one un-split group."""
+        embedded, embeddings, field_refs, split_recs = _split_recs_for_zip(
+            world
+        )  # 3 members: m1 home, m2 employer, m3 age
+        bare = {split_recs[0].id: {"member_ids": ["m1"], "concept": "Home ZIP", "verdict": "refine", "cde_id": "1"}}
+        grp_recs = prepare_group_assign(split_recs, bare, embedded, embeddings, field_refs, top_k=4)
+        assert len(grp_recs) == 2  # recovered concept group + residual (NOT one 3-member fallback)
+        g0, g1 = grp_recs
+        assert g0.context["concept"] == "Home ZIP"
+        assert g0.context["member_variable_names"] == ["CohortA:home_residence_zip"]
+        assert g1.context["concept"] == ""  # residual group carries the uncovered members
+        assert set(g1.context["member_variable_names"]) == {"CohortA:employer_workplace_zip", "CohortB:age_yrs"}
+        # every member is retained across the two groups (nothing dropped)
+        assert g0.context["n_members"] + g1.context["n_members"] == 3
 
 
 # ── stage 4: assemble_leanb (multi-record) ──────────────────────
 
 
 def _group_assign_recs(world):
+    # Two concept groups cover m1 (home) + m2 (employer); m3 (age filler) is uncovered, so M1 residual
+    # completion appends a trailing residual group (#g2) -> THREE group-assign records, not two.
     embedded, embeddings, field_refs, split_recs = _split_recs_for_zip(world)
     split_resp = {
         split_recs[0].id: {
@@ -254,33 +450,59 @@ def _group_assign_recs(world):
 
 def test_assemble_multi_record_two_groups_share_cluster_distinct_concepts(world):
     grp_recs = _group_assign_recs(world)
+    cid = grp_recs[0].context["cluster_id"]  # content-addressed cluster id (shared by both groups)
     responses = {
-        "leanb:groupassign:3:0": {"verdict": "adopt", "cde_id": "1", "ranking": [1, 2], "rationale": "home zip"},
-        "leanb:groupassign:3:1": {"verdict": "novel", "cde_id": None, "ranking": [2, 1], "rationale": "no employer"},
+        grp_recs[0].id: {"verdict": "adopt", "cde_id": "1", "ranking": [1, 2], "rationale": "home zip"},
+        grp_recs[1].id: {"verdict": "novel", "cde_id": None, "ranking": [2, 1], "rationale": "no employer"},
     }
     result = assemble_leanb(grp_recs, responses, retrieval_floor=0.0)
-    assert len(result.records) == 2
-    assert {r.cluster_id for r in result.records} == {"3"}  # same cluster
+    assert len(result.records) == 3  # 2 concept groups + the M1 residual (age)
+    assert {r.cluster_id for r in result.records} == {cid}  # same cluster
     by_gid = {r.group_id: r for r in result.records}
-    assert set(by_gid) == {"3#g0", "3#g1"}  # distinct groups
+    assert set(by_gid) == {f"{cid}#g0", f"{cid}#g1", f"{cid}#g2"}  # distinct groups + residual
 
-    g0 = by_gid["3#g0"]
+    g0 = by_gid[f"{cid}#g0"]
     assert g0.verdict == "adopt" and g0.route == "assigned"
     assert g0.cde_id == "ZipCDE" and g0.cde_external_id == "cde_zip"
     assert g0.concept == "Home address ZIP code"
     assert g0.member_variable_names == ["CohortA:home_residence_zip"]
     assert g0.ranking == [0, 1]  # 1-based -> 0-based
 
-    g1 = by_gid["3#g1"]
+    g1 = by_gid[f"{cid}#g1"]
     assert g1.verdict == "novel" and g1.route == "gencde_residual" and g1.cde_id is None
     assert g1.concept == "Employer address ZIP code"
     assert g1.member_variable_names == ["CohortA:employer_workplace_zip"]
+
+    g2 = by_gid[f"{cid}#g2"]  # M1 residual: unanswered here -> empty verdict, routed to the residual
+    assert g2.concept == "" and g2.member_variable_names == ["CohortB:age_yrs"]
+    assert g2.route == "gencde_residual"
+
+
+def test_assemble_persists_candidates(world):
+    """The ranked candidate set is persisted on each record (for the review UI), best-first with flags."""
+    grp_recs = _group_assign_recs(world)
+    responses = {
+        grp_recs[0].id: {"verdict": "adopt", "cde_id": "1", "ranking": [1, 2], "rationale": "home zip"},
+        grp_recs[1].id: {"verdict": "novel", "cde_id": None, "ranking": [2, 1], "rationale": "no employer"},
+    }
+    result = assemble_leanb(grp_recs, responses, retrieval_floor=0.0)
+
+    adopt = next(r for r in result.records if r.verdict == "adopt")
+    assert adopt.candidates, "candidates should be persisted for the review UI"
+    assert adopt.candidates[0].rank == 1  # best-first
+    chosen = [c for c in adopt.candidates if c.is_chosen]
+    assert len(chosen) == 1 and chosen[0].cde_id == adopt.cde_id
+    assert chosen[0].cosine is not None
+    assert any(c.llm_suggested for c in adopt.candidates)
+
+    novel = next(r for r in result.records if r.verdict == "novel")
+    assert novel.candidates and not any(c.is_chosen for c in novel.candidates)
 
 
 def test_assemble_handles_missing_and_unparseable_responses(world):
     grp_recs = _group_assign_recs(world)
     result = assemble_leanb(grp_recs, {})  # no responses at all
-    assert len(result.records) == 2
+    assert len(result.records) == 3  # 2 concept groups + M1 residual
     for rec in result.records:
         assert rec.verdict == "" and rec.route == "gencde_residual" and rec.cde_id is None
 
@@ -337,6 +559,50 @@ def test_retrieval_floor_keeps_close_match():
     assert r.verdict == "adopt" and r.floored is False and r.chosen_cos == 0.88
 
 
+# ── M5 adopt-specific floor (demote weak-support adopt -> refine) ─
+
+
+def test_adopt_floor_demotes_weak_support_adopt_to_refine():
+    # cos 0.45 sits in [retrieval_floor 0.30, adopt_floor 0.55): the exact-equivalence claim is unsupported,
+    # so the adopt is demoted to refine — still assigned (and eligible for a transform), not novel.
+    rec = _group_rec("6#g0", [{"designation": "MidCDE", "cos": 0.45, "text": "t", "external_id": "x"}])
+    resp = {rec.id: {"verdict": "adopt", "cde_id": "1"}}
+    r = assemble_leanb([rec], resp, retrieval_floor=0.30, adopt_floor=0.55).records[0]
+    assert r.verdict == "refine" and r.route == "assigned"
+    assert r.adopt_demoted is True and r.floored is False
+    assert r.cde_id == "MidCDE" and r.chosen_cos == 0.45
+
+
+def test_adopt_floor_keeps_strong_adopt():
+    rec = _group_rec("6#g1", [{"designation": "StrongCDE", "cos": 0.72, "text": "t", "external_id": "x"}])
+    resp = {rec.id: {"verdict": "adopt", "cde_id": "1"}}
+    r = assemble_leanb([rec], resp, retrieval_floor=0.30, adopt_floor=0.55).records[0]
+    assert r.verdict == "adopt" and r.adopt_demoted is False and r.route == "assigned"
+
+
+def test_adopt_floor_below_retrieval_floor_goes_novel_not_demoted():
+    # cos 0.20 < retrieval_floor: the retrieval floor novels it first; the adopt-floor demotion never applies.
+    rec = _group_rec("6#g2", [{"designation": "FarCDE", "cos": 0.20, "text": "t", "external_id": "x"}])
+    resp = {rec.id: {"verdict": "adopt", "cde_id": "1"}}
+    r = assemble_leanb([rec], resp, retrieval_floor=0.30, adopt_floor=0.55).records[0]
+    assert r.verdict == "novel" and r.floored is True and r.adopt_demoted is False
+
+
+def test_adopt_floor_does_not_touch_refine():
+    # adopt_floor is adopt-specific: a refine at the same weak cosine is left as refine.
+    rec = _group_rec("6#g3", [{"designation": "MidCDE", "cos": 0.45, "text": "t", "external_id": "x"}])
+    resp = {rec.id: {"verdict": "refine", "cde_id": "1"}}
+    r = assemble_leanb([rec], resp, retrieval_floor=0.30, adopt_floor=0.55).records[0]
+    assert r.verdict == "refine" and r.adopt_demoted is False
+
+
+def test_adopt_floor_none_leaves_adopt_unchanged():
+    rec = _group_rec("6#g4", [{"designation": "MidCDE", "cos": 0.45, "text": "t", "external_id": "x"}])
+    resp = {rec.id: {"verdict": "adopt", "cde_id": "1"}}
+    r = assemble_leanb([rec], resp, retrieval_floor=0.30, adopt_floor=None).records[0]
+    assert r.verdict == "adopt" and r.adopt_demoted is False
+
+
 # ── ranking fallback when the assign LLM leaves cde_id null (regression) ──
 
 
@@ -376,33 +642,34 @@ def test_ranking_fallback_still_respects_floor_when_top_ranked_is_far():
 
 def test_export_eitl_queue_and_records_json(world, tmp_path):
     grp_recs = _group_assign_recs(world)
+    cid = grp_recs[0].context["cluster_id"]
     result = assemble_leanb(
         grp_recs,
         {
-            "leanb:groupassign:3:0": {"verdict": "adopt", "cde_id": "1"},
-            "leanb:groupassign:3:1": {"verdict": "refine", "cde_id": "1"},
+            grp_recs[0].id: {"verdict": "adopt", "cde_id": "1"},
+            grp_recs[1].id: {"verdict": "refine", "cde_id": "1"},
         },
         retrieval_floor=0.0,
     )
 
     tsv = tmp_path / "eitl.tsv"
     n = export_leanb_eitl_queue(result, tsv)
-    assert n == 2
+    assert n == 3  # 2 answered groups + the M1 residual (empty verdict, sorts last)
     lines = tsv.read_text().splitlines()
     header = lines[0].split("\t")
     assert header[:5] == ["cluster_id", "group_id", "concept", "verdict", "route"]
     assert "members" in header
-    # refine sorts before adopt; the per-group rows carry the group id + members column
-    assert lines[1].split("\t")[:2] == ["3", "3#g1"]
+    # refine sorts before adopt/residual; the per-group rows carry the group id + members column
+    assert lines[1].split("\t")[:2] == [cid, f"{cid}#g1"]
     members_col = header.index("members")
     assert lines[1].split("\t")[members_col] == "CohortA:employer_workplace_zip"
-    assert len(lines) == 3  # header + 2
+    assert len(lines) == 4  # header + 3
 
     js = tmp_path / "records.json"
-    assert write_records_json(result, js) == 2
+    assert write_records_json(result, js) == 3
     loaded = json.loads(js.read_text())
-    assert {r["group_id"] for r in loaded} == {"3#g0", "3#g1"}
-    assert all(r["cluster_id"] == "3" for r in loaded)
+    assert {r["group_id"] for r in loaded} == {f"{cid}#g0", f"{cid}#g1", f"{cid}#g2"}
+    assert all(r["cluster_id"] == cid for r in loaded)
 
 
 # ── prompt content ──────────────────────────────────────────────
@@ -413,3 +680,167 @@ def test_axis_preservation_clause_in_split_prompt():
     s = SYS_SPLIT.lower()
     assert "object" in s and "referent" in s
     assert "split" in s and ("do not split" in s or "do not over-split" in s)
+
+
+# ── M4 representation-mismatch clause (refine, not novel) ────────
+
+
+def test_representation_refine_selectors_toggle_clause():
+    # both stage prompts gain the clause only when the flag is on; base prompts are unchanged
+    assert split_system_prompt(False) == SYS_SPLIT
+    assert group_reassign_system_prompt(False) == SYS_GROUP_REASSIGN
+    for on in (split_system_prompt(True), group_reassign_system_prompt(True)):
+        low = on.lower()
+        assert "representation mismatch is refine" in low
+        assert "banding" in low and "composite" in low  # the recovered representation kinds
+        assert "novel only when" in low  # still gated on a genuine concept/object change
+
+
+def test_representation_refine_wired_into_split_and_group_assign(world):
+    embedded, embeddings, field_refs, split_recs = _split_recs_for_zip(world)
+    # stage 2 (split): flag flows from prepare_split into the emitted system prompt
+    on_split = _split_recs_for_zip_with_flag(world, representation_refine=True)[0]
+    assert "representation mismatch is refine" in on_split.system_prompt.lower()
+    assert "representation mismatch is refine" not in split_recs[0].system_prompt.lower()
+    # stage 3 (per-group assign): flag flows from prepare_group_assign into the per-group prompt
+    split_resp = {split_recs[0].id: {"groups": [{"member_ids": ["m1"], "concept": "z", "verdict": "refine"}]}}
+    grp_on = prepare_group_assign(
+        split_recs, split_resp, embedded, embeddings, field_refs, top_k=4, representation_refine=True
+    )
+    grp_off = prepare_group_assign(split_recs, split_resp, embedded, embeddings, field_refs, top_k=4)
+    assert "representation mismatch is refine" in grp_on[0].system_prompt.lower()
+    assert "representation mismatch is refine" not in grp_off[0].system_prompt.lower()
+
+
+def _split_recs_for_zip_with_flag(world, *, representation_refine: bool):
+    embedded, embeddings, field_refs, by_key = world
+    zips = _cluster(3, [by_key[("CohortA", "home_residence_zip")], by_key[("CohortB", "age_yrs")]])
+    ideal_recs = prepare_leanb([zips], embedded, embeddings, field_refs, top_k=4)
+    return prepare_split(ideal_recs, _ideal_resp(ideal_recs), representation_refine=representation_refine)
+
+
+# ── 1a: values-aware prompts (retrieval text lean, prompt text value-aware) ──
+
+
+class TestMemberPromptText:
+    """The source variable's response options reach the PROMPT text but NOT the retrieval text."""
+
+    def test_prompt_text_adds_value_options_retrieval_stays_lean(self):
+        fld = Field(
+            variable_name="smoke",
+            description="Current smoking",
+            question_text="Do you currently smoke",
+            value_encoding_raw="1=Yes|2=No",
+            data_type="categorical",
+        )
+        ref = FieldReference("CohortA", "smoke", "Do you currently smoke")
+        retrieval = _member_text(fld, ref)
+        prompt = _member_prompt_text(fld, ref)
+        # retrieval text: concept only — no value codes (they are noise in BM25/dense)
+        assert "1=Yes" not in retrieval and "values:" not in retrieval
+        # prompt text: the source response options + data_type are visible to the LLM
+        assert "1=Yes|2=No" in prompt
+        assert "categorical" in prompt
+        assert retrieval in prompt  # prompt = lean text + value metadata
+
+    def test_prompt_text_includes_units(self):
+        fld = Field(
+            variable_name="wt",
+            description="Body weight",
+            question_text="Body weight",
+            units="kg",
+            data_type="continuous",
+        )
+        ref = FieldReference("CohortA", "wt", "Body weight")
+        prompt = _member_prompt_text(fld, ref)
+        assert "units kg" in prompt and "continuous" in prompt
+
+    def test_value_set_text_falls_back_to_response_options(self):
+        fld = Field(
+            variable_name="x",
+            description="d",
+            response_options=[ResponseOption(code="0", label="No"), ResponseOption(code="1", label="Yes")],
+        )
+        assert _value_set_text(fld) == "0=No|1=Yes"
+
+    def test_prompt_text_no_field_is_base(self):
+        ref = FieldReference("CohortA", "x", "desc")
+        assert _member_prompt_text(None, ref) == _member_text(None, ref)
+
+
+# ── M10: outlier recovery (recover_outlier_clusters) ─────────────
+
+
+class TestRecoverOutlierClusters:
+    def _refs(self, n):
+        return [FieldReference("A", f"var_{i}", f"desc {i}") for i in range(n)]
+
+    def test_no_outliers_is_noop(self):
+        refs = self._refs(5)
+        emb = np.zeros((5, 8), dtype=np.float32)
+        sub = ClusteringSubstrate(
+            clusters=[[("A", f"var_{i}") for i in range(5)]], min_cluster_size=15, n_fields=5, outlier=[]
+        )
+        clusters = clusters_from_substrate(sub, refs)
+        out_clusters, out_sub = recover_outlier_clusters(clusters, sub, emb, refs)
+        assert out_clusters is clusters and out_sub is sub  # unchanged (identity, no re-cluster)
+
+    def test_below_threshold_outliers_recovered_and_folded_into_substrate(self):
+        # 3 outliers (rows 7,8,9) < recluster_residual's threshold -> one recovered group, NO umap
+        refs = self._refs(10)
+        emb = np.zeros((10, 8), dtype=np.float32)
+        sub = ClusteringSubstrate(
+            clusters=[[("A", f"var_{i}") for i in range(7)]],
+            min_cluster_size=15,
+            n_fields=10,
+            outlier=[("A", "var_7"), ("A", "var_8"), ("A", "var_9")],
+        )
+        clusters = clusters_from_substrate(sub, refs)
+        out_clusters, out_sub = recover_outlier_clusters(clusters, sub, emb, refs, min_cluster_size=8)
+        assert len(out_clusters) == len(clusters) + 1  # one recovered group appended
+        assert out_sub.outlier == []  # all three recovered -> outlier list emptied
+        assert out_sub.n_clusters == sub.n_clusters + 1  # recovered folded into the substrate for replay
+        recovered = out_clusters[-1]
+        assert {m.variable_name for m in recovered.members} == {"var_7", "var_8", "var_9"}
+
+    def test_outliers_absent_from_field_refs_is_noop(self):
+        refs = self._refs(3)
+        emb = np.zeros((3, 8), dtype=np.float32)
+        sub = ClusteringSubstrate(
+            clusters=[[("A", "var_0")]], min_cluster_size=15, n_fields=3, outlier=[("A", "ghost")]
+        )
+        clusters = clusters_from_substrate(sub, refs)
+        out_clusters, out_sub = recover_outlier_clusters(clusters, sub, emb, refs)
+        assert out_clusters is clusters and out_sub is sub  # no rows map -> no-op
+
+
+# ── productionization: the M-stack is ON by default (held-out full-5 validated 2026-07-04) ──
+
+
+def test_release_defaults_enable_the_m_stack():
+    """Guard the release decision: harmonize_leanb turns the validated M2/M3/M4/M5/M10 quality mods ON by
+    default. A flip back to opt-in should be a deliberate change that trips this test, not a silent regression.
+    """
+    import inspect
+
+    d = {k: v.default for k, v in inspect.signature(harmonize_leanb).parameters.items()}
+    assert d["representation_refine"] is True  # M4: representation-mismatch -> refine
+    assert d["clean_cde_text"] is True  # M5: CDE candidate-pool index hygiene
+    assert d["adopt_floor"] == DEFAULT_ADOPT_FLOOR == 0.55  # M5: weak-adopt demote
+    assert d["chunk_cap"] == MAX_SHOW  # M2: chunk oversized clusters (== max_show)
+    assert d["chunk_skip_enumerated"] is True  # M2: keep enumerated families whole
+    assert d["coherence_gate"] is True  # M3: NONE-fraction gate
+    assert d["recover_outliers"] is True  # M10: HDBSCAN outlier recovery
+
+
+def test_harmonize_leanb_default_run_threads_representation_refine(world):
+    """A default (no-flag) harmonize_leanb call applies the release defaults end-to-end: M4's clause reaches
+    the emitted split prompt — proving the orchestrator default flows into the stages, not just the signature.
+    """
+    embedded, embeddings, field_refs, by_key = world
+    zips = _cluster(3, [by_key[("CohortA", "home_residence_zip")], by_key[("CohortB", "age_yrs")]])
+    sub = build_substrate([zips], min_cluster_size=15, n_fields=len(field_refs))
+    # generate set, split=None -> returns after building split prompts (no per-group assign LLM needed)
+    result = harmonize_leanb(embedded, substrate=sub, generate=_ideal_resp, split=None)
+    assert result.split_prompts
+    assert "representation mismatch is refine" in result.split_prompts[0].system_prompt.lower()

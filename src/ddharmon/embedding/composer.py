@@ -17,9 +17,7 @@ logger = logging.getLogger(__name__)
 _MIN_TEXT_LENGTH = 20
 
 
-def compose_embedding_text(
-    field: Field, dictionary: DataDictionary, include: set[str] | None = None
-) -> str:
+def compose_embedding_text(field: Field, dictionary: DataDictionary, include: set[str] | None = None) -> str:
     """Compose embedding text with parent context for child fields.
 
     For root fields, returns field.to_embedding_text() unchanged.

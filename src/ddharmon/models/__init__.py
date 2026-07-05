@@ -6,6 +6,7 @@ Re-exports all public types for convenient importing:
 
 from __future__ import annotations
 
+from ddharmon.models.cluster import ClusterHierarchy, CutSuggestion, FieldCluster, FieldReference, TopicModelResult
 from ddharmon.models.data_dictionary import (
     DataDictionary,
     Field,
@@ -13,7 +14,6 @@ from ddharmon.models.data_dictionary import (
     ValueSet,
 )
 from ddharmon.models.enums import FieldRole, Relation, ReviewStatus, UnmappedReason
-from ddharmon.models.cluster import ClusterHierarchy, CutSuggestion, FieldCluster, FieldReference, TopicModelResult
 from ddharmon.models.mapping import FieldMapping, MappingResult, UnmappedField
 
 __all__ = [

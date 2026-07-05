@@ -8,6 +8,8 @@ flag, qualifier-divergence flag, honest match_cosine, target-card framing).
 from __future__ import annotations
 
 import csv
+import subprocess
+import sys
 
 import pytest
 
@@ -27,6 +29,20 @@ from ddharmon.harmonization import LeanBRecord, LeanBResult
 from ddharmon.models.data_dictionary import DataDictionary, Field
 
 # --- contract helpers ----------------------------------------------------------
+
+
+def test_import_order_no_cycle():
+    """Importing ddharmon.export.eitl FIRST must not deadlock on a circular import.
+
+    eitl <-> harmonization.transform form a cycle; eitl's LeanBResult import is TYPE_CHECKING-only so the
+    runtime cycle is broken. A subprocess is required — a same-process import would already be cached.
+    """
+    proc = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", "import ddharmon.export.eitl"],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, f"import ddharmon.export.eitl failed:\n{proc.stderr}"
 
 
 def test_clean_collapses_all_whitespace():

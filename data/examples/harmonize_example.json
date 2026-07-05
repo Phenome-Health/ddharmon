@@ -1,0 +1,52 @@
+{
+  "_comment": "Example run config for `ddharmon harmonize --config data/examples/harmonize_example.json -o out/`. Harmonizes the bundled All of Us + CLSA survey dictionaries against the NIH CDE backbone (same setup as notebooks/clustering/v2_harmonization_pipeline.ipynb). Paths are relative to this file. Needs ANTHROPIC_API_KEY for the three LLM stages; add --dry-run to build prompts at $0.",
+  "cde": {
+    "name": "NIH_CDE",
+    "path": "all_cdes_flat.tsv",
+    "columns": {
+      "variable_name": "designation",
+      "field_id": "tinyId",
+      "description": "definition",
+      "question_text": "question_text",
+      "data_type": "datatype",
+      "value_encoding": "permissible_values",
+      "category": "classification",
+      "standard_code": "concept_codes"
+    }
+  },
+  "inputs": [
+    {
+      "name": "AllOfUs",
+      "path": "all_of_us_surveys.csv",
+      "columns": {
+        "variable_name": "Item Concept",
+        "description": "Field Label",
+        "question_text": "Field Label",
+        "category": "Survey",
+        "data_type": "Field Type",
+        "value_encoding": "Choices, Calculations, OR Slider Labels"
+      }
+    },
+    {
+      "name": "CLSA",
+      "path": "clsa_baseline.csv",
+      "columns": {
+        "variable_name": "name",
+        "short_label": "label:en",
+        "question_text": "question:en",
+        "description": "comment:en",
+        "category": "table",
+        "data_type": "valueType",
+        "units": "unit",
+        "value_encoding": "value_encoding"
+      }
+    }
+  ],
+  "options": {
+    "model": "claude-sonnet-4-6",
+    "min_cluster_size": 15,
+    "top_k": 20,
+    "retrieval_floor": 0.3,
+    "max_clusters": 25
+  }
+}

@@ -120,6 +120,38 @@ ASSIGN_SCHEMA = json.dumps(
     }
 )
 
+# ── M4: representation-mismatch → refine, not novel (opt-in) ──
+# Appended to the split (stage 2) and per-group re-assign (stage 3) system prompts when enabled. The audit of
+# the full-5 run found ~372 vars wrongly routed NOVEL against a rich CDE at cosine up to 0.805 because the
+# model treated a difference in the ANSWER encoding (banding, flag, composite, unit) as a concept mismatch.
+# Representation is bridgeable by a transform spec — so it is refine, not novel. Orthogonal to the qualifier
+# rule the base prompts already carry (a different OBJECT/referent, or a different specific value of a
+# distinguishing axis, is still novel). Judge the CONCEPT, not the encoding.
+REPRESENTATION_REFINE_CLAUSE = (
+    "REPRESENTATION MISMATCH IS REFINE, NOT NOVEL — judge the underlying CONCEPT, not the answer encoding. "
+    "If a candidate measures the SAME concept of the SAME object but in a different REPRESENTATION, that is "
+    "refine (a value/derivation transform bridges the two encodings) — set cde_id = that candidate and put "
+    "the specialization in 'concept'. This covers: (a) a categorical BANDING/bucketing of a continuous "
+    "candidate (age BANDS vs age in years; a BMI/income/education CATEGORY vs its underlying value); (b) a "
+    "YES/NO or present/absent FLAG of a candidate's scaled, count, or continuous measure; (c) a "
+    "COMPOSITE / sum-score / index built from the candidate's components, or one component of the "
+    "candidate's composite; (d) a different UNIT, SCALE, or code set for the same quantity. Choose novel "
+    "ONLY when the underlying concept or the object/referent genuinely differs — NEVER merely because the "
+    "answer TYPE, granularity, or code set differs. This does NOT relax the qualifier rule above: a "
+    "different object/referent, or a different specific value of a distinguishing axis (condition, body "
+    "site, laterality, time window), is still novel."
+)
+
+
+def split_system_prompt(representation_refine: bool = False) -> str:
+    """Stage-2 split system prompt, optionally with the M4 representation-mismatch clause appended."""
+    return f"{SYS_SPLIT}\n{REPRESENTATION_REFINE_CLAUSE}" if representation_refine else SYS_SPLIT
+
+
+def group_reassign_system_prompt(representation_refine: bool = False) -> str:
+    """Stage-3 per-group re-assign system prompt, optionally with the M4 representation clause appended."""
+    return f"{SYS_GROUP_REASSIGN}\n{REPRESENTATION_REFINE_CLAUSE}" if representation_refine else SYS_GROUP_REASSIGN
+
 
 def build_ideal_user_prompt(member_lines: list[str]) -> str:
     """Stage-1 user prompt: the member sample only (no candidates)."""
