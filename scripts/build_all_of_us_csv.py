@@ -11,7 +11,7 @@ Choices, Calculations, OR Slider Labels | ...`.
 
 This script concatenates the survey tabs into a single flat CSV, prepending a `Survey`
 column (the tab name) so the cohort-of-origin survives the flattening. Output columns match
-what ddharmon's `load_dictionary` reads in the v1 pipeline notebook (`Item Concept`,
+what ddharmon's `load_dictionary` reads in the harmonization pipeline notebook (`Item Concept`,
 `Field Label`, `Field Type`, `Choices, Calculations, OR Slider Labels`, `Survey`).
 
 Two tabs need light normalization, handled automatically:

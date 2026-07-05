@@ -1,5 +1,5 @@
 {
-  "_comment": "Example run config for `ddharmon harmonize --config data/examples/harmonize_example.json -o out/`. Harmonizes the bundled All of Us + CLSA survey dictionaries against the NIH CDE backbone (same setup as notebooks/clustering/v2_harmonization_pipeline.ipynb). Paths are relative to this file. Needs ANTHROPIC_API_KEY for the three LLM stages; add --dry-run to build prompts at $0.",
+  "_comment": "Example run config for `ddharmon harmonize --config data/examples/harmonize_example.json -o out/`. Harmonizes the bundled All of Us + CLSA survey dictionaries against the NIH CDE backbone (same setup as notebooks/clustering/harmonization_pipeline.ipynb). Paths are relative to this file. Needs ANTHROPIC_API_KEY for the three LLM stages; add --dry-run to build prompts at $0.",
   "cde": {
     "name": "NIH_CDE",
     "path": "all_cdes_flat.tsv",

@@ -3,14 +3,12 @@
 ddharmon (Data Dictionary Harmonization Tool) clusters equivalent variables across
 biomedical data dictionaries and anchors each to a Common Data Element (CDE), routing every
 recommendation to expert review. Full pipeline in `README.md`; algorithm + lineage in
-`docs/v1_methods.md`.
+`docs/methods.md`.
 
-## Repo topology (important)
+## Repo topology
 
 - **Canonical + publisher:** `Phenome-Health/ddharmon` — all development *and* PyPI releases
   happen here.
-- **Mirror:** `trentleslie/ddharmon` — content mirror for Greptile reviews; it **never
-  publishes**. Do not cut releases or push release tags from the mirror.
 
 ## Environment & setup
 

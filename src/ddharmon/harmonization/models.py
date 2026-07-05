@@ -1,6 +1,6 @@
-"""Data models for sub-cluster-anchored CDE harmonization (v1).
+"""Data models for sub-cluster-anchored CDE harmonization.
 
-Dataclasses following biomapper2 conventions. The v1 pipeline:
+Dataclasses following biomapper2 conventions. The sub-cluster-anchored pipeline:
 
     semantic cluster  ->  value sub-cluster  ->  CDE anchor  ->  adopt/refine/novel
 
@@ -23,7 +23,7 @@ from ddharmon.models.data_dictionary import Field
 HARMONIZE_VERDICTS = ("adopt", "refine", "novel")
 KGONLY_VERDICTS = ("adopt", "unaligned")
 
-# v2 lean head/tail pipeline: the fused-assign verdict, and the two routes it
+# Lean head/tail pipeline: the fused-assign verdict, and the two routes it
 # produces (adopt/refine -> CDE assignment; novel -> GenCDE/clustering residual).
 LEANB_VERDICTS = ("adopt", "refine", "novel")
 ROUTE_ASSIGNED = "assigned"
@@ -52,7 +52,7 @@ class AnchorResult:
 class HarmonizationVerdict:
     """The adopt/refine/novel recommendation for one sub-cluster.
 
-    This is the v1 deliverable per sub-cluster — routed to EITL for human
+    This is the sub-cluster-anchored deliverable per sub-cluster — routed to EITL for human
     verification. No transformation spec is authored (deferred to v1.1+).
     """
 
@@ -129,7 +129,7 @@ class TransformSpec:
 class CandidateCDE:
     """One retrieved+ranked CDE candidate the assign stage evaluated, persisted for the review UI.
 
-    The v1 pipeline discarded these (only the chosen ``cde_id`` + orphan ``ranking`` indices survived);
+    The sub-cluster-anchored pipeline discarded these (only the chosen ``cde_id`` + orphan ``ranking`` indices survived);
     the candidate-review workbench needs the ranked set to render. Minimal fields taken from the
     assign-stage retrieval context; permissible values / steward are intentionally omitted for now (this
     stays a metadata-level record — the chosen CDE's value set flows via ``TransformSpec``).
@@ -146,7 +146,7 @@ class CandidateCDE:
 
 @dataclass
 class LeanBRecord:
-    """One harmonization decision from the v2 lean head/tail pipeline — per concept-GROUP.
+    """One harmonization decision from the lean head/tail pipeline — per concept-GROUP.
 
     A semantic cluster is grouped by an embedding that ignores the variable name, so it can pool more
     than one distinct concept. The split-aware pipeline therefore emits one record per concept-GROUP,

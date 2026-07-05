@@ -7,7 +7,7 @@ center, and CDE members are ranked by similarity-to-medoid, then *canonicalness*
 (multi-collection + cross-mapped CDEs win ties), then metadata *richness*.
 
 When no CDE is present in the sub-cluster, ``has_cde`` is False — the caller
-should generate a GenCDE (or, in v1, classify the sub-cluster as ``novel``).
+should generate a GenCDE (or classify the sub-cluster as ``novel``).
 
 Extracted from ``notebooks/clustering/02_bertopic_clustering.ipynb`` (cell 20).
 """

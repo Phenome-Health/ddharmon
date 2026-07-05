@@ -1,4 +1,4 @@
-"""Prompts for the v2 lean head/tail harmonization pipeline (3 LLM stages).
+"""Prompts for the lean head/tail harmonization pipeline (3 LLM stages).
 
 Validated in the research harness before productionization. A semantic cluster is grouped by an
 embedding that ignores the variable name, so one cluster can pool MORE THAN ONE distinct concept that

@@ -1,4 +1,4 @@
-"""Tests for the v2 split-aware EITL campaign export (ddharmon.export.eitl).
+"""Tests for the split-aware EITL campaign export (ddharmon.export.eitl).
 
 Covers the A→B import contract (no raw newlines, U+2028 breaks, tinyId links, QUOTE_ALL)
 and the reviewer-pass refinements (free-text routing, templated-family collapse, magnet

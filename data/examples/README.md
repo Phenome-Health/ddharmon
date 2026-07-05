@@ -1,8 +1,8 @@
 # Example data dictionaries
 
 These are **publicly-available** data dictionaries bundled so the harmonization pipeline runs
-end-to-end on a fresh clone — via the v2 notebook
-(`notebooks/clustering/v2_harmonization_pipeline.ipynb`) or the CLI
+end-to-end on a fresh clone — via the notebook
+(`notebooks/clustering/harmonization_pipeline.ipynb`) or the CLI
 (`ddharmon harmonize --config data/examples/harmonize_example.json`). Each ingested CSV is
 reproducible from its public source via a script in `scripts/` — the source workbook is included
 alongside it for full transparency.

@@ -1,17 +1,17 @@
-"""v1 sub-cluster-anchored CDE harmonization pipeline.
+"""Sub-cluster-anchored CDE harmonization pipeline.
 
-End-to-end orchestration of the v1 release pipeline::
+End-to-end orchestration of the sub-cluster-anchored pipeline::
 
     ingest -> dual-vector embed -> semantic cluster (BERTopic)
            -> value sub-cluster -> CDE anchor -> classify (adopt/refine/novel) -> EITL
 
 The single LLM call per sub-cluster is the *classify-only* adopt/refine/novel
 pass. Coherence judging, concept labeling, and spec authoring are intentionally
-out of v1 (publication-pending). Verdicts are routed to EITL for human review.
+out of scope (publication-pending). Verdicts are routed to EITL for human review.
 
 The clustering step is split out (``prepare_from_clusters``) so the
 sub-cluster -> anchor -> gate -> prompt logic is testable without BERTopic, and
-so callers can run the LLM inline *or* export prompts for the secure-server
+so callers can run the LLM inline *or* export prompts for the air-gapped
 Batch API workflow and assemble verdicts later.
 """
 
@@ -324,7 +324,7 @@ def harmonize_dictionaries(
     max_candidates: int = 5,
     model_tag: str = DEFAULT_MODEL_TAG,
 ) -> HarmonizationResult:
-    """Run the full v1 pipeline: cluster -> sub-cluster -> anchor -> classify.
+    """Run the full sub-cluster-anchored pipeline: cluster -> sub-cluster -> anchor -> classify.
 
     Args:
         embedded_dicts: Embedded cohort dictionaries plus the CDE dictionary

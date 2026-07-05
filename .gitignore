@@ -172,7 +172,9 @@ harmonization_artifacts/
 !docs/**/*.pdf
 !docs/**/*.png
 
-# Local agent/session state (keep local config out of git, but share skills)
-.claude/*
-!.claude/skills/
+# Local agent/session state — internal tooling, keep all of it local (not shipped)
+.claude/
+
+# Internal planning docs — local only, never shipped in the public package
+docs/plans/
 !data/examples/*.xlsx

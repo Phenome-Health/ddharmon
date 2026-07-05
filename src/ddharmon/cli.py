@@ -5,7 +5,7 @@ Wired to the ``ddharmon`` console script via ``[project.scripts]`` in
 
 Subcommands:
 
-* ``ddharmon harmonize`` — the v2 split-aware pipeline: load dictionaries → embed →
+* ``ddharmon harmonize`` — the split-aware pipeline: load dictionaries → embed →
   cluster → retrieve candidate CDEs → generate-ideal → split into concept-groups →
   assign (adopt/refine/novel) → route → write records + an expert-review (EITL) campaign.
 * ``ddharmon cluster`` — cluster equivalent variables across dictionaries ($0; no LLM).
@@ -214,7 +214,7 @@ def harmonize(
     max_clusters: int | None,
     dry_run: bool,
 ) -> None:
-    """Run the v2 split-aware harmonization pipeline; write records + an EITL campaign.
+    """Run the split-aware harmonization pipeline; write records + an EITL campaign.
 
     \b
     Inline:  ddharmon harmonize AoU=aou.csv CLSA=clsa.csv --cde all_cdes_flat.tsv -o out/

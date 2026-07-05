@@ -1,10 +1,10 @@
-"""Prompt construction for the v1 classify-only adopt/refine/novel pass.
+"""Prompt construction for the sub-cluster-anchored classify-only adopt/refine/novel pass.
 
-v1 keeps a *single* LLM call per sub-cluster: classify the cluster's alignment
+This pipeline keeps a *single* LLM call per sub-cluster: classify the cluster's alignment
 to its recommended CDE(s) as ``adopt`` / ``refine`` / ``novel`` (or, when the
 cluster has no machine-readable response options, the concept-only
 ``adopt`` / ``unaligned``). No spec authoring, no coherence judging, no concept
-labeling — those LLM passes are cut from v1 and the verdict is routed to EITL
+labeling — those LLM passes are cut here and the verdict is routed to EITL
 for human verification.
 
 System prompts and schemas are lifted verbatim from nb 05's decomposed Pass-1

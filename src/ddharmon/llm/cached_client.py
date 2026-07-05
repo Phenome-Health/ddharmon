@@ -1,7 +1,7 @@
 """Cached LLM client that reads pre-computed responses from a JSONL file.
 
 Workflow:
-    1. Export prompts with ``export_reranking_prompts()`` on the secure server
+    1. Export prompts with ``export_reranking_prompts()`` on the air-gapped host
     2. Process prompts locally (e.g., via ``claude`` CLI) → responses JSONL
     3. Use ``CachedLLMClient(responses_path)`` as a drop-in replacement for
        AnthropicClient/OpenAIClient — no API key needed.

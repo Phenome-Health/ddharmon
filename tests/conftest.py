@@ -1,4 +1,4 @@
-"""Shared test factories for the harmonization (v1) test suite.
+"""Shared test factories for the harmonization test suite.
 
 Exposed via the ``hf`` fixture (a SimpleNamespace of factory callables) so the
 harmonization tests can build Fields / EmbeddedDictionaries / vectors without

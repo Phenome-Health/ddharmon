@@ -1,21 +1,19 @@
-# ddharmon v2 — Methods & Lineage
+# ddharmon — Methods & Lineage
 
-**ddharmon v2** replaces v1's sub-cluster-anchored pipeline with a **lean head/tail architecture that
-leads with assignment to the given CDE backbone**. Where [v1](v1_methods.md) clustered cohort variables
-and CDEs together and anchored each value sub-cluster to its most-central in-cluster CDE, v2 treats
-harmonization of a covered concept as **assignment to an existing CDE** and routes only the *uncovered*
-tail to generation/clustering. This is the division of labor the research harness settled empirically.
+**ddharmon** harmonizes biomedical data-dictionary variables across studies by treating a *covered*
+concept as **assignment to an existing Common Data Element (CDE)** and routing only the *uncovered* tail
+to generation and clustering. It leads with assignment to the given CDE backbone rather than making
+clustering the primary engine — the division of labor the research harness settled empirically.
 
-This document describes (1) why the architecture changed, (2) the v2 pipeline and its algorithms,
-(3) how v2 is evaluated, and (4) how it relates to v1 and the literature.
+This document describes (1) why the pipeline is assignment-first, (2) the pipeline and its algorithms,
+and (3) how it is evaluated.
 
 ---
 
-## 1. Why the architecture changed
+## 1. Why assignment-first
 
-The v1 "cluster → sub-cluster → anchor" flow treats clustering as the primary engine. A sequence of
-benchmark experiments (against external ground truth, not self-defined metrics) showed that clustering
-is the wrong primary engine for the *covered* part of the problem:
+Making clustering the primary engine is the wrong design for the *covered* part of the problem. A
+sequence of benchmark experiments (against external ground truth, not self-defined metrics) established:
 
 - **Two buckets, scored separately.** Harmonization splits into a **head** — concepts that already have
   a CDE in the backbone — and a **tail** with no matching CDE. Blending them hides the truth (a trivial
@@ -40,7 +38,7 @@ independent "ideal CDE" as the coverage anchor, and a human gate for the boundar
 
 ---
 
-## 2. The v2 pipeline
+## 2. The pipeline
 
 ```
 ingest (cohorts + CDE catalog)
@@ -48,19 +46,21 @@ ingest (cohorts + CDE catalog)
     → cluster concepts (retrieval/batching scaffolding, not the decision engine)
       → hybrid retrieve top-k CDE candidates   (BM25 lexical ⊕ dense centroid, RRF)
         → generate-ideal                        (LLM, no candidates → independent coverage anchor)
-          → fused assign                        (LLM, rank by the ideal → adopt/refine/novel + pick)
-            → route: adopt/refine → CDE ;  novel → GenCDE / clustering residual (tail)
-              → EITL review queue
+          → split into concept-groups           (a pooled cluster is partitioned so each concept decides alone)
+            → fused assign                       (LLM, rank by the ideal → adopt/refine/novel + pick)
+              → route: adopt/refine → CDE ;  novel → GenCDE / clustering residual (tail)
+                → EITL review queue
 ```
 
 | Stage | Method | Notes |
 |-------|--------|-------|
-| **Ingest / embed** | Same as v1 — role-mapped CSV/TSV loader, `all-mpnet-base-v2` (768-d, L2-normalized, SQLite-cached) | The CDE catalog is loaded as a cohort so its text is embedded into the same space. v2 drops v1's separate *value* sub-clustering vector; value/encoding metadata is routed to the LLM prompt (symbolic), not the geometric vector. |
-| **Cluster** | Concept clustering over semantic vectors | Demoted to **scaffolding** — it batches near-duplicate fields for one assignment call and provides a centroid for dense retrieval. It is no longer the decision engine. |
+| **Ingest / embed** | role-mapped CSV/TSV loader; `FremyCompany/BioLORD-2023` (768-d, L2-normalized, SQLite-cached) | The CDE catalog is loaded as a cohort so its text is embedded into the same space. A single *semantic* vector per field; value/encoding metadata is routed to the LLM prompt (symbolic), not the geometric vector. |
+| **Cluster** | Concept clustering over semantic vectors | **Scaffolding** — it batches near-duplicate fields for one assignment call and provides a centroid for dense retrieval. It is not the decision engine. |
 | **Hybrid retrieve** | `BM25` (lexical, over rich CDE text) ⊕ dense centroid cosine, fused by **Reciprocal Rank Fusion**; top-k=20 | The candidate generator. Hybrid beats dense at every k (recall@5 0.447 → 0.632 on the CDEMapper gold); a dense-rich control confirmed the gain is real lexical signal. Reusable in `ddharmon.matching` (`BM25`, `hybrid_topk`). |
 | **Generate-ideal** | LLM call describing the *ideal* CDE for the concept **with no candidates shown** | An independent coverage anchor: what *should* exist, formed without being biased by what retrieval happened to surface. Anchors the novel decision. |
+| **Split** | Partition a pooled cluster into distinct concept-groups | A coarse cluster that pools more than one concept is split so each concept-group gets its own CDE decision; distinct concepts are never silently merged. Oversized clusters are chunked into coherence-aware sub-units (recursive average-linkage bisection) so the split step sees every member, and a cross-record merge reunites the same concept over-split across clusters. |
 | **Fused assign** | One LLM call: rank the retrieved candidates *by the ideal*, then commit `adopt`/`refine`/`novel` **and** the chosen candidate | Beats a two-call rerank-then-verdict design (in-backbone assignment 0.458 → 0.521) at half the cost. The pick resolves to a real CDE designation + NIH tinyId. |
-| **Route** | `adopt`/`refine` → CDE assignment; `novel` → GenCDE / clustering residual (the tail) | The head/tail split, applied per concept. |
+| **Route** | `adopt`/`refine` → CDE assignment; `novel` → GenCDE / clustering residual (the tail) | The head/tail split, applied per concept-group. |
 | **Review** | `export_leanb_eitl_queue(...)` → EITL TSV/CSV; `write_records_json(...)` | Nothing is auto-applied. EITL verdicts are the locked acceptance gate and the source of the cutoff calibration. |
 
 Two expert-review fixes are built into the assign stage:
@@ -75,7 +75,11 @@ Two expert-review fixes are built into the assign stage:
   nothing was actually close). A *bottom* floor, not a mid routing threshold; records carry `chosen_cos`
   + `floored` for audit.
 
-The pipeline keeps v1's **split-for-testability** shape: `prepare_leanb` (retrieve + build generate
+Assigned (`adopt`/`refine`) records additionally feed **transform-spec generation** — categorical
+value-recodes, N1 unit conversions, N2 arithmetic formulas, and wide→long specs for repeating-measure
+families — emitted (never executed on data) and routed through the same review layer.
+
+The pipeline is built in a **split-for-testability** shape: `prepare_leanb` (retrieve + build generate
 prompts) → `prepare_assign` (build assign prompts from the ideals) → `assemble_leanb` (parse responses
 into routed `LeanBRecord`s). Each stage runs inline *or* via the offline Anthropic Batch API; each prompt
 record carries the context to assemble its own decision. The accuracy stack — **hybrid retrieval → LLM
@@ -87,57 +91,42 @@ rerank(top-20) → adopt/refine/novel** — is the empirically-selected configur
 
 ## 3. Evaluation
 
-v2 is measured against **three external ground-truth benchmarks** (the `benchmarks/` package; portable,
+ddharmon is measured against **external ground-truth benchmarks** (the `benchmarks/` package; portable,
 `$0`, reproducible under `PYTHONHASHSEED=0`) — and a locked in-domain human gate:
 
 | Benchmark | Question | Ground truth | Headline |
 |-----------|----------|--------------|----------|
-| **A — CDEMapper** | Are we matching the **right CDE**? | Yale CDE-Mapping-Tool (494 field→CDE) | hybrid retrieval recall@5 0.632; fused assignment (in-backbone) 0.521 |
-| **B — PhenX** | Do same-concept vars from **different cohorts** co-cluster? | PhenX↔dbGaP crosswalk | embedding separability Δ0.536; clustering's edge is diffuse (motivates assignment-first) |
-| **C — ATHLOS** | Are the **value recodes** generated correctly? | ATHLOS harmonisation scripts (284 recode golds) | LLM recode pair-accuracy 0.832 → **0.869 with question_text context** |
+| **CDEMapper** | Are we matching the **right CDE**? | Yale CDE-Mapping-Tool (494 field→CDE) | hybrid retrieval recall@5 0.632; fused assignment (in-backbone) 0.521 |
+| **PhenX** | Do same-concept vars from **different cohorts** co-cluster? | PhenX↔dbGaP crosswalk | embedding separability Δ0.536; clustering's edge is diffuse (motivates assignment-first) |
+| **AI-READI** | Does a variable reach the **right concept**? | AI-READI OMOP/CDE anchors | variable→concept recall@5 0.655 (held-out) |
+| **ATHLOS** | Are the **value recodes** generated correctly? | ATHLOS harmonisation scripts (284 recode golds) | LLM recode pair-accuracy 0.832 → **0.869 with question_text context** |
 
-Two evaluation principles carry over from the research:
+Two evaluation principles:
 
-- **Benchmark-usage policy** — CDEMapper is the *development* set (already tuned on), PhenX is a *held-out*
-  generalization check (measure, don't tune), and EITL human verdicts are the *locked* in-domain
+- **Benchmark-usage policy** — CDEMapper is the *development* set (already tuned on); PhenX and AI-READI are
+  *held-out* generalization checks (measure, don't tune); EITL human verdicts are the *locked* in-domain
   acceptance gate. Only mechanistically-justified changes are adopted, never benchmark-chasing.
-- **The value layer needs question context.** On Benchmark C, feeding the source field's `question_text`
-  (a FieldRole ddharmon already carries) into the recode generator lifts whole-variable accuracy ~7pp by
-  resolving polarity/granularity judgment calls — so the transform layer, when built, must include it.
+- **The value layer needs question context.** On the ATHLOS benchmark, feeding the source field's
+  `question_text` (a FieldRole ddharmon already carries) into the recode generator lifts whole-variable
+  accuracy ~7pp by resolving polarity/granularity judgment calls.
 
 EITL `transform_review` is the value-layer analog of the match-review gate: nothing is auto-applied, and
 the strict adopt/refine/novel cutoff is calibrated from human verdicts on the routed output.
 
 ---
 
-## 4. How v2 differs from v1
+## 4. Scope & lineage
 
-| Axis | v1 (sub-cluster-anchored) | v2 (lean head/tail) |
-|------|---------------------------|---------------------|
-| Primary engine | Clustering → value sub-cluster → anchor | **Assignment to the backbone**; clustering is retrieval/batching scaffolding |
-| Head vs tail | Not distinguished | **Explicit split** — assign the covered head, generate/cluster the tail |
-| Candidate generation | Medoid of the sub-cluster → best in-cluster CDE | **Hybrid (BM25 ⊕ dense, RRF) top-20** retrieval |
-| Coverage anchor | — | **Generate-ideal** (LLM describes the ideal CDE with no candidates shown) |
-| LLM call | One classify-only call (`adopt`/`refine`/`novel`) | One **fused** call (rank by the ideal **+** verdict **+** pick) |
-| Vectors | Dual (semantic + value) | Single semantic; value/encoding metadata → prompt, not vector |
-| Evaluation | — | Three external benchmarks (A/B/C) + EITL locked gate |
+ddharmon keeps a set of invariants: cohort-agnostic (no cohort identity in clustering or assignment),
+CDEMapper cited as prior art rather than lifted, dataclass models, and EITL as the human gate.
 
-v2 keeps v1's invariants: cohort-agnostic (no cohort identity in clustering or assignment), CDEMapper
-cited as prior art rather than lifted, dataclass models, and EITL as the human gate. It supersedes
-`harmonize_dictionaries` (v1) as the default pipeline.
-
----
-
-## 5. Deferred / open
+**Deferred / open:**
 
 - **Adopt/refine/novel calibration** — the cutoff (and the retrieval floor τ) are intentionally strict
-  pending the first EITL human verdicts on the v2 routed output.
-- **Transform / value-recode spec authoring** — v2 stops at the assignment decision and hands off to
-  EITL; per-variable recode specs (with the validated `question_text` context) are the next build, and
-  Benchmark C is the yardstick for them.
+  pending the first EITL human verdicts on the routed output.
 - **Tail handling** — GenCDE generation and residual re-clustering for the no-CDE tail are scoped but
   deprioritized relative to the head assignment engine.
 
 See the [Related work](../README.md#related-work) section of the README for the field map, and
-[`benchmarks/README.md`](../benchmarks/README.md) for the standing evaluation benchmarks (CDEMapper
-retrieval, PhenX cross-cohort co-clustering) used to settle the architecture.
+[`benchmarks/README.md`](../benchmarks/README.md) for the standing evaluation benchmarks used to settle
+the architecture.

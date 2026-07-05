@@ -1,4 +1,4 @@
-"""Tests for the v1 harmonization pipeline orchestration.
+"""Tests for the sub-cluster-anchored harmonization pipeline orchestration.
 
 Exercises prepare_from_clusters -> assemble_verdicts and the export helpers on
 hand-built clusters (no BERTopic), plus a mock-LLM end-to-end via classify().
