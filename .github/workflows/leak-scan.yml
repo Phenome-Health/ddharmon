@@ -1,0 +1,15 @@
+name: Leak scan
+
+# "Ship clean" gate: fails the build if local-machine paths or internal names/handles
+# reach this public repo. Pure-stdlib scanner (scripts/leak_scan.py) — no install step.
+on:
+  pull_request:
+  push:
+
+jobs:
+  leak-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan tracked files for local paths / internal names
+        run: python3 scripts/leak_scan.py --profile public
