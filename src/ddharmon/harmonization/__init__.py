@@ -1,21 +1,21 @@
 """CDE harmonization.
 
-**v2 (lean head/tail, split-aware)** — assignment-first for the covered head, GenCDE/clustering for the
-tail; one record per distinct concept-GROUP within a cluster::
+**Lean head/tail (split-aware) — the default pipeline** — assignment-first for the covered head,
+GenCDE/clustering for the tail; one record per distinct concept-GROUP within a cluster::
 
     cluster -> hybrid retrieve -> generate-ideal -> split-assign -> per-group re-assign -> route
 
-    harmonize_leanb()        -- full v2 pipeline (generate -> split -> per-group assign -> route)
+    harmonize_leanb()        -- full pipeline (generate -> split -> per-group assign -> route)
     prepare_leanb()          -- retrieve + build generate-ideal prompts from precomputed clusters
     prepare_split()          -- build split-assign prompts (partition members into concept groups)
     prepare_group_assign()   -- parse split groups, re-retrieve per group, build per-group assign prompts
     assemble_leanb()         -- parse per-group responses into routed LeanBRecord decisions
     LeanBResult / LeanBRecord / CdeBackbone / export_leanb_eitl_queue()
 
-**v1 (sub-cluster-anchored)** — retained:: semantic cluster -> value sub-cluster -> CDE anchor ->
+**Sub-cluster-anchored — retained**:: semantic cluster -> value sub-cluster -> CDE anchor ->
 classify (adopt/refine/novel) -> EITL.
 
-    harmonize_dictionaries() -- full v1 pipeline
+    harmonize_dictionaries() -- full sub-cluster-anchored pipeline
     prepare_from_clusters() / assemble_verdicts() / find_anchor_cde()
     HarmonizationResult / HarmonizationVerdict / AnchorResult / SubClusterResult
 """

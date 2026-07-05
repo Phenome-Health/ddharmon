@@ -1,4 +1,4 @@
-"""Expert-in-the-loop (EITL) review-campaign export for the v2 split-aware pipeline.
+"""Expert-in-the-loop (EITL) review-campaign export for the split-aware pipeline.
 
 Turns a :class:`~ddharmon.harmonization.leanb.LeanBResult` into reviewer-ready CSV
 campaigns:
@@ -301,7 +301,7 @@ def export_split_eitl_campaign(
     """Write the EITL review campaign CSVs for a split-aware ``LeanBResult``.
 
     Args:
-        result: the v2 harmonization result (one record per concept-group).
+        result: the harmonization result (one record per concept-group).
         source_dicts: cohort name -> source DataDictionary (for member question text / data type).
         cde_lookup: designation -> {tinyId, question_text, definition} (see :func:`build_cde_lookup`).
         out_dir: directory to write the CSV(s) into.

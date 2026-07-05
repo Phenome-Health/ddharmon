@@ -13,7 +13,7 @@ Chunking never decides the final concept grouping — the split + merge do.
 Coherence-aware: chunks are formed by deterministic average-linkage agglomerative clustering (cosine) on
 the members' cached embeddings — the SAME scipy family the top-level clustering uses — so each sub-chunk is
 internally homogeneous and the LLM's within-chunk split is easy (usually one group). This is "clustering as
-batching" (per the frozen v3 decision to demote clustering to retrieval/batching), NOT a semantic hierarchy
+batching" (per the design decision to demote clustering to retrieval/batching), NOT a semantic hierarchy
 (refuted as the assignment engine, Run 021b).
 
 Deterministic: scipy ``linkage``/``fcluster`` carry no RNG; given the frozen substrate + cached embeddings

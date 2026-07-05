@@ -1,4 +1,4 @@
-"""Tests for the v2 lean head/tail harmonization pipeline (split-aware, 3-stage).
+"""Tests for the lean head/tail harmonization pipeline (split-aware, 3-stage).
 
 Exercises prepare_leanb -> prepare_split -> prepare_group_assign -> assemble_leanb and the export
 helpers on hand-built clusters (no BERTopic), with mock-LLM dicts at each stage. No

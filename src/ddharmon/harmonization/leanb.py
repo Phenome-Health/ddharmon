@@ -1,11 +1,11 @@
-"""v2 lean head/tail CDE harmonization pipeline (split-aware, 3-stage).
+"""Lean head/tail CDE harmonization pipeline (split-aware, 3-stage) — the default pipeline.
 
-Supersedes the v1 sub-cluster-anchored pipeline (``harmonize_dictionaries``). Where v1 anchored each
-value sub-cluster to the most-central in-cluster CDE, v2 leads with **assignment to the given CDE
-backbone** for the covered head and routes the uncovered tail to GenCDE/clustering — the division of
+Supersedes the sub-cluster-anchored pipeline (``harmonize_dictionaries``). Where that approach anchored
+each value sub-cluster to the most-central in-cluster CDE, this one leads with **assignment to the given
+CDE backbone** for the covered head and routes the uncovered tail to GenCDE/clustering — the division of
 labor that the research harness settled. A semantic cluster is grouped by an embedding that ignores the
-variable name, so one cluster can pool MORE THAN ONE distinct concept; v2 is therefore SPLIT-AWARE and
-emits one record per concept-GROUP. Per concept cluster::
+variable name, so one cluster can pool MORE THAN ONE distinct concept; the pipeline is therefore
+SPLIT-AWARE and emits one record per concept-GROUP. Per concept cluster::
 
     hybrid retrieve (BM25 lexical + dense centroid, RRF) top-k CDE candidates
       -> generate-ideal      (LLM, no candidates -> a qualifier-faithful coverage anchor)
@@ -13,7 +13,7 @@ emits one record per concept-GROUP. Per concept cluster::
       -> per-group re-assign  (LLM, RE-RETRIEVE per group, then rank candidates + adopt/refine/novel)
       -> route: adopt/refine -> CDE assignment ;  novel -> GenCDE / clustering residual (tail)
 
-Three LLM stages. As in v1 the pipeline is split so each stage is testable without an LLM and can run
+Three LLM stages. The pipeline is split so each stage is testable without an LLM and can run
 inline *or* be exported for the offline Batch API and assembled later: ``prepare_leanb`` builds the
 generate prompts, ``prepare_split`` builds the split prompts from the generated ideals,
 ``prepare_group_assign`` parses the split groups and builds one re-retrieved assign prompt per group, and
@@ -249,7 +249,7 @@ class CdeBackbone:
 
 @dataclass
 class LeanBResult:
-    """v2 harmonization records plus the prompts that produced (or will produce) them.
+    """Harmonization records plus the prompts that produced (or will produce) them.
 
     ``ideal_prompts`` are populated when the generate stage has not run inline (export for Batch);
     ``split_prompts`` when generate has run but split has not; ``group_assign_prompts`` when split has run
@@ -604,7 +604,7 @@ def assemble_leanb(
         route = "assigned" if verdict in ("adopt", "refine") else "gencde_residual"
         top1 = ctx.get("top1_cos")
         rk = _parse_ranking(payload.get("ranking") if payload else None, len(cands))
-        # Persist the ranked candidate set for the review UI (v1 discarded it). Best-first by the LLM
+        # Persist the ranked candidate set for the review UI (the sub-cluster-anchored pipeline discarded it). Best-first by the LLM
         # ranking, then any un-ranked candidates in retrieval order.
         cand_order = rk + [j for j in range(len(cands)) if j not in rk]
         llm_top = rk[0] if rk else None
@@ -723,7 +723,7 @@ def harmonize_leanb(
     residual_min_cluster_size: int = 8,
     max_clusters: int | None = None,
 ) -> LeanBResult:
-    """Run the full v2 pipeline: cluster -> retrieve -> generate-ideal -> split -> per-group assign -> route.
+    """Run the full pipeline: cluster -> retrieve -> generate-ideal -> split -> per-group assign -> route.
 
     ``generate`` (stage 1), ``split`` (stage 2), and ``classify`` (stage 3, per-group assign) each map
     prompt records to ``{id: response}``. At each ``None`` boundary the result carries the prepared

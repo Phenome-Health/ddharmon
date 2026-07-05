@@ -20,7 +20,7 @@ uv sync --extra all
 cp .env.example .env        # set ANTHROPIC_API_KEY for the LLM passes (sync / batch)
 ```
 
-Then open **`notebooks/clustering/v2_harmonization_pipeline.ipynb`** — it runs the full pipeline end to
+Then open **`notebooks/clustering/harmonization_pipeline.ipynb`** — it runs the full pipeline end to
 end on bundled example data (All of Us + CLSA dictionaries against the NIH CDE catalog) and is the best
 place to start. A `MAX_CLUSTERS` cap keeps the demo cheap; the embedding and clustering stages run with no
 API key.
@@ -80,7 +80,7 @@ ingest (study dictionaries + NIH CDE catalog)
 ```
 
 Nothing is auto-applied — every adopt/refine/novel recommendation lands in a review queue. Full algorithm,
-parameters, and design rationale are in [`docs/v2_methods.md`](docs/v2_methods.md).
+parameters, and design rationale are in [`docs/methods.md`](docs/methods.md).
 
 ## What ddharmon adds
 
@@ -209,7 +209,7 @@ src/ddharmon/
 ├── values/         # value-encoding parsing
 └── export/         # EITL campaigns + visualization
 benchmarks/         # reproducible $0 eval gates (CDEMapper, PhenX, ATHLOS) + gate.py
-notebooks/clustering/v2_harmonization_pipeline.ipynb   # end-to-end entry point
+notebooks/clustering/harmonization_pipeline.ipynb   # end-to-end entry point
 data/examples/      # bundled dictionaries (All of Us, CLSA) + flattened NIH CDE catalog
 scripts/            # data builders, prompt runners, release verification, check/fix
 tests/
@@ -225,7 +225,7 @@ retrieval), PhenX (cross-cohort co-clustering), and ATHLOS (value-recode correct
 ## Roadmap
 
 - **Web GUI** — a point-and-click app (upload dictionaries → run with live progress → review → export),
-  shipping as part of **biomapper-ui**.
+  shipping as the companion **ddharmon-ui** app.
 - **Pairwise 1:1 mapping** as a first-class surface (the engine is built).
 - **Standards mapping** (LOINC / SNOMED / OMOP).
 - **Calibrated adopt/refine/novel thresholds** — tuned from expert-review verdicts (the router ships
