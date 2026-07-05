@@ -3,6 +3,50 @@
 All notable changes to ddharmon are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
+## [0.9.0] — 2026-07-04
+
+The **v3 harmonization milestone**: the split-aware pipeline hardened into a production-quality assignment
++ transform-spec engine, expanded to N≥3 bundled cohorts, gated by a second held-out CDE benchmark, and
+documented with an honest measured-quality + limitations statement. Validated end-to-end on a held-out
+5-cohort public run (18,128 fields): fields reaching a record 62%→98%, real-concept grouping 30%→61%,
+CDE assignment 25%→42%. All new pipeline behavior is **on by default** (each mod has an opt-out flag).
+
+### Added
+
+- **Split-aware grouping at scale.** Oversized clusters are chunked into coherence-aware sub-units
+  (recursive average-linkage bisection) so the split LLM sees every member; a cross-record **merge** stage
+  reunites same-concept records over-split across clusters; a NONE-fraction **coherence gate** demotes
+  records whose coded edges are mostly unmappable. Eliminates the large-cluster member-drop that stranded
+  most fields in un-differentiated blobs.
+- **Outlier recovery** — HDBSCAN noise is re-clustered in isolation at a lower density and folded back in,
+  recovering coherent sub-threshold families (recovered 86% of outliers on the validation run).
+- **Transform-spec generation** (`ddharmon.harmonization.transform`, `ddharmon.values`) — categorical
+  value-recode specs, N1 unit conversions (curated UCUM-factor table, no `pint` dependency), N2 arithmetic
+  formulas (safe-eval verified), and wide→long specs for repeating-measure families, with units-driven
+  confidence routed through the same review layer as mappings. Emits specs (including parameterized
+  data-dependent specs); does not execute them on data.
+- **Concept-match gate** — flags an adopt/refine whose assigned CDE fails a same-concept check (the
+  full-coverage-wrong-concept case), routing it to review without flipping the verdict.
+- **N≥3 bundled example cohorts** — UK Biobank (Showcase schema), MESA (dbGaP), and AI-READI added
+  alongside All of Us + CLSA, each with a reproduce-script and provenance (`data/examples/README.md`).
+- **AI-READI CDE benchmark** — a second held-out variable→concept assignment gold (OMOP/CDE anchors) wired
+  into `benchmarks/gate.py`, plus a C2 unit-conversion gate. A scheduled/manual **benchmark CI workflow**
+  (`.github/workflows/benchmarks.yml`) runs the full $0 gate.
+- **Reproducible-by-construction runs** — a frozen clustering **substrate** (`ddharmon.harmonization.substrate`)
+  + content-addressed prompt ids + `temperature=0` on the batch stages let a re-run replay byte-identically
+  from cached responses (UMAP/HDBSCAN are not bit-reproducible on their own).
+- **Docs** — a **Command-line usage** section and a **Limitations & measured quality** section (dev-vs-held-out
+  benchmark table) in the README.
+
+### Changed
+
+- **Retrieval matching quality** — same-concept candidates in a different encoding (banding, flag, composite,
+  unit) now route to *refine* (a transform bridges them) rather than *novel*; the CDE candidate pool gets
+  index hygiene (boilerplate + opaque-code stripping); a weak-support adopt is demoted to refine.
+- `harmonize_leanb` turns the above quality mods on by default (each has an opt-out flag) and keeps the
+  `max_clusters` cost cap. The conservative adopt/refine/novel router and 0.30 retrieval floor are unchanged;
+  threshold calibration from expert-review verdicts remains a future release.
+
 ## [0.7.0] — 2026-06-24
 
 The **v2 split-aware harmonization pipeline** — a new architecture that leads with *assignment to the
