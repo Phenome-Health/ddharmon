@@ -77,7 +77,9 @@ def _label(fld: Field | None) -> str:
 
 def _norm(matrix: NDArray[np.float32]) -> NDArray[np.float32]:
     norms = np.linalg.norm(matrix, axis=-1, keepdims=True)
-    return matrix / np.where(norms == 0, 1.0, norms)
+    # np.where's 1.0 literal is float64, so the division upcasts; keep the float32 contract (and the
+    # embedding dtype) explicit — pyright >=1.1.410 enforces the ndarray dtype covariance.
+    return (matrix / np.where(norms == 0, 1.0, norms)).astype(np.float32)
 
 
 def _member_rows(rec: LeanBRecord, row_of: dict[tuple[str, str], int]) -> list[int]:
