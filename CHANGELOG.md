@@ -54,6 +54,18 @@ Validated end-to-end on a held-out 5-cohort public run (18,128 fields): 97.5% of
 - **EITL campaign export** (`ddharmon.export.eitl`) — `export_split_eitl_campaign` / `build_cde_lookup`
   emit reviewer-ready campaigns honoring the import contract (escaped source text, no raw newlines,
   `QUOTE_ALL`, size-limited chunking). Nothing is auto-applied.
+- **Analysis ideas** (`ddharmon.harmonization.analysis_ideas`) — `generate_analysis_ideas()` runs one
+  grounded LLM pass over a run's cross-cohort concepts (metadata only) to *suggest* downstream analyses a
+  harmonization newly enables (association tests, replication/meta-analysis, pooled prevalence, …). Every
+  idea is grounded in concepts actually present in the run (hallucinated concepts dropped) and the parser
+  salvages a token-cap-truncated response. Proposes hypotheses; never runs them. Helpers:
+  `build_concept_digest`, `AnalysisIdea`, `AnalysisIdeasResult`.
+- **Bring-your-own-key (BYOK)** — `AnthropicClient` and the batch helpers (`submit_batch`,
+  `retrieve_batch`, `submit_and_wait`, `resume_and_wait`) take an optional keyword-only `api_key`; the
+  batch helpers also take an optional `base_url` for an on-prem Anthropic-passthrough proxy. Both default to
+  `None`, preserving the unchanged `ANTHROPIC_API_KEY`-from-env behavior. A supplied key is scoped to that
+  client/call and never written to `os.environ` (no cross-job leak), letting a web backend thread a
+  per-request key through to the harmonization run.
 
 ### Data, benchmarks, reproducibility
 
