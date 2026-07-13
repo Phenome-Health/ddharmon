@@ -58,10 +58,15 @@ class AnthropicClient(BaseLLMClient):
     output_format.
     """
 
-    def __init__(self, model_name: str = "claude-sonnet-4-20250514", max_tokens: int = 2048) -> None:
+    def __init__(
+        self, model_name: str = "claude-sonnet-4-20250514", max_tokens: int = 2048, *, api_key: str | None = None
+    ) -> None:
         import anthropic
 
-        self._client = anthropic.Anthropic()
+        # api_key=None lets the SDK fall back to ANTHROPIC_API_KEY (unchanged default). A caller-supplied
+        # key (e.g. a per-request BYOK key from a web backend) is scoped to this client only — never written
+        # to os.environ, which would race/leak across concurrent jobs.
+        self._client = anthropic.Anthropic(api_key=api_key)
         self._model_name = model_name
         self._max_tokens = max_tokens
         self._use_structured: bool | None = None  # auto-detect on first call
