@@ -157,6 +157,28 @@ class TestAnthropicClient:
             assert hasattr(client, "rerank_candidates")
             assert callable(client.rerank_candidates)
 
+    def test_forwards_api_key_to_constructor(self) -> None:
+        """A caller-supplied api_key (BYOK) is passed straight to anthropic.Anthropic, not via env."""
+        mock_anthropic_mod = MagicMock()
+        mock_anthropic_mod.Anthropic.return_value = MagicMock()
+
+        with patch.dict("sys.modules", {"anthropic": mock_anthropic_mod}):
+            from ddharmon.llm.anthropic_client import AnthropicClient
+
+            AnthropicClient(api_key="sk-ant-byok")
+            mock_anthropic_mod.Anthropic.assert_called_once_with(api_key="sk-ant-byok")
+
+    def test_defaults_api_key_none_for_env_fallback(self) -> None:
+        """Default construction forwards api_key=None so the SDK reads ANTHROPIC_API_KEY (unchanged behavior)."""
+        mock_anthropic_mod = MagicMock()
+        mock_anthropic_mod.Anthropic.return_value = MagicMock()
+
+        with patch.dict("sys.modules", {"anthropic": mock_anthropic_mod}):
+            from ddharmon.llm.anthropic_client import AnthropicClient
+
+            AnthropicClient()
+            mock_anthropic_mod.Anthropic.assert_called_once_with(api_key=None)
+
 
 class TestOpenAIClient:
     """Tests for OpenAIClient."""

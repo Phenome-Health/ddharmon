@@ -69,6 +69,8 @@ def submit_batch(
     max_tokens: int = 2048,
     temperature: float = 0.0,
     manifest_path: str | Path | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
 ) -> str:
     """Submit exported prompts to the Anthropic Message Batches API.
 
@@ -97,6 +99,14 @@ def submit_batch(
             exact replay comes from the cached responses file, not the API.)
         manifest_path: Where to save batch metadata. Defaults to
             ``<prompts_dir>/batch_manifest.json``.
+        base_url: Optional Anthropic base URL. When ``None`` (the default) the
+            client talks directly to the Anthropic API exactly as before
+            (byte-for-byte). When set (e.g. ``http://localhost:4000/anthropic``)
+            the Anthropic-native batch calls route through a self-hosted proxy's
+            ``/anthropic`` passthrough — per-run opt-in, non-breaking. The batch
+            request shape is unchanged. When data governance requires prompt/field
+            text to stay within infrastructure you control, point ``base_url`` at
+            a proxy you host.
 
     Returns:
         Batch ID string for use with ``retrieve_batch()``.
@@ -146,7 +156,12 @@ def submit_batch(
 
     logger.info("Submitting %d requests to Batch API (models=%s)", len(requests), sorted(models_used))
 
-    client = anthropic.Anthropic()
+    # api_key=None -> SDK reads ANTHROPIC_API_KEY (unchanged default). A supplied key is scoped to this call.
+    # base_url=None -> direct Anthropic (byte-for-byte as before); when set, route via the proxy passthrough.
+    client_kwargs: dict = {"api_key": api_key}
+    if base_url is not None:
+        client_kwargs["base_url"] = base_url
+    client = anthropic.Anthropic(**client_kwargs)
     batch = client.messages.batches.create(requests=requests)
 
     # Save manifest for later retrieval. id_map lets retrieve_batch restore the
@@ -172,6 +187,8 @@ def retrieve_batch(
     output_path: str | Path,
     *,
     manifest_path: str | Path | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
 ) -> int:
     """Check batch status and write responses if complete.
 
@@ -186,6 +203,9 @@ def retrieve_batch(
             (e.g. "cluster:5") that downstream parsers expect, reversing the
             custom_id sanitization applied at submit time. Without it, the
             sanitized custom_ids are written as-is.
+        base_url: Optional Anthropic base URL. ``None`` (default) = direct
+            Anthropic (unchanged). When set, routes through the proxy's
+            ``/anthropic`` passthrough (must match the ``submit_batch`` route).
 
     Returns:
         Number of responses written, or 0 if batch is still processing.
@@ -199,7 +219,11 @@ def retrieve_batch(
         with open(manifest_path) as mf:
             id_map = json.load(mf).get("id_map", {})
 
-    client = anthropic.Anthropic()
+    # base_url=None -> direct Anthropic (byte-for-byte as before); when set, route via the proxy passthrough.
+    client_kwargs: dict = {"api_key": api_key}
+    if base_url is not None:
+        client_kwargs["base_url"] = base_url
+    client = anthropic.Anthropic(**client_kwargs)
 
     batch = client.messages.batches.retrieve(batch_id)
     counts = batch.request_counts
@@ -273,6 +297,8 @@ def submit_and_wait(
     temperature: float = 0.0,
     poll_secs: int = 60,
     manifest_path: str | Path | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
 ) -> int:
     """Submit a batch and block until it ends, writing responses.
 
@@ -282,9 +308,17 @@ def submit_and_wait(
     still-processing via the status field, not the written count), then writes
     responses with original ids restored.
 
-    Requires outbound HTTPS to the Anthropic API and ``ANTHROPIC_API_KEY`` in
-    the environment. On an air-gapped host use ``submit_batch`` / ``retrieve_batch``
-    across machines (or ``scripts/process_prompts_batch.sh``) instead.
+    Requires outbound HTTPS to the Anthropic API and, unless ``api_key`` is
+    supplied, ``ANTHROPIC_API_KEY`` in the environment. Pass ``api_key`` to scope
+    a caller-supplied key (e.g. a per-request BYOK key) to this run without
+    touching ``os.environ``. On an air-gapped host use ``submit_batch`` /
+    ``retrieve_batch`` across machines (or ``scripts/process_prompts_batch.sh``) instead.
+
+    ``base_url`` (default ``None`` = direct Anthropic, byte-for-byte as before)
+    is threaded to the submit call, the poll-loop client, AND the final retrieve
+    so the whole run uses one route; when set it opts this run into the proxy's
+    ``/anthropic`` passthrough (non-breaking; use a proxy you host when data
+    governance requires prompt text to stay within your infrastructure).
 
     Returns:
         Number of responses written.
@@ -298,11 +332,21 @@ def submit_and_wait(
         manifest_path = prompts_path.parent / f"{prompts_path.name}.batch_manifest.json"
 
     batch_id = submit_batch(
-        prompts_path, model=model, max_tokens=max_tokens, temperature=temperature, manifest_path=manifest_path
+        prompts_path,
+        model=model,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        manifest_path=manifest_path,
+        api_key=api_key,
+        base_url=base_url,
     )
     print(f"Submitted batch {batch_id}; polling every {poll_secs}s until it ends...")
 
-    client = anthropic.Anthropic()
+    # base_url=None -> direct Anthropic (byte-for-byte as before); when set, route via the proxy passthrough.
+    client_kwargs: dict = {"api_key": api_key}
+    if base_url is not None:
+        client_kwargs["base_url"] = base_url
+    client = anthropic.Anthropic(**client_kwargs)
     while True:
         batch = client.messages.batches.retrieve(batch_id)
         if batch.processing_status == "ended":
@@ -311,7 +355,7 @@ def submit_and_wait(
         print(f"  {batch.processing_status}: succeeded={c.succeeded} processing={c.processing} errored={c.errored}")
         time.sleep(poll_secs)
 
-    return retrieve_batch(batch_id, output_path, manifest_path=manifest_path)
+    return retrieve_batch(batch_id, output_path, manifest_path=manifest_path, api_key=api_key, base_url=base_url)
 
 
 def _ids_in_jsonl(path: str | Path) -> set[str]:
@@ -333,6 +377,8 @@ def resume_and_wait(
     max_tokens: int = 2048,
     temperature: float = 0.0,
     poll_secs: int = 60,
+    api_key: str | None = None,
+    base_url: str | None = None,
 ) -> int:
     """Submit ONLY the prompts whose ids are missing from an existing responses
     file, then append the recovered responses — without re-running what already
@@ -351,6 +397,11 @@ def resume_and_wait(
     Idempotent — safe to re-run: when nothing is missing it's a no-op; a
     straggler that errors again simply stays missing for the next attempt.
 
+    ``base_url`` (default ``None`` = direct Anthropic, byte-for-byte as before)
+    is forwarded to the delegated ``submit_and_wait`` on both the full-run and
+    the gap-resume paths, so a resumed run uses the same route as the original
+    (opt-in proxy ``/anthropic`` passthrough; non-breaking).
+
     Returns:
         Number of responses newly appended (0 if nothing was missing).
     """
@@ -360,7 +411,14 @@ def resume_and_wait(
     # No prior responses to resume from → just run the full pass.
     if not output_path.exists():
         return submit_and_wait(
-            prompts_path, output_path, model=model, max_tokens=max_tokens, temperature=temperature, poll_secs=poll_secs
+            prompts_path,
+            output_path,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            poll_secs=poll_secs,
+            api_key=api_key,
+            base_url=base_url,
         )
 
     have = _ids_in_jsonl(output_path)
@@ -395,6 +453,8 @@ def resume_and_wait(
             temperature=temperature,
             poll_secs=poll_secs,
             manifest_path=gap_manifest,
+            api_key=api_key,
+            base_url=base_url,
         )
         with open(gap_responses) as src, open(output_path, "a") as dst:
             for line in src:

@@ -20,6 +20,12 @@ classify (adopt/refine/novel) -> EITL.
     HarmonizationResult / HarmonizationVerdict / AnchorResult / SubClusterResult
 """
 
+from ddharmon.harmonization.analysis_ideas import (
+    AnalysisIdea,
+    AnalysisIdeasResult,
+    build_concept_digest,
+    generate_analysis_ideas,
+)
 from ddharmon.harmonization.anchor import (
     CDE_COHORT,
     build_field_lookup,
@@ -90,6 +96,8 @@ from ddharmon.models.cluster import SubClusterResult
 
 __all__ = [
     "CDE_COHORT",
+    "AnalysisIdea",
+    "AnalysisIdeasResult",
     "AnchorResult",
     "CandidateCDE",
     "CdeBackbone",
@@ -109,6 +117,7 @@ __all__ = [
     "assemble_merge",
     "assemble_specgen",
     "assemble_verdicts",
+    "build_concept_digest",
     "build_field_lookup",
     "build_substrate",
     "canonicalness_score",
@@ -124,6 +133,7 @@ __all__ = [
     "export_transform_review",
     "field_richness",
     "find_anchor_cde",
+    "generate_analysis_ideas",
     "generate_unit_specs",
     "generate_wide_to_long_specs",
     "harmonize_dictionaries",

@@ -1,6 +1,6 @@
 """Data models for sub-cluster-anchored CDE harmonization.
 
-Dataclasses following biomapper2 conventions. The sub-cluster-anchored pipeline:
+Dataclasses for the harmonization pipeline. The sub-cluster-anchored pipeline:
 
     semantic cluster  ->  value sub-cluster  ->  CDE anchor  ->  adopt/refine/novel
 

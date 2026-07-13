@@ -3,8 +3,8 @@
 Supersedes the sub-cluster-anchored pipeline (``harmonize_dictionaries``). Where that approach anchored
 each value sub-cluster to the most-central in-cluster CDE, this one leads with **assignment to the given
 CDE backbone** for the covered head and routes the uncovered tail to GenCDE/clustering — the division of
-labor that the research harness settled. A semantic cluster is grouped by an embedding that ignores the
-variable name, so one cluster can pool MORE THAN ONE distinct concept; the pipeline is therefore
+labor established empirically through benchmark experiments. A semantic cluster is grouped by an embedding
+that ignores the variable name, so one cluster can pool MORE THAN ONE distinct concept; the pipeline is therefore
 SPLIT-AWARE and emits one record per concept-GROUP. Per concept cluster::
 
     hybrid retrieve (BM25 lexical + dense centroid, RRF) top-k CDE candidates
@@ -170,7 +170,7 @@ def _member_text(fld: Field | None, ref: FieldReference) -> str:
     """Gap-1 augmented member text: base text + humanized name when the name adds a qualifier.
 
     This is the RETRIEVAL text (BM25 + dense). Kept lean (concept-only) on purpose — source value
-    codes are noise in the geometric/lexical space (Run 016/048). For the prompt-side, value-aware
+    codes are noise in the geometric/lexical space. For the prompt-side, value-aware
     rendering see :func:`_member_prompt_text`.
     """
     return _aug_text(ref.variable_name, _base_member_text(fld, ref))
@@ -740,7 +740,7 @@ def harmonize_leanb(
     run used is returned on ``LeanBResult.substrate`` (save it to replay later — see :mod:`.substrate`).
 
     The M2/M3/M4/M5/M10 quality mods below are ON by default — they were validated together on a held-out
-    full-5 A/B (2026-07-04, .planning/experiments/full5-stack-run-2026-07-04.md: fields reaching a record
+    5-cohort A/B (fields reaching a record
     62->98%, real-concept grouping 29.5->60.7%, assignment 25->42%). Each can be turned OFF individually via
     its argument for ablation or a lean run.
 

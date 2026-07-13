@@ -14,7 +14,7 @@ Coherence-aware: chunks are formed by deterministic average-linkage agglomerativ
 the members' cached embeddings — the SAME scipy family the top-level clustering uses — so each sub-chunk is
 internally homogeneous and the LLM's within-chunk split is easy (usually one group). This is "clustering as
 batching" (per the design decision to demote clustering to retrieval/batching), NOT a semantic hierarchy
-(refuted as the assignment engine, Run 021b).
+(refuted as the assignment engine).
 
 Deterministic: scipy ``linkage``/``fcluster`` carry no RNG; given the frozen substrate + cached embeddings
 + a stable member ordering, the chunk partition — and hence each chunk's content-addressed prompt id

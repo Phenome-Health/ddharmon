@@ -504,8 +504,7 @@ class _ContentMockProvider:
 class TestReproducibility:
     """Guard: shipped embedding output is invariant to field insertion order, so
     PYTHONHASHSEED-induced set-ordering drift in ingestion cannot change the
-    embedding fingerprint — the pipeline sorts by variable_name. Locks the property
-    from .planning todo 2026-06-09-pipeline-not-reproducible-pythonhashseed (the
+    embedding fingerprint — the pipeline sorts by variable_name. Locks this property (the
     shipped layer is already reproducible by construction; this prevents regression).
     """
 

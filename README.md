@@ -4,11 +4,6 @@ ddharmon harmonizes biomedical **data dictionaries**. It clusters equivalent var
 studies, assigns each concept to an existing **Common Data Element (CDE)** from the NIH catalog — or
 flags it for a newly generated CDE when nothing fits — and routes every recommendation to expert review.
 
-![ddharmon in the Phenome Health data-harmonization ecosystem](docs/ph-ecosystem-v1.png)
-
-*Where ddharmon sits: cluster equivalent variables across studies → assign each to an NIH CDE (or generate
-a novel one) → expert review — alongside related public tools and the broader Phenome Health stack.*
-
 ## Quick start
 
 Requirements: **Python 3.12+** and [uv](https://github.com/astral-sh/uv).

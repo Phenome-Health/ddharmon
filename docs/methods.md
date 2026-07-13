@@ -3,7 +3,7 @@
 **ddharmon** harmonizes biomedical data-dictionary variables across studies by treating a *covered*
 concept as **assignment to an existing Common Data Element (CDE)** and routing only the *uncovered* tail
 to generation and clustering. It leads with assignment to the given CDE backbone rather than making
-clustering the primary engine — the division of labor the research harness settled empirically.
+clustering the primary engine — a division of labor established empirically through benchmark experiments.
 
 This document describes (1) why the pipeline is assignment-first, (2) the pipeline and its algorithms,
 and (3) how it is evaluated.
@@ -56,7 +56,7 @@ ingest (cohorts + CDE catalog)
 |-------|--------|-------|
 | **Ingest / embed** | role-mapped CSV/TSV loader; `FremyCompany/BioLORD-2023` (768-d, L2-normalized, SQLite-cached) | The CDE catalog is loaded as a cohort so its text is embedded into the same space. A single *semantic* vector per field; value/encoding metadata is routed to the LLM prompt (symbolic), not the geometric vector. |
 | **Cluster** | Concept clustering over semantic vectors | **Scaffolding** — it batches near-duplicate fields for one assignment call and provides a centroid for dense retrieval. It is not the decision engine. |
-| **Hybrid retrieve** | `BM25` (lexical, over rich CDE text) ⊕ dense centroid cosine, fused by **Reciprocal Rank Fusion**; top-k=20 | The candidate generator. Hybrid beats dense at every k (recall@5 0.447 → 0.632 on the CDEMapper gold); a dense-rich control confirmed the gain is real lexical signal. Reusable in `ddharmon.matching` (`BM25`, `hybrid_topk`). |
+| **Hybrid retrieve** | `BM25` (lexical, over rich CDE text) ⊕ dense centroid cosine, fused by **Reciprocal Rank Fusion**; top-k=20 | The candidate generator. Hybrid beats dense on the CDEMapper gold (recall@5 0.674); a dense-rich control confirmed the gain is real lexical signal. Reusable in `ddharmon.matching` (`BM25`, `hybrid_topk`). |
 | **Generate-ideal** | LLM call describing the *ideal* CDE for the concept **with no candidates shown** | An independent coverage anchor: what *should* exist, formed without being biased by what retrieval happened to surface. Anchors the novel decision. |
 | **Split** | Partition a pooled cluster into distinct concept-groups | A coarse cluster that pools more than one concept is split so each concept-group gets its own CDE decision; distinct concepts are never silently merged. Oversized clusters are chunked into coherence-aware sub-units (recursive average-linkage bisection) so the split step sees every member, and a cross-record merge reunites the same concept over-split across clusters. |
 | **Fused assign** | One LLM call: rank the retrieved candidates *by the ideal*, then commit `adopt`/`refine`/`novel` **and** the chosen candidate | Beats a two-call rerank-then-verdict design (in-backbone assignment 0.458 → 0.521) at half the cost. The pick resolves to a real CDE designation + NIH tinyId. |
@@ -96,8 +96,8 @@ ddharmon is measured against **external ground-truth benchmarks** (the `benchmar
 
 | Benchmark | Question | Ground truth | Headline |
 |-----------|----------|--------------|----------|
-| **CDEMapper** | Are we matching the **right CDE**? | Yale CDE-Mapping-Tool (494 field→CDE) | hybrid retrieval recall@5 0.632; fused assignment (in-backbone) 0.521 |
-| **PhenX** | Do same-concept vars from **different cohorts** co-cluster? | PhenX↔dbGaP crosswalk | embedding separability Δ0.536; clustering's edge is diffuse (motivates assignment-first) |
+| **CDEMapper** | Are we matching the **right CDE**? | Yale CDE-Mapping-Tool (494 field→CDE) | hybrid retrieval recall@5 0.674; fused assignment (in-backbone) 0.521 |
+| **PhenX** | Do same-concept vars from **different cohorts** co-cluster? | PhenX↔dbGaP crosswalk | embedding separability Δ0.611; clustering's edge is diffuse (motivates assignment-first) |
 | **AI-READI** | Does a variable reach the **right concept**? | AI-READI OMOP/CDE anchors | variable→concept recall@5 0.655 (held-out) |
 | **ATHLOS** | Are the **value recodes** generated correctly? | ATHLOS harmonisation scripts (284 recode golds) | LLM recode pair-accuracy 0.832 → **0.869 with question_text context** |
 

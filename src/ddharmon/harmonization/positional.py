@@ -10,8 +10,7 @@ SIGNATURE. If one signature dominates the group AND the integers it varies over 
 it's a positional enumeration. This is exactly what distinguishes it from a genuine qualifier matrix (whose
 members keep DISTINCT signatures after stripping digits — each item asks something different).
 
-Thresholds are parameters (not hard-coded gates) so the behavior stays tunable and cohort-agnostic. Ported
-from the nb05 research sandbox (``enrich_positional.py``; Run 016c/d).
+Thresholds are parameters (not hard-coded gates) so the behavior stays tunable and cohort-agnostic.
 """
 
 from __future__ import annotations
