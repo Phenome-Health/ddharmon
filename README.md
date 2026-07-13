@@ -4,6 +4,14 @@ ddharmon harmonizes biomedical **data dictionaries**. It clusters equivalent var
 studies, assigns each concept to an existing **Common Data Element (CDE)** from the NIH catalog — or
 flags it for a newly generated CDE when nothing fits — and routes every recommendation to expert review.
 
+**Try it in your browser — no install — at [ddharmon.io](https://ddharmon.io).**
+
+Prefer to run it yourself? ddharmon is a Python package: reach for the **hosted app** above for a quick look,
+the **`ddharmon` CLI** for scriptable and batch/headless runs, and the **Python library** (see the
+[example notebook](notebooks/clustering/harmonization_pipeline.ipynb)) to build it into your own pipelines.
+It reads data-dictionary *metadata only* — never participant-level data — so restricted cohorts can run
+entirely within their own infrastructure.
+
 ## Quick start
 
 Requirements: **Python 3.12+** and [uv](https://github.com/astral-sh/uv).
@@ -219,8 +227,6 @@ retrieval), PhenX (cross-cohort co-clustering), and ATHLOS (value-recode correct
 
 ## Roadmap
 
-- **Web GUI** — a point-and-click app (upload dictionaries → run with live progress → review → export),
-  shipping as the companion **ddharmon-ui** app.
 - **Pairwise 1:1 mapping** as a first-class surface (the engine is built).
 - **Standards mapping** (LOINC / SNOMED / OMOP).
 - **Calibrated adopt/refine/novel thresholds** — tuned from expert-review verdicts (the router ships
