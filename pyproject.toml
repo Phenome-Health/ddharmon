@@ -154,7 +154,7 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v"
 markers = [
-    "integration: mark test as integration test (requires API keys, may incur costs)",
+    "integration: real network access, model downloads, or API keys; may be slow or incur cost. Deselected in the fast CI gate via `-m 'not integration'` (see .github/workflows/ci.yml).",
 ]
 
 [dependency-groups]
