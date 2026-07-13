@@ -4,8 +4,8 @@ Coherence-aware chunking bounds how many members reach the split LLM, but it can
 spread across sibling records (the chunks of one enumerated family, or the split-out group + its M1
 residual, or a cross-cluster duplicate). This stage reunites them.
 
-Ported from the nb05 research probe (Islam 2026, arXiv 2604.07562 "Reasoning-Based Refinement of
-Unsupervised Text Clusters with LLMs", stage ii = redundancy adjudication; Run-017 silhouette 0.35->0.48):
+Based on Islam 2026 (arXiv 2604.07562 "Reasoning-Based Refinement of
+Unsupervised Text Clusters with LLMs", stage ii = redundancy adjudication; validated at silhouette 0.35->0.48):
 
   1. Candidate generation ($0, deterministic, recall-oriented — the LLM makes the call):
      (a) record-centroid cosine >= TAU  (Islam grid-searched τ∈{.75,.80,.85,.90}, chose .85; a tunable

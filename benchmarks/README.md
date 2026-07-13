@@ -56,7 +56,7 @@ reported, never gating. The LLM assignment / recode arms need API keys and are n
 
 Floors are regression guards with margin below baseline, not targets; lowering one requires a re-baseline
 + a written reason. The C2 `units` benchmark is deterministic and encoder-free (no fetch, no keys), so it
-also runs inline in the fast suite (`tests/test_benchmarks_units.py`). Full per-encoder history: `.planning/experiments/nb05-recursion/BENCHMARK-HISTORY.md`.
+also runs inline in the fast suite (`tests/test_benchmarks_units.py`).
 
 ## CDEMapper (var → CDE retrieval)
 Fetches `EvaluationData/{ADRD,Eye,Stroke,covid-19}.csv` from `BIDS-Xu-Lab/CDE-Mapping-Tool`. GoldID is an
@@ -116,8 +116,6 @@ it is **not** in the $0 gate (a documented follow-up).
 ## Provenance / notes
 - The reusable hybrid retrieval is `src/ddharmon/matching/lexical.py` (`BM25`, `reciprocal_rank_fusion`,
   `hybrid_topk`), unit-tested in `tests/test_lexical_retrieval.py`.
-- Baselines and the full experimental narrative: `.planning/experiments/nb05-recursion/BENCHMARKS.md`
-  + `LEDGER.md` (Runs 019–024 for A/B; Benchmark C added 2026-06-18).
 - The original exploratory harnesses are in the gitignored `notebooks/clustering/sandbox/`
   (`bench_cdemapper.py`, `bench_assign.py`, `bench_phenx.py`, `bench_athlos.py`); these `benchmarks/`
   modules are the tracked, portable productionization.

@@ -1,6 +1,6 @@
 """Prompts for the lean head/tail harmonization pipeline (3 LLM stages).
 
-Validated in the research harness before productionization. A semantic cluster is grouped by an
+Validated through benchmark experiments before productionization. A semantic cluster is grouped by an
 embedding that ignores the variable name, so one cluster can pool MORE THAN ONE distinct concept that
 merely shares surface wording. The 3 stages are:
 

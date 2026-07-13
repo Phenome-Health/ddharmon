@@ -1,6 +1,6 @@
 """Core data models for ddharmon data dictionary harmonization.
 
-Dataclasses following biomapper2 conventions with __post_init__ validation.
+Dataclasses with __post_init__ validation.
 """
 
 from __future__ import annotations
