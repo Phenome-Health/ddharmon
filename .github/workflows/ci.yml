@@ -21,6 +21,9 @@ jobs:
   checks:
     name: Lint, format, type-check, test
     runs-on: ubuntu-latest
+    # Backstop against a hung step (e.g. a stalled HuggingFace model download):
+    # the fast gate finishes in a few minutes, so cap it well under that ceiling.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v5
@@ -36,4 +39,7 @@ jobs:
       - name: Pyright (types)
         run: uv run pyright src/
       - name: Pytest
-        run: uv run pytest tests/ -q
+        # Deselect integration tests: they download the real encoder (~440MB) from
+        # HuggingFace and would stall the gate if the Hub is slow. The real model is
+        # covered weekly by benchmarks.yml.
+        run: uv run pytest tests/ -q -m "not integration"

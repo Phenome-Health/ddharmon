@@ -54,8 +54,16 @@ class TestEmbeddingProviderABC:
 st = pytest.importorskip("sentence_transformers")
 
 
+@pytest.mark.integration
 class TestSentenceTransformerProvider:
-    """Tests for SentenceTransformerProvider with real model."""
+    """Tests for SentenceTransformerProvider with the real model.
+
+    Marked ``integration`` because constructing the provider downloads the encoder
+    (~440MB BioLORD-2023, plus MiniLM) from the HuggingFace Hub. The fast per-PR CI
+    gate deselects these via ``-m "not integration"`` so a stalled HF download can
+    never hang the pipeline; the real encoder is still exercised weekly by the
+    benchmark gate (``.github/workflows/benchmarks.yml``).
+    """
 
     @pytest.fixture(scope="class")
     def provider(self):
