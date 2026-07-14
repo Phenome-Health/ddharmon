@@ -72,6 +72,13 @@ viz = [
 clustering = [
     "scikit-learn>=1.4.0",
     "umap-learn>=0.5.6",
+    # Direct floor on numba (pulled transitively via umap-learn -> pynndescent).
+    # numba caps numpy (0.64.0 requires numpy<2.5); flooring it here stops the
+    # resolver from escaping to an ancient numba with a loose numpy pin — which
+    # is what lets a premature numpy>=2.5 bump silently drag the whole
+    # numba/llvmlite/pynndescent/bertopic chain back to 2021-era versions.
+    # Relax/raise when a numba release supports numpy 2.5.
+    "numba>=0.64.0",
     "plotly>=5.18.0",
     "kaleido>=0.2.1",
 ]
