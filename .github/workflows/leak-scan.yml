@@ -10,6 +10,6 @@ jobs:
   leak-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Scan tracked files for local paths / internal names
         run: python3 scripts/leak_scan.py --profile public
