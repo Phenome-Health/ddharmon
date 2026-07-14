@@ -50,7 +50,7 @@ from ddharmon.harmonization.leanb_prompts import (
     group_reassign_system_prompt,
     split_system_prompt,
 )
-from ddharmon.harmonization.models import CandidateCDE, LeanBRecord
+from ddharmon.harmonization.models import CandidateCDE, GenCDE, LeanBRecord
 from ddharmon.harmonization.parse import extract_json
 from ddharmon.harmonization.pipeline import PromptRecord
 from ddharmon.harmonization.substrate import (
@@ -262,6 +262,7 @@ class LeanBResult:
     group_assign_prompts: list[PromptRecord] = field(default_factory=list)
     merge_prompts: list[PromptRecord] = field(default_factory=list)  # M2 cross-record merge — Batch export
     specgen_prompts: list[PromptRecord] = field(default_factory=list)  # stage 4 (transform specs) — Batch export
+    gencde_prompts: list[PromptRecord] = field(default_factory=list)  # novel -> GenCDE synthesis — Batch export
     concept_gate_prompts: list[PromptRecord] = field(default_factory=list)  # M7 concept-match gate — Batch export
     substrate: ClusteringSubstrate | None = None  # the frozen clustering partition (save it to replay cheaply)
 
@@ -706,6 +707,7 @@ def harmonize_leanb(
     merge: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
     specgen: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
     concept_gate: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
+    gencde: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
     cde_cohort: str = CDE_COHORT,
     min_cluster_size: int = 15,
     top_k: int = DEFAULT_TOP_K,
@@ -732,6 +734,9 @@ def harmonize_leanb(
     With all three set the LLM runs inline and ``records`` are populated. ``specgen`` (stage 4) then
     generates categorical transform specs for adopt/refine records; when set, recodes are attached to
     ``records[].transforms``; either way ``specgen_prompts`` is exposed for the Batch API path.
+    ``gencde`` (opt-in) mirrors this for the tail: it synthesizes a :class:`~.models.GenCDE` for each
+    ``novel`` record (attached to ``records[].gencde``) so the residual has a harmonization target;
+    ``gencde_prompts`` is always exposed for the Batch API path.
     ``retrieval_floor`` downgrades far-cosine adopt/refine to novel (see :func:`assemble_leanb`).
 
     ``substrate``: pass a frozen :class:`~ddharmon.harmonization.substrate.ClusteringSubstrate` to SKIP
@@ -855,6 +860,17 @@ def harmonize_leanb(
     result.merge_prompts = prepare_merge(result.records, embedded_dicts, embeddings, field_refs, model_tag=model_tag)
     if merge is not None and result.merge_prompts:
         result.records = assemble_merge(result.records, result.merge_prompts, merge(result.merge_prompts))
+
+    # GenCDE synthesis (opt-in): author a generated CDE for each `novel` record so the tail has a
+    # harmonization TARGET (novels reached no existing CDE — otherwise the verdict is a dead end). Runs
+    # AFTER merge so reunited same-concept novels synthesize once. gencde_prompts is always exposed for the
+    # Batch/driver path; the `gencde` callable applies it inline when set. This inverts FAIRkit's
+    # generate-from-template: the GenCDE is synthesized from the group's POOLED cross-cohort evidence.
+    from ddharmon.harmonization.gencde import assemble_gencde, prepare_gencde
+
+    result.gencde_prompts = prepare_gencde(result.records, embedded_dicts, model_tag=model_tag)
+    if gencde is not None and result.gencde_prompts:
+        result.records = assemble_gencde(result.gencde_prompts, gencde(result.gencde_prompts), result.records)
 
     # stage 4: transform-spec generation (verifying post-pass over adopt/refine records).
     # Local import avoids a module-level cycle (transform imports leanb). N1 unit specs are deterministic
@@ -1052,6 +1068,13 @@ def export_leanb_eitl_queue(result: LeanBResult, path: str | Path) -> int:
         "cohorts",
         "members",
         "ideal_cde",
+        "gencde_name",
+        "gencde_definition",
+        "gencde_data_type",
+        "gencde_permissible_values",
+        "gencde_units",
+        "gencde_value_coverage",
+        "gencde_needs_review",
         "rationale",
     ]
     rank = {"refine": 0, "novel": 1, "adopt": 2, "": 3}
@@ -1059,6 +1082,21 @@ def export_leanb_eitl_queue(result: LeanBResult, path: str | Path) -> int:
 
     def clean(s: str) -> str:
         return s.replace("\t", " ").replace("\n", " ").replace("\r", " ")
+
+    def gencde_cells(g: GenCDE | None) -> list[str]:
+        """The synthesized-target cells for a novel (empty when the record has no GenCDE)."""
+        if g is None:
+            return ["", "", "", "", "", "", ""]
+        pv = ";".join(f"{o.code}={o.label}" if o.code else o.label for o in g.permissible_values)
+        return [
+            clean(g.preferred_name),
+            clean(g.definition),
+            g.data_type,
+            clean(pv),
+            clean(g.units or ""),
+            f"{g.value_coverage:.2f}",
+            str(g.needs_review),
+        ]
 
     with open(path, "w") as f:
         f.write("\t".join(cols) + "\n")
@@ -1083,6 +1121,7 @@ def export_leanb_eitl_queue(result: LeanBResult, path: str | Path) -> int:
                         ";".join(r.cohorts),
                         clean(";".join(r.member_variable_names)),
                         clean(r.ideal_cde),
+                        *gencde_cells(r.gencde),
                         clean(r.rationale),
                     ]
                 )

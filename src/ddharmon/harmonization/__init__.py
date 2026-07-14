@@ -33,6 +33,11 @@ from ddharmon.harmonization.anchor import (
     field_richness,
     find_anchor_cde,
 )
+from ddharmon.harmonization.gencde import (
+    assemble_gencde,
+    observed_answer_labels,
+    prepare_gencde,
+)
 from ddharmon.harmonization.leanb import (
     CdeBackbone,
     LeanBResult,
@@ -53,6 +58,7 @@ from ddharmon.harmonization.merge import (
 from ddharmon.harmonization.models import (
     AnchorResult,
     CandidateCDE,
+    GenCDE,
     HarmonizationVerdict,
     LeanBRecord,
     TransformKind,
@@ -102,6 +108,7 @@ __all__ = [
     "CandidateCDE",
     "CdeBackbone",
     "ClusteringSubstrate",
+    "GenCDE",
     "HarmonizationResult",
     "HarmonizationVerdict",
     "LeanBRecord",
@@ -113,6 +120,7 @@ __all__ = [
     "apply_coherence_gate",
     "assemble_arith_specgen",
     "assemble_concept_gate",
+    "assemble_gencde",
     "assemble_leanb",
     "assemble_merge",
     "assemble_specgen",
@@ -139,10 +147,12 @@ __all__ = [
     "harmonize_dictionaries",
     "harmonize_leanb",
     "load_substrate",
+    "observed_answer_labels",
     "parse_verdict_payload",
     "prepare_arith_specgen",
     "prepare_concept_gate",
     "prepare_from_clusters",
+    "prepare_gencde",
     "prepare_group_assign",
     "prepare_leanb",
     "prepare_specgen",
