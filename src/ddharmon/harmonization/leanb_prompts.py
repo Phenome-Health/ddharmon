@@ -143,9 +143,47 @@ REPRESENTATION_REFINE_CLAUSE = (
 )
 
 
-def split_system_prompt(representation_refine: bool = False) -> str:
-    """Stage-2 split system prompt, optionally with the M4 representation-mismatch clause appended."""
-    return f"{SYS_SPLIT}\n{REPRESENTATION_REFINE_CLAUSE}" if representation_refine else SYS_SPLIT
+# ── M11: measurand-axis split (opt-in) ──
+# The split rule partitions on the OBJECT/REFERENT axis only, so distinct MEASURANDS sharing one object at one
+# encounter (systolic vs diastolic BP vs pulse) were left fused as ONE group — a demo-visible over-merge
+# (BP+pulse lumped, 24 vars, one mislabeled concept; .planning todo 2026-07-14-investigate-…-lumped-in). This
+# clause adds a MEASURAND axis to the split rule and, on generate-ideal, tells the seed to enumerate distinct
+# measurands instead of bundling them (which primed the fusion). Guards both reinforcers found in the trace: a
+# bundling candidate CDE (paired systolic/diastolic) does NOT license merging, and it does not override the
+# repeating-measure rule. Opt-in until an A/B on the offending cluster validates it (split-hardening regressed
+# once before — see project_split_wrapper_drop_bug); appended to the stage-2 split + stage-1 ideal prompts.
+MEASURAND_SPLIT_CLAUSE = (
+    "MEASURAND AXIS — also SPLIT when the distinct QUANTITY being measured changes, even for the SAME subject "
+    "at the SAME encounter. Systolic blood pressure, diastolic blood pressure, and pulse/heart rate are "
+    "DIFFERENT measurements (different physical quantity, unit, and normal range) and MUST be separate groups — "
+    "as must, e.g., height vs weight, or temperature vs respiratory rate. Measurement METADATA (device/method, "
+    "timing, posture, cuff size) is NOT the measured quantity: put it in its own group, never fold it into a "
+    "measurement concept. An existing candidate CDE that BUNDLES several measurands (e.g. one 'blood pressure' "
+    "element pairing systolic and diastolic) does NOT license merging them here — split first, then each group "
+    "may adopt/refine the part that fits. This does NOT override the repeating-measure rule: the SAME measurand "
+    "across numbered readings/occurrences (bp1, bp2; reading 1..N) stays ONE group."
+)
+MEASURAND_IDEAL_CLAUSE = (
+    "If the member fields measure DIFFERENT quantities/MEASURANDS (e.g. systolic vs diastolic blood pressure vs "
+    "pulse/heart rate; height vs weight), enumerate them as DISTINCT concepts rather than bundling them into "
+    "one CDE — even when they co-occur at the same encounter. Measurement metadata (device/method, timing) is "
+    "not the measured quantity."
+)
+
+
+def split_system_prompt(representation_refine: bool = False, measurand_split: bool = False) -> str:
+    """Stage-2 split system prompt, optionally with the M4 representation and/or M11 measurand clauses."""
+    prompt = SYS_SPLIT
+    if representation_refine:
+        prompt = f"{prompt}\n{REPRESENTATION_REFINE_CLAUSE}"
+    if measurand_split:
+        prompt = f"{prompt}\n{MEASURAND_SPLIT_CLAUSE}"
+    return prompt
+
+
+def generate_ideal_system_prompt(measurand_split: bool = False) -> str:
+    """Stage-1 generate-ideal system prompt, optionally with the M11 measurand-enumeration clause appended."""
+    return f"{SYS_GENERATE_IDEAL}\n{MEASURAND_IDEAL_CLAUSE}" if measurand_split else SYS_GENERATE_IDEAL
 
 
 def group_reassign_system_prompt(representation_refine: bool = False) -> str:

@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 REVIEW_COVERAGE = 0.8  # observed answer-concepts represented below this fraction -> needs_review
 REVIEW_CONFIDENCE = 0.6  # LLM confidence below this -> needs_review
+NUMERIC_NO_DOMAIN_PENALTY = 0.7  # a numeric GenCDE with no units/bounds -> confidence scaled by this
 _MEMBER_CAP = 12  # members shown in the synthesis prompt (cost bound; provenance keeps the full list)
 
 SYS_GENCDE = (
@@ -293,10 +294,13 @@ def assemble_gencde(
 ) -> list[LeanBRecord]:
     """Parse each synthesis response into a :class:`GenCDE` and attach it to its ``novel`` record.
 
-    ``value_coverage`` = fraction of the answer concepts observed across cohorts (``context['observed_labels']``)
-    that the synthesized ``permissible_values`` represents. ``needs_review`` fires on low coverage, low LLM
-    confidence, or an empty spec — never overriding the ``novel`` verdict. Provenance (source vars/cohorts,
-    ideal seed) comes from the deterministic ``context``, not the LLM.
+    For a CATEGORICAL concept ``value_coverage`` = fraction of the observed answer concepts
+    (``context['observed_labels']``) the synthesized ``permissible_values`` represents, and confidence blends
+    it with the LLM confidence. For a NUMERIC concept there are no observed answer-labels, so coverage is N/A
+    (``value_coverage = None`` — never a vacuous 1.0), and confidence rests on the LLM confidence penalized by
+    numeric-domain completeness (units / bounds). ``needs_review`` fires on low categorical coverage, a
+    missing numeric domain, low LLM confidence, or an empty spec — never overriding the ``novel`` verdict.
+    Provenance (source vars/cohorts, ideal seed) comes from the deterministic ``context``, not the LLM.
     """
     by_key = {(r.group_id or r.cluster_id): r for r in records}
     n_attached = 0
@@ -308,12 +312,26 @@ def assemble_gencde(
         payload = _parse_gencde(responses.get(gr.id))
         observed = list(ctx.get("observed_labels", []))
         pv = _permissible_values(payload)
-        coverage, uncovered = _label_coverage(observed, pv)
         units = str(payload.get("units")).strip() if _num_unit(payload.get("units")) else None
         data_type = str(payload.get("data_type", "")).strip()
+        min_v, max_v = _num(payload.get("minimum_value")), _num(payload.get("maximum_value"))
         llm_conf = _as_float(payload.get("confidence"))
         has_domain = bool(pv) or bool(units) or data_type in ("numeric", "date", "text", "boolean")
-        needs_review = coverage < REVIEW_COVERAGE or llm_conf < REVIEW_CONFIDENCE or not has_domain
+        if observed:
+            # Categorical concept: value_coverage = fraction of observed answer-labels the synthesized domain
+            # represents; confidence blends coverage with the LLM confidence; the coverage gate can fire.
+            value_coverage, uncovered = _label_coverage(observed, pv)
+            confidence = round(0.5 * value_coverage + 0.5 * llm_conf, 3)
+            needs_review = value_coverage < REVIEW_COVERAGE or llm_conf < REVIEW_CONFIDENCE or not has_domain
+        else:
+            # Numeric concept: NO observed answer-labels, so value_coverage is N/A (None) — never a vacuous
+            # 1.0 that would inflate confidence and mask an incoherent group. Confidence rests on the LLM
+            # confidence, penalized when the model gave no usable numeric value domain (units or bounds);
+            # review fires on a missing numeric domain in place of the (inapplicable) coverage gate.
+            has_num_domain = bool(units) or min_v is not None or max_v is not None
+            value_coverage, uncovered = None, []
+            confidence = round(llm_conf * (1.0 if has_num_domain else NUMERIC_NO_DOMAIN_PENALTY), 3)
+            needs_review = not has_num_domain or llm_conf < REVIEW_CONFIDENCE or not has_domain
         aliases = [str(a).strip() for a in (payload.get("aliases") or []) if str(a).strip()]
         rec.gencde = GenCDE(
             gencde_id=f"GENCDE:{rec.group_id or rec.cluster_id}",
@@ -324,16 +342,16 @@ def assemble_gencde(
             data_type=data_type,
             permissible_values=pv,
             units=units,
-            minimum_value=_num(payload.get("minimum_value")),
-            maximum_value=_num(payload.get("maximum_value")),
+            minimum_value=min_v,
+            maximum_value=max_v,
             aliases=aliases,
             source_variables=list(ctx.get("source_variables", [])),
             source_cohorts=list(ctx.get("source_cohorts", [])),
             ideal_seed=str(ctx.get("ideal_seed", "")),
             related_cdes=list(ctx.get("related_cdes", [])),
-            value_coverage=coverage,
+            value_coverage=value_coverage,
             uncovered_labels=uncovered,
-            confidence=round(0.5 * coverage + 0.5 * llm_conf, 3),
+            confidence=confidence,
             needs_review=needs_review,
             rationale=str(payload.get("notes", "") or ""),
         )

@@ -209,6 +209,9 @@ class GenCDE:
     ``value_coverage`` is the verification signal (fraction of answer-concepts observed across cohorts that
     the synthesized ``permissible_values`` represents); low coverage or low ``confidence`` sets
     ``needs_review`` but never changes the ``novel`` verdict (flag-not-gate, like TransformSpec.coverage).
+    It is ``None`` (N/A) for a NUMERIC concept — there are no observed answer-labels to cover, so a coverage
+    number is undefined; a numeric GenCDE's confidence rests on the LLM confidence + numeric-domain
+    completeness (units / bounds) instead, and ``None`` must not be read as "0% covered".
     """
 
     gencde_id: str  # deterministic id for the concept group, e.g. "GENCDE:<cluster_id>#g<idx>"
@@ -228,7 +231,7 @@ class GenCDE:
     ideal_seed: str = ""  # the generate-ideal free-text anchor this GenCDE was grown from
     related_cdes: list[str] = field(default_factory=list)  # near-miss candidate names (SSSOM broader/related)
     # verification / review (flag-not-gate)
-    value_coverage: float = 0.0  # fraction of observed answer-concepts represented in permissible_values
+    value_coverage: float | None = None  # fraction of observed answer-concepts represented; None = N/A (numeric)
     uncovered_labels: list[str] = field(default_factory=list)  # observed answer-concepts the domain missed
     confidence: float = 0.0
     needs_review: bool = False

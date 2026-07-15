@@ -156,11 +156,53 @@ def test_assemble_gencde_numeric_concept(hf) -> None:
     }
     assemble_gencde(prompts, responses, [novel])
     g = novel.gencde
-    assert g.value_coverage == 1.0  # no observed answer concepts -> trivially covered
-    assert g.needs_review is False
+    assert g.value_coverage is None  # numeric concept -> coverage is N/A, NOT a vacuous 1.0
+    assert g.confidence == 0.95  # rests on LLM confidence (complete numeric domain), not 0.5*1.0 + 0.5*conf
+    assert g.needs_review is False  # units + bounds present -> complete numeric domain
     assert g.units == "kg/m2"
     assert g.minimum_value == 0.0
     assert g.maximum_value == 200.0
+
+
+def test_assemble_gencde_numeric_no_domain_flags_review(hf) -> None:
+    """A confident numeric GenCDE with NO value domain (no units/bounds) -> flagged, not a free 1.0/high conf.
+
+    Regression for the BP+pulse failure: an incoherent numeric group used to get value_coverage=1.0 (numeric
+    has no answer-labels to cover) which floored confidence to 0.5 + 0.5*llm_conf (= 0.91 at conf 0.82) and
+    silently passed review. Now numeric coverage is N/A (None), confidence rests on llm_conf penalized for a
+    missing domain, and the missing numeric domain trips needs_review.
+    """
+    a = hf.field("sbp_a", "Systolic blood pressure", data_type="numeric", question_text="Systolic BP")
+    c = hf.field("sbp_c", "Systolic BP", data_type="numeric", question_text="Systolic blood pressure")
+    v = np.ones((1, 8), dtype=np.float32)
+    dicts = [hf.embedded_dict("AoU", [a], sem_vecs=v), hf.embedded_dict("CLSA", [c], sem_vecs=v)]
+    novel = LeanBRecord(
+        cluster_id="c4",
+        verdict="novel",
+        route=ROUTE_RESIDUAL,
+        group_id="c4#g0",
+        concept="Systolic blood pressure",
+        member_variable_names=["AoU:sbp_a", "CLSA:sbp_c"],
+        cohorts=["AoU", "CLSA"],
+        ideal_cde="Systolic blood pressure.",
+    )
+    prompts = prepare_gencde([novel], dicts)
+    responses = {
+        prompts[0].id: {
+            "preferred_name": "systolic_blood_pressure",
+            "data_type": "numeric",
+            "permissible_values": [],
+            "units": None,  # LLM gave no unit and no bounds -> no usable numeric value domain
+            "minimum_value": None,
+            "maximum_value": None,
+            "confidence": 0.82,
+        }
+    }
+    assemble_gencde(prompts, responses, [novel])
+    g = novel.gencde
+    assert g.value_coverage is None  # numeric -> N/A, not 1.0
+    assert g.needs_review is True  # missing numeric domain now trips review (coverage gate is inapplicable)
+    assert g.confidence == round(0.82 * 0.7, 3)  # penalized llm_conf (0.574), NOT the old inflated 0.91
 
 
 def test_export_leanb_eitl_queue_surfaces_gencde(hf, tmp_path) -> None:
