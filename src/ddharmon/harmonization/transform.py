@@ -968,6 +968,205 @@ def assemble_arith_specgen(
     return records
 
 
+# ── GenCDE numeric specs: N1/N2 for the tail (member -> NUMERIC GenCDE) ───────
+
+
+def generate_gencde_unit_specs(
+    records: list[LeanBRecord],
+    embedded_dicts: list[EmbeddedDictionary],
+    *,
+    config: TransformConfidenceConfig | None = None,
+) -> list[LeanBRecord]:
+    """N1 for the tail: deterministic unit/scale specs for NUMERIC edges of NUMERIC-GenCDE novel records.
+
+    Mirrors :func:`generate_unit_specs` but the target unit comes from the record's
+    :class:`~.models.GenCDE` (``units``) instead of a catalog CDE, and each spec's ``target_cde_id`` is the
+    GenCDE id — so the numeric novel path carries member->GenCDE unit conversions just like adopt/refine
+    carries member->CDE ones. A GenCDE is "numeric" here when it has no ``permissible_values`` (a categorical
+    GenCDE is the C1 recode path, :func:`prepare_gencde_specgen`); coded source edges and wide->long records
+    are skipped. Deterministic, data-free, idempotent per (record, source_var).
+    """
+    field_lookup = build_field_lookup(embedded_dicts)
+    canon = UnitCanonicalizer()
+    n_unit = n_identity = n_needs = 0
+    for rec in records:
+        g = rec.gencde
+        if g is None or _gencde_value_set_text(g):
+            continue  # no GenCDE, or a categorical GenCDE -> C1 recode path, not a unit conversion
+        if any(t.kind == TransformKind.WIDE_TO_LONG for t in rec.transforms):
+            continue
+        gencde_unit = (g.units or "").strip() if g.units else ""
+        existing = {t.source_variable for t in rec.transforms}
+        for sv in rec.member_variable_names:
+            if sv in existing:
+                continue
+            cohort, _, var = sv.partition(":")
+            src_fld = field_lookup.get((cohort, var))
+            if src_fld is None or _value_set_text(src_fld):
+                continue  # missing field, or a coded source edge (no numeric conversion into a numeric target)
+            src_unit = (src_fld.units or "").strip() if src_fld.units else ""
+            spec = _unit_spec(sv, g.gencde_id, src_unit, gencde_unit, canon)
+            spec.confidence = round(score_transform_spec(spec, config), 3)
+            rec.transforms.append(spec)
+            n_identity += spec.kind == TransformKind.IDENTITY
+            n_unit += spec.kind == TransformKind.UNIT and not spec.needs_units
+            n_needs += spec.needs_units
+    logger.info(
+        "generate_gencde_unit_specs: %d unit conversions, %d identity, %d needs-units residual",
+        n_unit,
+        n_identity,
+        n_needs,
+    )
+    return records
+
+
+def build_gencde_arith_user_prompt(src_fld: Field | None, src_var: str, gencde: object) -> str:
+    """Arith prompt with the TARGET drawn from a numeric GenCDE (mirrors :func:`build_arith_user_prompt`)."""
+    src_name = (src_fld.question_text or src_fld.short_label or src_var) if src_fld else src_var
+    tgt_name = (
+        getattr(gencde, "question_text", "")
+        or getattr(gencde, "title", "")
+        or getattr(gencde, "preferred_name", "")
+        or getattr(gencde, "gencde_id", "")
+    )
+    bits: list[str] = []
+    dtype = (getattr(gencde, "data_type", "") or "").strip()
+    units = (getattr(gencde, "units", "") or "").strip()
+    if dtype:
+        bits.append(f"type {dtype}")
+    if units:
+        bits.append(f"units {units}")
+    tgt_meta = "; ".join(bits) or "no units/type declared"
+    gencde_id = getattr(gencde, "gencde_id", "")
+    return (
+        f"SOURCE variable `source` = {src_name} [{_field_meta(src_fld)}]\n"
+        f"TARGET CDE {gencde_id} = {tgt_name} [{tgt_meta}]\n\n"
+        "Return a fixed arithmetic formula for the target as a function of `source`, or null."
+    )
+
+
+def prepare_gencde_arith_specgen(
+    records: list[LeanBRecord],
+    embedded_dicts: list[EmbeddedDictionary],
+    *,
+    model_tag: str = DEFAULT_MODEL_TAG,
+) -> list[PromptRecord]:
+    """N2 for the tail: one arithmetic-formula prompt per numeric-GenCDE ``needs_units`` residual edge.
+
+    Mirrors :func:`prepare_arith_specgen` but only upgrades the residuals left by
+    :func:`generate_gencde_unit_specs` (``UNIT`` + ``needs_units`` whose ``target_cde_id`` is the record's
+    GenCDE id). Must run AFTER the numeric-GenCDE N1 pass.
+    """
+    field_lookup = build_field_lookup(embedded_dicts)
+    out: list[PromptRecord] = []
+    for rec in records:
+        g = rec.gencde
+        if g is None or _gencde_value_set_text(g):
+            continue
+        key = rec.group_id or rec.cluster_id
+        for i, t in enumerate(rec.transforms):
+            if t.kind != TransformKind.UNIT or not t.needs_units or t.target_cde_id != g.gencde_id:
+                continue
+            cohort, _, var = t.source_variable.partition(":")
+            src_fld = field_lookup.get((cohort, var))
+            out.append(
+                PromptRecord(
+                    id=f"leanb:gencde_arith:{key}:{i}",
+                    system_prompt=SYS_ARITH,
+                    user_prompt=build_gencde_arith_user_prompt(src_fld, var, g),
+                    schema=ARITH_SCHEMA,
+                    model_tag=model_tag,
+                    context={"record_key": key, "source_variable": t.source_variable},
+                )
+            )
+    logger.info("prepare_gencde_arith_specgen: %d records -> %d arithmetic prompts", len(records), len(out))
+    return out
+
+
+def assemble_gencde_arith_specgen(
+    arith_records: list[PromptRecord],
+    responses: dict[str, object],
+    records: list[LeanBRecord],
+    *,
+    config: TransformConfidenceConfig | None = None,
+) -> list[LeanBRecord]:
+    """Upgrade numeric-GenCDE ``needs_units`` residuals to ARITHMETIC specs from the LLM formula responses.
+
+    Identical to :func:`assemble_arith_specgen` except the spec's ``target_cde_id`` is the record's GenCDE id
+    (a ``novel`` record has ``cde_id`` None). Every LLM-proposed formula is unverified at the metadata layer,
+    so an ARITHMETIC spec always routes to review — never auto-approve.
+    """
+    by_key = {(r.group_id or r.cluster_id): r for r in records}
+    for ar in arith_records:
+        ctx = ar.context
+        record_key = ctx.get("record_key")
+        rec = by_key.get(record_key) if isinstance(record_key, str) else None
+        sv = ctx.get("source_variable")
+        if rec is None or rec.gencde is None or not isinstance(sv, str):
+            continue
+        gencde_id = rec.gencde.gencde_id
+        payload = _parse_obj(responses.get(ar.id))
+        formula = str(payload.get("formula") or "").strip()
+        if not formula or formula.lower() == "null":
+            continue  # no fixed formula -> keep the needs_units residual
+        names = formula_names(formula)
+        if not is_safe_formula(formula, sorted(names) or ["source"]):
+            continue  # unparseable / disallowed -> keep the residual, don't author a bad spec
+        if is_identity_formula(formula):
+            # M8: a no-op formula (target == source) is not an arithmetic conversion -> deterministic IDENTITY.
+            identity = TransformSpec(
+                source_variable=sv,
+                target_cde_id=gencde_id,
+                kind=TransformKind.IDENTITY,
+                inputs=["source"],
+                generated_by="rule",
+                needs_review=False,
+                rationale="source maps to the GenCDE unchanged (LLM formula was a no-op) -> identity",
+            )
+            identity.confidence = round(score_transform_spec(identity, config), 3)
+            rec.transforms = [
+                t
+                for t in rec.transforms
+                if not (
+                    t.source_variable == sv
+                    and t.kind == TransformKind.UNIT
+                    and t.needs_units
+                    and t.target_cde_id == gencde_id
+                )
+            ]
+            rec.transforms.append(identity)
+            continue
+        extra = sorted(n for n in names if n != "source")
+        llm_conf = _as_float(payload.get("confidence"))
+        note = str(payload.get("notes", "") or "")
+        if extra:
+            note = (note + " " if note else "") + f"references inputs beyond `source` ({', '.join(extra)})"
+        spec = TransformSpec(
+            source_variable=sv,
+            target_cde_id=gencde_id,
+            kind=TransformKind.ARITHMETIC,
+            formula=formula,
+            inputs=sorted(names) or ["source"],
+            generated_by="llm",
+            needs_data=bool(extra),
+            needs_review=True,  # LLM-proposed, unverified at the metadata layer
+            rationale=(note + f" (llm_confidence {llm_conf:.2f})").strip(),
+        )
+        spec.confidence = round(score_transform_spec(spec, config), 3)
+        rec.transforms = [
+            t
+            for t in rec.transforms
+            if not (
+                t.source_variable == sv
+                and t.kind == TransformKind.UNIT
+                and t.needs_units
+                and t.target_cde_id == gencde_id
+            )
+        ]
+        rec.transforms.append(spec)
+    return records
+
+
 # ── M3: NONE-fraction coherence gate (deterministic, $0) ─────────────────────
 
 

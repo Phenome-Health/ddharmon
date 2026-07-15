@@ -897,12 +897,15 @@ def harmonize_leanb(
         apply_coherence_gate,
         assemble_arith_specgen,
         assemble_concept_gate,
+        assemble_gencde_arith_specgen,
         assemble_gencde_specgen,
         assemble_specgen,
+        generate_gencde_unit_specs,
         generate_unit_specs,
         generate_wide_to_long_specs,
         prepare_arith_specgen,
         prepare_concept_gate,
+        prepare_gencde_arith_specgen,
         prepare_gencde_specgen,
         prepare_specgen,
     )
@@ -914,20 +917,26 @@ def harmonize_leanb(
     generate_unit_specs(result.records, embedded_dicts, cde_fields)  # N1 (deterministic) — leaves residuals
     cat_prompts = prepare_specgen(result.records, embedded_dicts, cde_fields, model_tag=model_tag)  # C1
     arith_prompts = prepare_arith_specgen(result.records, embedded_dicts, cde_fields, model_tag=model_tag)  # N2
-    # GenCDE tail (opt-in, M12): C1-style member->GenCDE recodes for novel records that synthesized a
-    # categorical GenCDE, so the novel path carries transform specs too (not just the adopt/refine path).
-    # Gated on gencde_specgen (default OFF) — a GenCDE recode is only meaningful once its group is coherent
-    # (see the over-merge / granularity work); inert until enabled + validated.
-    gencde_cat_prompts = (
-        prepare_gencde_specgen(result.records, embedded_dicts, model_tag=model_tag) if gencde_specgen else []
-    )
-    result.specgen_prompts = cat_prompts + arith_prompts + gencde_cat_prompts
+    # GenCDE tail (opt-in, M12): member->GenCDE recodes for novel records so the novel path carries transform
+    # specs too (not just the adopt/refine path). Categorical GenCDEs get C1-style value recodes; NUMERIC
+    # GenCDEs get N1 deterministic unit conversions + N2 arithmetic formulas (mirrors the CDE N1/N2 path, but
+    # targeting the synthesized GenCDE's units/bounds). Gated on gencde_specgen (default OFF) — a GenCDE recode
+    # is only meaningful once its group is coherent (see the over-merge / granularity work).
+    gencde_cat_prompts: list[PromptRecord] = []
+    gencde_arith_prompts: list[PromptRecord] = []
+    if gencde_specgen:
+        gencde_cat_prompts = prepare_gencde_specgen(result.records, embedded_dicts, model_tag=model_tag)  # C1
+        generate_gencde_unit_specs(result.records, embedded_dicts)  # N1 (deterministic) — leaves residuals
+        gencde_arith_prompts = prepare_gencde_arith_specgen(result.records, embedded_dicts, model_tag=model_tag)  # N2
+    result.specgen_prompts = cat_prompts + arith_prompts + gencde_cat_prompts + gencde_arith_prompts
     if specgen is not None and result.specgen_prompts:
         responses = specgen(result.specgen_prompts)
         assemble_specgen(cat_prompts, responses, result.records)
         assemble_arith_specgen(arith_prompts, responses, result.records)
         if gencde_cat_prompts:
             assemble_gencde_specgen(gencde_cat_prompts, responses, result.records)
+        if gencde_arith_prompts:
+            assemble_gencde_arith_specgen(gencde_arith_prompts, responses, result.records)
         # M3 (opt-in): flag/demote records whose coded edges are mostly unmappable (over-broad matches).
         # Runs only when specs were assembled inline; the Batch/driver path calls apply_coherence_gate itself.
         if coherence_gate:
