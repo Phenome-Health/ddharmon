@@ -43,14 +43,14 @@ from ddharmon.harmonization.leanb_prompts import (
     ASSIGN_SCHEMA,
     IDEAL_SCHEMA,
     SPLIT_SCHEMA,
-    SYS_GENERATE_IDEAL,
     build_group_assign_user_prompt,
     build_ideal_user_prompt,
     build_split_user_prompt,
+    generate_ideal_system_prompt,
     group_reassign_system_prompt,
     split_system_prompt,
 )
-from ddharmon.harmonization.models import CandidateCDE, LeanBRecord
+from ddharmon.harmonization.models import CandidateCDE, GenCDE, LeanBRecord
 from ddharmon.harmonization.parse import extract_json
 from ddharmon.harmonization.pipeline import PromptRecord
 from ddharmon.harmonization.substrate import (
@@ -262,6 +262,7 @@ class LeanBResult:
     group_assign_prompts: list[PromptRecord] = field(default_factory=list)
     merge_prompts: list[PromptRecord] = field(default_factory=list)  # M2 cross-record merge — Batch export
     specgen_prompts: list[PromptRecord] = field(default_factory=list)  # stage 4 (transform specs) — Batch export
+    gencde_prompts: list[PromptRecord] = field(default_factory=list)  # novel -> GenCDE synthesis — Batch export
     concept_gate_prompts: list[PromptRecord] = field(default_factory=list)  # M7 concept-match gate — Batch export
     substrate: ClusteringSubstrate | None = None  # the frozen clustering partition (save it to replay cheaply)
 
@@ -343,6 +344,7 @@ def prepare_leanb(
     top_k: int = DEFAULT_TOP_K,
     model_tag: str = DEFAULT_MODEL_TAG,
     clean_cde_text: bool = False,
+    measurand_split: bool = False,
 ) -> list[PromptRecord]:
     """Retrieve candidates and build the stage-1 generate-ideal prompts (one per non-empty cluster).
 
@@ -353,6 +355,8 @@ def prepare_leanb(
     :func:`prepare_group_assign` can map split groups back to members and re-retrieve per group.
 
     ``clean_cde_text`` (M5) applies :func:`_clean_cde_text` index hygiene to the CDE candidate pool.
+    ``measurand_split`` (M11) appends the measurand-enumeration clause to the generate-ideal prompt so the
+    seed does not bundle distinct measurands (systolic/diastolic/pulse) into one concept.
     """
     field_lookup = build_field_lookup(embedded_dicts)
     row_of = {(r.dictionary_name, r.variable_name): i for i, r in enumerate(field_refs)}
@@ -399,7 +403,7 @@ def prepare_leanb(
         records.append(
             PromptRecord(
                 id=f"leanb:ideal:{base['cluster_id']}",
-                system_prompt=SYS_GENERATE_IDEAL,
+                system_prompt=generate_ideal_system_prompt(measurand_split),
                 user_prompt=build_ideal_user_prompt(prompt_lines[:_SAMPLE_MEMBERS]),
                 schema=IDEAL_SCHEMA,
                 model_tag=model_tag,
@@ -417,6 +421,7 @@ def prepare_split(
     model_tag: str = DEFAULT_MODEL_TAG,
     max_show: int = MAX_SHOW,
     representation_refine: bool = False,
+    measurand_split: bool = False,
 ) -> list[PromptRecord]:
     """Build the stage-2 split-assign prompts from the generated ideals + the carried members/candidates.
 
@@ -426,8 +431,10 @@ def prepare_split(
 
     ``representation_refine`` (M4) appends the representation-mismatch clause so a same-concept candidate in a
     different encoding (banding/flag/composite/unit) routes to refine, not novel.
+    ``measurand_split`` (M11) appends the measurand-axis clause so distinct quantities sharing one object
+    (systolic vs diastolic BP vs pulse) are partitioned into separate groups instead of fused.
     """
-    sys_prompt = split_system_prompt(representation_refine)
+    sys_prompt = split_system_prompt(representation_refine, measurand_split)
     records: list[PromptRecord] = []
     for rec in ideal_records:
         ctx = rec.context
@@ -706,6 +713,7 @@ def harmonize_leanb(
     merge: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
     specgen: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
     concept_gate: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
+    gencde: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
     cde_cohort: str = CDE_COHORT,
     min_cluster_size: int = 15,
     top_k: int = DEFAULT_TOP_K,
@@ -719,6 +727,8 @@ def harmonize_leanb(
     coherence_gate: bool = True,
     clean_cde_text: bool = True,
     representation_refine: bool = True,
+    measurand_split: bool = False,
+    gencde_specgen: bool = False,
     recover_outliers: bool = True,
     residual_min_cluster_size: int = 8,
     max_clusters: int | None = None,
@@ -732,6 +742,9 @@ def harmonize_leanb(
     With all three set the LLM runs inline and ``records`` are populated. ``specgen`` (stage 4) then
     generates categorical transform specs for adopt/refine records; when set, recodes are attached to
     ``records[].transforms``; either way ``specgen_prompts`` is exposed for the Batch API path.
+    ``gencde`` (opt-in) mirrors this for the tail: it synthesizes a :class:`~.models.GenCDE` for each
+    ``novel`` record (attached to ``records[].gencde``) so the residual has a harmonization target;
+    ``gencde_prompts`` is always exposed for the Batch API path.
     ``retrieval_floor`` downgrades far-cosine adopt/refine to novel (see :func:`assemble_leanb`).
 
     ``substrate``: pass a frozen :class:`~ddharmon.harmonization.substrate.ClusteringSubstrate` to SKIP
@@ -755,6 +768,13 @@ def harmonize_leanb(
     (drops boilerplate + opaque lead codes); ``representation_refine`` (M4) appends the representation-mismatch
     clause to the split + per-group assign prompts so a same-concept candidate in a different encoding routes
     to refine, not novel; ``adopt_floor`` (M5) demotes a weak-support adopt to refine (set ``None`` to disable).
+    ``measurand_split`` (M11, OPT-IN / default off, pending an A/B): appends a measurand-axis clause to the
+    generate-ideal + split prompts so distinct quantities sharing one object/encounter (systolic vs diastolic
+    BP vs pulse) are partitioned into separate groups instead of fused into one over-merged concept.
+    ``gencde_specgen`` (M12, OPT-IN / default off): generate C1 categorical member->GenCDE recodes for
+    ``novel`` records that synthesized a categorical GenCDE, so the tail carries transform specs like the
+    adopt/refine path (prompts join ``specgen_prompts``; assembled when ``specgen`` is set). Gate on group
+    coherence — a recode into an incoherent GenCDE is meaningless.
     NOTE (frozen-substrate cache): these change prompt/candidate TEXT, not the content-addressed prompt ids —
     a replay on a frozen substrate reuses cached split/assign responses and will NOT reflect them; delete the
     affected stages' ``responses_*.jsonl`` to force a re-run.
@@ -807,6 +827,7 @@ def harmonize_leanb(
         top_k=top_k,
         model_tag=model_tag,
         clean_cde_text=clean_cde_text,
+        measurand_split=measurand_split,
     )
     # Cost cap (used by the CLI): keep only the largest ``max_clusters`` units (most members first) so a
     # bounded run harmonizes the highest-coverage concepts first. Applied after chunk/recover so it caps the
@@ -822,6 +843,7 @@ def harmonize_leanb(
         model_tag=model_tag,
         max_show=max_show,
         representation_refine=representation_refine,
+        measurand_split=measurand_split,
     )
     if split is None:
         return LeanBResult(split_prompts=split_prompts, substrate=substrate)
@@ -856,6 +878,17 @@ def harmonize_leanb(
     if merge is not None and result.merge_prompts:
         result.records = assemble_merge(result.records, result.merge_prompts, merge(result.merge_prompts))
 
+    # GenCDE synthesis (opt-in): author a generated CDE for each `novel` record so the tail has a
+    # harmonization TARGET (novels reached no existing CDE — otherwise the verdict is a dead end). Runs
+    # AFTER merge so reunited same-concept novels synthesize once. gencde_prompts is always exposed for the
+    # Batch/driver path; the `gencde` callable applies it inline when set. This inverts FAIRkit's
+    # generate-from-template: the GenCDE is synthesized from the group's POOLED cross-cohort evidence.
+    from ddharmon.harmonization.gencde import assemble_gencde, prepare_gencde
+
+    result.gencde_prompts = prepare_gencde(result.records, embedded_dicts, model_tag=model_tag)
+    if gencde is not None and result.gencde_prompts:
+        result.records = assemble_gencde(result.gencde_prompts, gencde(result.gencde_prompts), result.records)
+
     # stage 4: transform-spec generation (verifying post-pass over adopt/refine records).
     # Local import avoids a module-level cycle (transform imports leanb). N1 unit specs are deterministic
     # (no LLM) and always run; categorical (C1) recodes and N2 arithmetic formulas need the Batch LLM —
@@ -864,11 +897,16 @@ def harmonize_leanb(
         apply_coherence_gate,
         assemble_arith_specgen,
         assemble_concept_gate,
+        assemble_gencde_arith_specgen,
+        assemble_gencde_specgen,
         assemble_specgen,
+        generate_gencde_unit_specs,
         generate_unit_specs,
         generate_wide_to_long_specs,
         prepare_arith_specgen,
         prepare_concept_gate,
+        prepare_gencde_arith_specgen,
+        prepare_gencde_specgen,
         prepare_specgen,
     )
 
@@ -879,11 +917,26 @@ def harmonize_leanb(
     generate_unit_specs(result.records, embedded_dicts, cde_fields)  # N1 (deterministic) — leaves residuals
     cat_prompts = prepare_specgen(result.records, embedded_dicts, cde_fields, model_tag=model_tag)  # C1
     arith_prompts = prepare_arith_specgen(result.records, embedded_dicts, cde_fields, model_tag=model_tag)  # N2
-    result.specgen_prompts = cat_prompts + arith_prompts
+    # GenCDE tail (opt-in, M12): member->GenCDE recodes for novel records so the novel path carries transform
+    # specs too (not just the adopt/refine path). Categorical GenCDEs get C1-style value recodes; NUMERIC
+    # GenCDEs get N1 deterministic unit conversions + N2 arithmetic formulas (mirrors the CDE N1/N2 path, but
+    # targeting the synthesized GenCDE's units/bounds). Gated on gencde_specgen (default OFF) — a GenCDE recode
+    # is only meaningful once its group is coherent (see the over-merge / granularity work).
+    gencde_cat_prompts: list[PromptRecord] = []
+    gencde_arith_prompts: list[PromptRecord] = []
+    if gencde_specgen:
+        gencde_cat_prompts = prepare_gencde_specgen(result.records, embedded_dicts, model_tag=model_tag)  # C1
+        generate_gencde_unit_specs(result.records, embedded_dicts)  # N1 (deterministic) — leaves residuals
+        gencde_arith_prompts = prepare_gencde_arith_specgen(result.records, embedded_dicts, model_tag=model_tag)  # N2
+    result.specgen_prompts = cat_prompts + arith_prompts + gencde_cat_prompts + gencde_arith_prompts
     if specgen is not None and result.specgen_prompts:
         responses = specgen(result.specgen_prompts)
         assemble_specgen(cat_prompts, responses, result.records)
         assemble_arith_specgen(arith_prompts, responses, result.records)
+        if gencde_cat_prompts:
+            assemble_gencde_specgen(gencde_cat_prompts, responses, result.records)
+        if gencde_arith_prompts:
+            assemble_gencde_arith_specgen(gencde_arith_prompts, responses, result.records)
         # M3 (opt-in): flag/demote records whose coded edges are mostly unmappable (over-broad matches).
         # Runs only when specs were assembled inline; the Batch/driver path calls apply_coherence_gate itself.
         if coherence_gate:
@@ -1052,6 +1105,13 @@ def export_leanb_eitl_queue(result: LeanBResult, path: str | Path) -> int:
         "cohorts",
         "members",
         "ideal_cde",
+        "gencde_name",
+        "gencde_definition",
+        "gencde_data_type",
+        "gencde_permissible_values",
+        "gencde_units",
+        "gencde_value_coverage",
+        "gencde_needs_review",
         "rationale",
     ]
     rank = {"refine": 0, "novel": 1, "adopt": 2, "": 3}
@@ -1059,6 +1119,21 @@ def export_leanb_eitl_queue(result: LeanBResult, path: str | Path) -> int:
 
     def clean(s: str) -> str:
         return s.replace("\t", " ").replace("\n", " ").replace("\r", " ")
+
+    def gencde_cells(g: GenCDE | None) -> list[str]:
+        """The synthesized-target cells for a novel (empty when the record has no GenCDE)."""
+        if g is None:
+            return ["", "", "", "", "", "", ""]
+        pv = ";".join(f"{o.code}={o.label}" if o.code else o.label for o in g.permissible_values)
+        return [
+            clean(g.preferred_name),
+            clean(g.definition),
+            g.data_type,
+            clean(pv),
+            clean(g.units or ""),
+            "n/a" if g.value_coverage is None else f"{g.value_coverage:.2f}",
+            str(g.needs_review),
+        ]
 
     with open(path, "w") as f:
         f.write("\t".join(cols) + "\n")
@@ -1083,6 +1158,7 @@ def export_leanb_eitl_queue(result: LeanBResult, path: str | Path) -> int:
                         ";".join(r.cohorts),
                         clean(";".join(r.member_variable_names)),
                         clean(r.ideal_cde),
+                        *gencde_cells(r.gencde),
                         clean(r.rationale),
                     ]
                 )

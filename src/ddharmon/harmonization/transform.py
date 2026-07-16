@@ -255,6 +255,53 @@ def monotonic_ordinal_fill(
     return {src_sorted[i]: cde_sorted[i] for i in range(n)}
 
 
+def _compute_recode(ctx: dict, response: object) -> dict:
+    """Parse a spec-gen response + the prompt's two value sets into a target-id-agnostic recode.
+
+    Shared by the CDE (:func:`assemble_specgen`) and GenCDE (:func:`assemble_gencde_specgen`) assemble
+    passes — the recode (code_map, coverage, kind, confidence, review) is a pure function of the response +
+    the prompt's ``(cde_value_set, source_value_set)`` and does NOT depend on which target the edge carries.
+    Hallucinated target codes (not in the target value set) are dropped; a purely identity map -> ``IDENTITY``,
+    an empty one -> ``NONE``.
+    """
+    vs = str(ctx.get("source_value_set", ""))
+    tgt_codes_ordered = _codes_of(ctx.get("cde_value_set", ""))
+    tgt_codes = set(tgt_codes_ordered)
+    payload = _parse_specgen(response)
+    code_map = {str(k): str(val) for k, val in (payload.get("code_map") or {}).items()}
+    # enforce the schema rule: drop any target not in the target value set (no invented codes)
+    if tgt_codes:
+        code_map = {k: val for k, val in code_map.items() if val in tgt_codes}
+    src_codes = _codes_of(vs)
+    # M9: complete a rank-aligned partial recode between two equal-length integer ordinal scales by
+    # monotonic position (fills interior codes the LLM skipped). A no-op unless the shape qualifies.
+    filled = monotonic_ordinal_fill(src_codes, tgt_codes_ordered, code_map)
+    ordinal_filled = filled is not None
+    if filled is not None:
+        code_map = filled
+    unmapped = sorted(set(src_codes) - set(code_map.keys()))
+    coverage = round(len(code_map) / len(src_codes) if src_codes else 0.0, 3)
+    llm_conf = _as_float(payload.get("confidence"))
+    if not code_map:
+        kind = TransformKind.NONE
+    elif all(k == val for k, val in code_map.items()):
+        kind = TransformKind.IDENTITY
+    else:
+        kind = TransformKind.CATEGORICAL
+    notes = str(payload.get("notes", "") or "")
+    if ordinal_filled:
+        notes = (notes + " " if notes else "") + "[ordinal fill: interior codes completed by monotonic position]"
+    return {
+        "kind": kind,
+        "code_map": code_map,
+        "unmapped": unmapped,
+        "coverage": coverage,
+        "confidence": round(_spec_confidence(coverage, llm_conf), 3),
+        "needs_review": coverage < REVIEW_COVERAGE or llm_conf < REVIEW_CONFIDENCE or not code_map,
+        "notes": notes,
+    }
+
+
 def assemble_specgen(
     specgen_records: list[PromptRecord],
     responses: dict[str, object],
@@ -263,45 +310,16 @@ def assemble_specgen(
     """Parse each spec-gen response into a recode and fan it out to every edge that shares its prompt.
 
     A prompt covers one unique ``(cde_id, source value set)`` (see :func:`prepare_specgen`); its single
-    recode is attached as a :class:`TransformSpec` to each ``(record, source_variable)`` edge in the
-    prompt's ``context["edges"]`` — so identical encodings get an identical, consistent recode and no edge
-    is bound by a fragile string nor dropped because a sibling went unanswered. Coverage = mapped / total
-    source codes. A purely identity code_map becomes ``IDENTITY``, an empty one ``NONE``. ``needs_review``
-    fires on low coverage / low LLM confidence / empty map — the assign verdict is never changed.
-    Hallucinated target codes (not in the CDE value set) are dropped.
+    recode (:func:`_compute_recode`) is attached as a :class:`TransformSpec` to each
+    ``(record, source_variable)`` edge in the prompt's ``context["edges"]`` — so identical encodings get an
+    identical, consistent recode and no edge is bound by a fragile string nor dropped because a sibling went
+    unanswered. ``needs_review`` fires on low coverage / low LLM confidence / empty map — the assign verdict
+    is never changed.
     """
     by_key = {(r.group_id or r.cluster_id): r for r in records}
     for sgr in specgen_records:
         ctx = sgr.context
-        vs = str(ctx.get("source_value_set", ""))
-        cde_codes_ordered = _codes_of(ctx.get("cde_value_set", ""))
-        cde_codes = set(cde_codes_ordered)
-        payload = _parse_specgen(responses.get(sgr.id))
-        code_map = {str(k): str(val) for k, val in (payload.get("code_map") or {}).items()}
-        # enforce the schema rule: drop any target not in the CDE value set (no invented codes)
-        if cde_codes:
-            code_map = {k: val for k, val in code_map.items() if val in cde_codes}
-        src_codes = _codes_of(vs)
-        # M9: complete a rank-aligned partial recode between two equal-length integer ordinal scales by
-        # monotonic position (fills interior codes the LLM skipped). A no-op unless the shape qualifies.
-        filled = monotonic_ordinal_fill(src_codes, cde_codes_ordered, code_map)
-        ordinal_filled = filled is not None
-        if filled is not None:
-            code_map = filled
-        unmapped = sorted(set(src_codes) - set(code_map.keys()))
-        coverage = round(len(code_map) / len(src_codes) if src_codes else 0.0, 3)
-        llm_conf = _as_float(payload.get("confidence"))
-        if not code_map:
-            kind = TransformKind.NONE
-        elif all(k == val for k, val in code_map.items()):
-            kind = TransformKind.IDENTITY
-        else:
-            kind = TransformKind.CATEGORICAL
-        confidence = round(_spec_confidence(coverage, llm_conf), 3)
-        needs_review = coverage < REVIEW_COVERAGE or llm_conf < REVIEW_CONFIDENCE or not code_map
-        notes = str(payload.get("notes", "") or "")
-        if ordinal_filled:
-            notes = (notes + " " if notes else "") + "[ordinal fill: interior codes completed by monotonic position]"
+        r = _compute_recode(ctx, responses.get(sgr.id))
         for record_key, sv in ctx.get("edges", []):
             rec = by_key.get(record_key)
             if rec is None:
@@ -310,13 +328,128 @@ def assemble_specgen(
                 TransformSpec(
                     source_variable=sv,
                     target_cde_id=rec.cde_id or "",
-                    kind=kind,
-                    code_map=dict(code_map),  # per-edge copy (no shared mutable across specs)
-                    unmapped_source_codes=list(unmapped),
-                    coverage=coverage,
-                    confidence=confidence,
-                    needs_review=needs_review,
-                    rationale=notes,
+                    kind=r["kind"],
+                    code_map=dict(r["code_map"]),  # per-edge copy (no shared mutable across specs)
+                    unmapped_source_codes=list(r["unmapped"]),
+                    coverage=r["coverage"],
+                    confidence=r["confidence"],
+                    needs_review=r["needs_review"],
+                    rationale=r["notes"],
+                    generated_by="llm",
+                )
+            )
+    return records
+
+
+def _gencde_value_set_text(gencde: object) -> str:
+    """Render a GenCDE's synthesized categorical domain as a ``code=label|…`` value set (like _value_set_text)."""
+    pv = getattr(gencde, "permissible_values", None) or []
+    return "|".join(f"{ro.code}={ro.label}" for ro in pv)
+
+
+def prepare_gencde_specgen(
+    records: list[LeanBRecord],
+    embedded_dicts: list[EmbeddedDictionary],
+    *,
+    model_tag: str = DEFAULT_MODEL_TAG,
+) -> list[PromptRecord]:
+    """C1 categorical recode prompts for the tail: map each novel member's codes into its GenCDE's domain.
+
+    Mirrors :func:`prepare_specgen` but the TARGET is the record's synthesized :class:`~.models.GenCDE`
+    (its ``permissible_values``) instead of a catalog CDE — so a ``novel`` record gets member->target recodes
+    just like an adopt/refine record does, completing the harmonization of the novel path. Only categorical
+    GenCDEs (non-empty ``permissible_values``) and coded source edges qualify; numeric GenCDEs (units/bounds)
+    are the unit/arith path, and wide->long records are skipped (one structural spec, not per-column recodes).
+    Each prompt covers one ``(gencde_id, source value set)`` and is fanned back to its edges in
+    :func:`assemble_gencde_specgen`. Since a GenCDE id is unique per record, a prompt's edges belong to one
+    record — but identical source encodings within it still share one recode.
+    """
+    field_lookup = build_field_lookup(embedded_dicts)
+    sigs: dict[tuple[str, str], dict] = {}
+    order: list[tuple[str, str]] = []
+    for rec in records:
+        g = rec.gencde
+        if g is None:
+            continue
+        tgt_vs = _gencde_value_set_text(g)
+        if not tgt_vs:
+            continue  # numeric / no coded domain -> unit/arith path, not a categorical recode
+        if any(t.kind == TransformKind.WIDE_TO_LONG for t in rec.transforms):
+            continue
+        gencde_id = g.gencde_id
+        key = rec.group_id or rec.cluster_id
+        for sv in rec.member_variable_names:
+            cohort, _, var = sv.partition(":")
+            fld = field_lookup.get((cohort, var))
+            vs = _value_set_text(fld) if fld else ""
+            if not vs:
+                continue  # numeric / no-encoding edge
+            sig = (gencde_id, vs)
+            entry = sigs.get(sig)
+            if entry is None:
+                entry = {"gencde_id": gencde_id, "target_value_set": tgt_vs, "source_value_set": vs, "edges": []}
+                sigs[sig] = entry
+                order.append(sig)
+            entry["edges"].append((key, sv))
+    out: list[PromptRecord] = []
+    for sig in order:
+        e = sigs[sig]
+        out.append(
+            PromptRecord(
+                id=f"leanb:gencde_specgen:{content_token(e['gencde_id'], e['source_value_set'])}",
+                system_prompt=SYS_SPECGEN,
+                user_prompt=build_specgen_user_prompt(e["gencde_id"], e["target_value_set"], e["source_value_set"]),
+                schema=SPECGEN_SCHEMA,
+                model_tag=model_tag,
+                context={
+                    "gencde_id": e["gencde_id"],
+                    "cde_value_set": e["target_value_set"],  # keep the key _compute_recode reads
+                    "source_value_set": e["source_value_set"],
+                    "edges": e["edges"],
+                },
+            )
+        )
+    n_edges = sum(len(sigs[s]["edges"]) for s in order)
+    logger.info(
+        "prepare_gencde_specgen: %d coded tail edges -> %d unique (gencde, source-encoding) prompts (%d collapsed)",
+        n_edges,
+        len(out),
+        n_edges - len(out),
+    )
+    return out
+
+
+def assemble_gencde_specgen(
+    specgen_records: list[PromptRecord],
+    responses: dict[str, object],
+    records: list[LeanBRecord],
+) -> list[LeanBRecord]:
+    """Attach each GenCDE recode as a :class:`TransformSpec` to its novel record's member edges.
+
+    Identical to :func:`assemble_specgen` except the edge's ``target_cde_id`` is the GenCDE id (the tail's
+    synthesized target), so the novel path carries member->GenCDE recodes just like adopt/refine carries
+    member->CDE recodes. ``needs_review`` never changes the ``novel`` verdict.
+    """
+    by_key = {(r.group_id or r.cluster_id): r for r in records}
+    for sgr in specgen_records:
+        ctx = sgr.context
+        r = _compute_recode(ctx, responses.get(sgr.id))
+        gencde_id = str(ctx.get("gencde_id", ""))
+        for record_key, sv in ctx.get("edges", []):
+            rec = by_key.get(record_key)
+            if rec is None:
+                continue
+            rec.transforms.append(
+                TransformSpec(
+                    source_variable=sv,
+                    target_cde_id=(rec.gencde.gencde_id if rec.gencde else gencde_id),
+                    kind=r["kind"],
+                    code_map=dict(r["code_map"]),
+                    unmapped_source_codes=list(r["unmapped"]),
+                    coverage=r["coverage"],
+                    confidence=r["confidence"],
+                    needs_review=r["needs_review"],
+                    rationale=r["notes"],
                     generated_by="llm",
                 )
             )
@@ -830,6 +963,205 @@ def assemble_arith_specgen(
             t
             for t in rec.transforms
             if not (t.source_variable == sv and t.kind == TransformKind.UNIT and t.needs_units)
+        ]
+        rec.transforms.append(spec)
+    return records
+
+
+# ── GenCDE numeric specs: N1/N2 for the tail (member -> NUMERIC GenCDE) ───────
+
+
+def generate_gencde_unit_specs(
+    records: list[LeanBRecord],
+    embedded_dicts: list[EmbeddedDictionary],
+    *,
+    config: TransformConfidenceConfig | None = None,
+) -> list[LeanBRecord]:
+    """N1 for the tail: deterministic unit/scale specs for NUMERIC edges of NUMERIC-GenCDE novel records.
+
+    Mirrors :func:`generate_unit_specs` but the target unit comes from the record's
+    :class:`~.models.GenCDE` (``units``) instead of a catalog CDE, and each spec's ``target_cde_id`` is the
+    GenCDE id — so the numeric novel path carries member->GenCDE unit conversions just like adopt/refine
+    carries member->CDE ones. A GenCDE is "numeric" here when it has no ``permissible_values`` (a categorical
+    GenCDE is the C1 recode path, :func:`prepare_gencde_specgen`); coded source edges and wide->long records
+    are skipped. Deterministic, data-free, idempotent per (record, source_var).
+    """
+    field_lookup = build_field_lookup(embedded_dicts)
+    canon = UnitCanonicalizer()
+    n_unit = n_identity = n_needs = 0
+    for rec in records:
+        g = rec.gencde
+        if g is None or _gencde_value_set_text(g):
+            continue  # no GenCDE, or a categorical GenCDE -> C1 recode path, not a unit conversion
+        if any(t.kind == TransformKind.WIDE_TO_LONG for t in rec.transforms):
+            continue
+        gencde_unit = (g.units or "").strip() if g.units else ""
+        existing = {t.source_variable for t in rec.transforms}
+        for sv in rec.member_variable_names:
+            if sv in existing:
+                continue
+            cohort, _, var = sv.partition(":")
+            src_fld = field_lookup.get((cohort, var))
+            if src_fld is None or _value_set_text(src_fld):
+                continue  # missing field, or a coded source edge (no numeric conversion into a numeric target)
+            src_unit = (src_fld.units or "").strip() if src_fld.units else ""
+            spec = _unit_spec(sv, g.gencde_id, src_unit, gencde_unit, canon)
+            spec.confidence = round(score_transform_spec(spec, config), 3)
+            rec.transforms.append(spec)
+            n_identity += spec.kind == TransformKind.IDENTITY
+            n_unit += spec.kind == TransformKind.UNIT and not spec.needs_units
+            n_needs += spec.needs_units
+    logger.info(
+        "generate_gencde_unit_specs: %d unit conversions, %d identity, %d needs-units residual",
+        n_unit,
+        n_identity,
+        n_needs,
+    )
+    return records
+
+
+def build_gencde_arith_user_prompt(src_fld: Field | None, src_var: str, gencde: object) -> str:
+    """Arith prompt with the TARGET drawn from a numeric GenCDE (mirrors :func:`build_arith_user_prompt`)."""
+    src_name = (src_fld.question_text or src_fld.short_label or src_var) if src_fld else src_var
+    tgt_name = (
+        getattr(gencde, "question_text", "")
+        or getattr(gencde, "title", "")
+        or getattr(gencde, "preferred_name", "")
+        or getattr(gencde, "gencde_id", "")
+    )
+    bits: list[str] = []
+    dtype = (getattr(gencde, "data_type", "") or "").strip()
+    units = (getattr(gencde, "units", "") or "").strip()
+    if dtype:
+        bits.append(f"type {dtype}")
+    if units:
+        bits.append(f"units {units}")
+    tgt_meta = "; ".join(bits) or "no units/type declared"
+    gencde_id = getattr(gencde, "gencde_id", "")
+    return (
+        f"SOURCE variable `source` = {src_name} [{_field_meta(src_fld)}]\n"
+        f"TARGET CDE {gencde_id} = {tgt_name} [{tgt_meta}]\n\n"
+        "Return a fixed arithmetic formula for the target as a function of `source`, or null."
+    )
+
+
+def prepare_gencde_arith_specgen(
+    records: list[LeanBRecord],
+    embedded_dicts: list[EmbeddedDictionary],
+    *,
+    model_tag: str = DEFAULT_MODEL_TAG,
+) -> list[PromptRecord]:
+    """N2 for the tail: one arithmetic-formula prompt per numeric-GenCDE ``needs_units`` residual edge.
+
+    Mirrors :func:`prepare_arith_specgen` but only upgrades the residuals left by
+    :func:`generate_gencde_unit_specs` (``UNIT`` + ``needs_units`` whose ``target_cde_id`` is the record's
+    GenCDE id). Must run AFTER the numeric-GenCDE N1 pass.
+    """
+    field_lookup = build_field_lookup(embedded_dicts)
+    out: list[PromptRecord] = []
+    for rec in records:
+        g = rec.gencde
+        if g is None or _gencde_value_set_text(g):
+            continue
+        key = rec.group_id or rec.cluster_id
+        for i, t in enumerate(rec.transforms):
+            if t.kind != TransformKind.UNIT or not t.needs_units or t.target_cde_id != g.gencde_id:
+                continue
+            cohort, _, var = t.source_variable.partition(":")
+            src_fld = field_lookup.get((cohort, var))
+            out.append(
+                PromptRecord(
+                    id=f"leanb:gencde_arith:{key}:{i}",
+                    system_prompt=SYS_ARITH,
+                    user_prompt=build_gencde_arith_user_prompt(src_fld, var, g),
+                    schema=ARITH_SCHEMA,
+                    model_tag=model_tag,
+                    context={"record_key": key, "source_variable": t.source_variable},
+                )
+            )
+    logger.info("prepare_gencde_arith_specgen: %d records -> %d arithmetic prompts", len(records), len(out))
+    return out
+
+
+def assemble_gencde_arith_specgen(
+    arith_records: list[PromptRecord],
+    responses: dict[str, object],
+    records: list[LeanBRecord],
+    *,
+    config: TransformConfidenceConfig | None = None,
+) -> list[LeanBRecord]:
+    """Upgrade numeric-GenCDE ``needs_units`` residuals to ARITHMETIC specs from the LLM formula responses.
+
+    Identical to :func:`assemble_arith_specgen` except the spec's ``target_cde_id`` is the record's GenCDE id
+    (a ``novel`` record has ``cde_id`` None). Every LLM-proposed formula is unverified at the metadata layer,
+    so an ARITHMETIC spec always routes to review — never auto-approve.
+    """
+    by_key = {(r.group_id or r.cluster_id): r for r in records}
+    for ar in arith_records:
+        ctx = ar.context
+        record_key = ctx.get("record_key")
+        rec = by_key.get(record_key) if isinstance(record_key, str) else None
+        sv = ctx.get("source_variable")
+        if rec is None or rec.gencde is None or not isinstance(sv, str):
+            continue
+        gencde_id = rec.gencde.gencde_id
+        payload = _parse_obj(responses.get(ar.id))
+        formula = str(payload.get("formula") or "").strip()
+        if not formula or formula.lower() == "null":
+            continue  # no fixed formula -> keep the needs_units residual
+        names = formula_names(formula)
+        if not is_safe_formula(formula, sorted(names) or ["source"]):
+            continue  # unparseable / disallowed -> keep the residual, don't author a bad spec
+        if is_identity_formula(formula):
+            # M8: a no-op formula (target == source) is not an arithmetic conversion -> deterministic IDENTITY.
+            identity = TransformSpec(
+                source_variable=sv,
+                target_cde_id=gencde_id,
+                kind=TransformKind.IDENTITY,
+                inputs=["source"],
+                generated_by="rule",
+                needs_review=False,
+                rationale="source maps to the GenCDE unchanged (LLM formula was a no-op) -> identity",
+            )
+            identity.confidence = round(score_transform_spec(identity, config), 3)
+            rec.transforms = [
+                t
+                for t in rec.transforms
+                if not (
+                    t.source_variable == sv
+                    and t.kind == TransformKind.UNIT
+                    and t.needs_units
+                    and t.target_cde_id == gencde_id
+                )
+            ]
+            rec.transforms.append(identity)
+            continue
+        extra = sorted(n for n in names if n != "source")
+        llm_conf = _as_float(payload.get("confidence"))
+        note = str(payload.get("notes", "") or "")
+        if extra:
+            note = (note + " " if note else "") + f"references inputs beyond `source` ({', '.join(extra)})"
+        spec = TransformSpec(
+            source_variable=sv,
+            target_cde_id=gencde_id,
+            kind=TransformKind.ARITHMETIC,
+            formula=formula,
+            inputs=sorted(names) or ["source"],
+            generated_by="llm",
+            needs_data=bool(extra),
+            needs_review=True,  # LLM-proposed, unverified at the metadata layer
+            rationale=(note + f" (llm_confidence {llm_conf:.2f})").strip(),
+        )
+        spec.confidence = round(score_transform_spec(spec, config), 3)
+        rec.transforms = [
+            t
+            for t in rec.transforms
+            if not (
+                t.source_variable == sv
+                and t.kind == TransformKind.UNIT
+                and t.needs_units
+                and t.target_cde_id == gencde_id
+            )
         ]
         rec.transforms.append(spec)
     return records

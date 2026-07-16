@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from ddharmon.models.cluster import FieldReference
-from ddharmon.models.data_dictionary import Field
+from ddharmon.models.data_dictionary import Field, ResponseOption
 
 # Verdict vocabularies, by gate mode. ``harmonize`` mode (cluster has response-
 # option data) emits the full three-way verdict; ``kg_only`` mode (concept-only,
@@ -185,5 +185,55 @@ class LeanBRecord:
     n_members: int = 0  # the GROUP's member count
     transforms: list[TransformSpec] = field(default_factory=list)  # per-source-var recodes (C1+); one per edge
     candidates: list[CandidateCDE] = field(default_factory=list)  # ranked CDE candidates the assign stage saw
+    gencde: GenCDE | None = None  # novel -> synthesized GenCDE (the tail's harmonization target)
     decided_by: str = "llm"  # llm | deterministic
     raw: dict = field(default_factory=dict)
+
+
+@dataclass
+class GenCDE:
+    """A generated Common Data Element synthesized for a ``novel`` concept group — the tail's target.
+
+    "GenCDE" is DataTecnica/FAIRkit's term (Long et al., npj Digit Med 2026, DOI 10.1038/s41746-026-02795-z):
+    an LLM-authored, human-reviewable CDE that mirrors the standard NIH/CDE metadata structure (the "Gen"
+    denotes AI-generated + expert-reviewed provenance and scale, not a new schema). FAIRkit generates one
+    CDE from ONE sparse dictionary entry (generate-from-template); this inverts that — a ``novel`` record is
+    already a cross-cohort cluster of fields measuring one concept, so the GenCDE is synthesized from the
+    POOLED empirical evidence (the members' reconciled answer options, units, question texts) —
+    generate-from-cluster-empirics. Metadata-level: emitted + routed to review, never executed on row data.
+
+    Fields map to the Long-et-al. generation schema for benchmark comparability: ``preferred_name`` =
+    variable_name, ``definition`` = short_description, ``question_text`` = preferred_question_text,
+    ``data_type`` = value_format, ``units`` = UOM, ``aliases`` = synonyms.
+
+    ``value_coverage`` is the verification signal (fraction of answer-concepts observed across cohorts that
+    the synthesized ``permissible_values`` represents); low coverage or low ``confidence`` sets
+    ``needs_review`` but never changes the ``novel`` verdict (flag-not-gate, like TransformSpec.coverage).
+    It is ``None`` (N/A) for a NUMERIC concept — there are no observed answer-labels to cover, so a coverage
+    number is undefined; a numeric GenCDE's confidence rests on the LLM confidence + numeric-domain
+    completeness (units / bounds) instead, and ``None`` must not be read as "0% covered".
+    """
+
+    gencde_id: str  # deterministic id for the concept group, e.g. "GENCDE:<cluster_id>#g<idx>"
+    preferred_name: str = ""  # canonical snake_case variable name
+    title: str = ""  # expanded descriptive label
+    definition: str = ""  # short clinical definition
+    question_text: str = ""  # the acquisition question this element answers
+    data_type: str = ""  # numeric | categorical | binary | date | text (value_format)
+    permissible_values: list[ResponseOption] = field(default_factory=list)  # reconciled categorical domain
+    units: str | None = None  # unit of measure (UCUM-style), for numeric concepts
+    minimum_value: float | None = None  # numeric lower bound
+    maximum_value: float | None = None  # numeric upper bound
+    aliases: list[str] = field(default_factory=list)  # synonyms / cross-vocab names (free text)
+    # provenance — the empirical basis (generate-from-cluster-empirics)
+    source_variables: list[str] = field(default_factory=list)  # member edges, "cohort:var"
+    source_cohorts: list[str] = field(default_factory=list)
+    ideal_seed: str = ""  # the generate-ideal free-text anchor this GenCDE was grown from
+    related_cdes: list[str] = field(default_factory=list)  # near-miss candidate names (SSSOM broader/related)
+    # verification / review (flag-not-gate)
+    value_coverage: float | None = None  # fraction of observed answer-concepts represented; None = N/A (numeric)
+    uncovered_labels: list[str] = field(default_factory=list)  # observed answer-concepts the domain missed
+    confidence: float = 0.0
+    needs_review: bool = False
+    rationale: str = ""
+    generated_by: str = "llm"  # llm | rule

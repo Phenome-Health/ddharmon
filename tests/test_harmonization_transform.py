@@ -13,16 +13,21 @@ from ddharmon.harmonization import (
     apply_coherence_gate,
     assemble_arith_specgen,
     assemble_concept_gate,
+    assemble_gencde_arith_specgen,
+    assemble_gencde_specgen,
     assemble_specgen,
     eval_formula,
+    generate_gencde_unit_specs,
     generate_unit_specs,
     generate_wide_to_long_specs,
     prepare_arith_specgen,
     prepare_concept_gate,
+    prepare_gencde_arith_specgen,
+    prepare_gencde_specgen,
     prepare_specgen,
     verify_formula,
 )
-from ddharmon.harmonization.models import LeanBRecord
+from ddharmon.harmonization.models import ROUTE_RESIDUAL, GenCDE, LeanBRecord
 from ddharmon.harmonization.transform import (
     FormulaError,
     formula_names,
@@ -30,7 +35,7 @@ from ddharmon.harmonization.transform import (
     is_safe_formula,
     monotonic_ordinal_fill,
 )
-from ddharmon.models.data_dictionary import Field
+from ddharmon.models.data_dictionary import Field, ResponseOption
 
 APPROX = pytest.approx
 
@@ -947,3 +952,197 @@ class TestConceptGate:
         prompts = prepare_concept_gate([rec], [], self._cde_fields())
         assemble_concept_gate(prompts, {prompts[0].id: "garbage, not json"}, [rec])
         assert rec.concept_mismatch is False
+
+
+# ── M12: GenCDE tail spec-gen — member -> synthesized-GenCDE recodes for novel records ──
+
+
+def _gencde_world(hf, *, source_encoding="1=Yes|2=No", gencde_pv=(("1", "Yes"), ("0", "No"))):
+    """A 1-member ``novel`` record that synthesized a categorical GenCDE, with prepared tail spec-gen prompts."""
+    src = hf.field("smoke", "Do you currently smoke", encoding=source_encoding, data_type="categorical")
+    ed_a = hf.embedded_dict("CohortA", [src], sem_vecs=np.array([[1.0]]))
+    rec = LeanBRecord(
+        cluster_id="c0",
+        verdict="novel",
+        route=ROUTE_RESIDUAL,
+        group_id="c0#g0",
+        member_variable_names=["CohortA:smoke"],
+    )
+    pv = [ResponseOption(code=c, label=lb) for c, lb in gencde_pv] if gencde_pv else []
+    rec.gencde = GenCDE(gencde_id="GENCDE:c0#g0", preferred_name="ever_smoked", permissible_values=pv)
+    sg = prepare_gencde_specgen([rec], [ed_a])
+    return sg, rec
+
+
+class TestPrepareGenCDESpecgen:
+    def test_builds_prompt_targeting_the_gencde(self, hf):
+        sg, _ = _gencde_world(hf)
+        assert len(sg) == 1
+        p = sg[0]
+        assert p.id.startswith("leanb:gencde_specgen:")  # own content-addressed namespace (not leanb:specgen:)
+        # both the source encoding AND the synthesized GenCDE domain are visible to the recode model
+        assert "1=Yes|2=No" in p.user_prompt and "1=Yes|0=No" in p.user_prompt
+        assert "GENCDE:c0#g0" in p.user_prompt
+        assert p.context["gencde_id"] == "GENCDE:c0#g0"
+        assert p.context["cde_value_set"] == "1=Yes|0=No"  # the key _compute_recode reads
+        assert p.context["edges"] == [("c0#g0", "CohortA:smoke")]  # fanned back by (group_id, source var)
+
+    def test_skips_record_without_a_gencde(self, hf):
+        src = hf.field("smoke", "Do you currently smoke", encoding="1=Yes|2=No", data_type="categorical")
+        ed_a = hf.embedded_dict("CohortA", [src], sem_vecs=np.array([[1.0]]))
+        rec = LeanBRecord(
+            cluster_id="c0", verdict="novel", route=ROUTE_RESIDUAL, member_variable_names=["CohortA:smoke"]
+        )
+        assert prepare_gencde_specgen([rec], [ed_a]) == []  # no gencde attached -> nothing to recode into
+
+    def test_skips_numeric_gencde_no_permissible_values(self, hf):
+        sg, _ = _gencde_world(hf, gencde_pv=None)  # numeric GenCDE (units/bounds) -> not a categorical recode
+        assert sg == []
+
+    def test_skips_when_source_has_no_codes(self, hf):
+        sg, _ = _gencde_world(hf, source_encoding=None)
+        assert sg == []
+
+
+class TestAssembleGenCDESpecgen:
+    def test_attaches_recode_with_gencde_target(self, hf):
+        sg, rec = _gencde_world(hf)
+        assemble_gencde_specgen(sg, {sg[0].id: {"code_map": {"1": "1", "2": "0"}, "confidence": 0.9}}, [rec])
+        assert len(rec.transforms) == 1
+        t = rec.transforms[0]
+        assert t.target_cde_id == "GENCDE:c0#g0"  # the tail's synthesized target, not a catalog cde_id
+        assert t.source_variable == "CohortA:smoke"
+        assert t.kind == TransformKind.CATEGORICAL
+        assert t.code_map == {"1": "1", "2": "0"}
+        assert t.coverage == 1.0 and t.needs_review is False
+
+    def test_hallucinated_target_codes_dropped(self, hf):
+        sg, rec = _gencde_world(hf)  # GenCDE domain codes are {1, 0}
+        assemble_gencde_specgen(sg, {sg[0].id: {"code_map": {"1": "1", "2": "9"}, "confidence": 0.9}}, [rec])
+        t = rec.transforms[0]
+        assert "2" not in t.code_map  # "9" is not in the GenCDE value set -> dropped, "2" left unmapped
+        assert "2" in t.unmapped_source_codes
+        assert t.coverage == 0.5 and t.needs_review is True  # partial coverage flags review
+
+
+# ── M12 N1/N2: numeric GenCDE transform specs (member -> NUMERIC GenCDE) ──
+
+
+def _numeric_gencde_world(hf, *, src_units=None, gencde_units=None, src_encoding=None, gencde_pv=None):
+    """A 1-member ``novel`` record that synthesized a NUMERIC GenCDE (no permissible_values), after N1."""
+    src = hf.field("weight", "Body weight", units=src_units, encoding=src_encoding, data_type="continuous")
+    ed_a = hf.embedded_dict("CohortA", [src], sem_vecs=np.array([[1.0]]))
+    rec = LeanBRecord(
+        cluster_id="c0",
+        verdict="novel",
+        route=ROUTE_RESIDUAL,
+        group_id="c0#g0",
+        member_variable_names=["CohortA:weight"],
+    )
+    pv = [ResponseOption(code=c, label=lb) for c, lb in gencde_pv] if gencde_pv else []
+    rec.gencde = GenCDE(
+        gencde_id="GENCDE:c0#g0",
+        preferred_name="body_weight",
+        data_type="numeric",
+        units=gencde_units,
+        permissible_values=pv,
+    )
+    generate_gencde_unit_specs([rec], [ed_a])
+    return rec, [ed_a]
+
+
+class TestGenerateGenCDEUnitSpecs:
+    def test_known_conversion_targets_gencde(self, hf):
+        rec, _ = _numeric_gencde_world(hf, src_units="kg", gencde_units="lb")
+        assert len(rec.transforms) == 1
+        t = rec.transforms[0]
+        assert t.kind == TransformKind.UNIT and t.needs_units is False
+        assert t.target_cde_id == "GENCDE:c0#g0"  # the tail's synthesized target, not a catalog cde_id
+        assert t.factor == APPROX(1 / 0.45359237) and t.offset == APPROX(0.0)
+        assert t.source_unit == "kg" and t.target_unit == "lb"
+        assert t.generated_by == "rule" and t.confidence == 0.9  # known conversion -> high band
+
+    def test_identity_same_unit(self, hf):
+        rec, _ = _numeric_gencde_world(hf, src_units="kg", gencde_units="kg")
+        assert rec.transforms[0].kind == TransformKind.IDENTITY
+        assert rec.transforms[0].target_cde_id == "GENCDE:c0#g0"
+
+    def test_missing_units_flags_needs_units(self, hf):
+        rec, _ = _numeric_gencde_world(hf, src_units=None, gencde_units=None)
+        t = rec.transforms[0]
+        assert t.kind == TransformKind.UNIT and t.needs_units is True
+        assert t.needs_review is True and t.confidence == 0.4
+        assert t.target_cde_id == "GENCDE:c0#g0"
+
+    def test_skips_categorical_gencde(self, hf):
+        # a GenCDE WITH permissible_values is the C1 recode path, not the numeric unit path
+        rec, _ = _numeric_gencde_world(hf, src_units="kg", gencde_units="lb", gencde_pv=(("1", "Yes"), ("0", "No")))
+        assert rec.transforms == []
+
+    def test_skips_coded_source_edge(self, hf):
+        # a coded source cannot be unit-converted into a numeric target -> N1 emits nothing
+        rec, _ = _numeric_gencde_world(hf, src_encoding="1=Yes|2=No")
+        assert rec.transforms == []
+
+    def test_skips_record_without_gencde(self, hf):
+        src = hf.field("weight", "Body weight", units="kg", data_type="continuous")
+        ed_a = hf.embedded_dict("CohortA", [src], sem_vecs=np.array([[1.0]]))
+        rec = LeanBRecord(
+            cluster_id="c0", verdict="novel", route=ROUTE_RESIDUAL, member_variable_names=["CohortA:weight"]
+        )
+        assert generate_gencde_unit_specs([rec], [ed_a]) == [rec]
+        assert rec.transforms == []
+
+    def test_idempotent(self, hf):
+        rec, embedded = _numeric_gencde_world(hf, src_units="kg", gencde_units="lb")
+        generate_gencde_unit_specs([rec], embedded)  # second pass
+        assert len(rec.transforms) == 1  # not duplicated
+
+
+class TestGenCDEArithSpecgen:
+    def _residual_world(self, hf):
+        """A numeric GenCDE edge N1 left as a needs_units UNIT residual, ready for the N2 LLM pass."""
+        rec, embedded = _numeric_gencde_world(hf, src_units=None, gencde_units=None)
+        prompts = prepare_gencde_arith_specgen([rec], embedded)
+        return rec, prompts
+
+    def test_prompt_built_for_residual(self, hf):
+        rec, prompts = self._residual_world(hf)
+        assert rec.transforms[0].kind == TransformKind.UNIT and rec.transforms[0].needs_units
+        assert len(prompts) == 1
+        p = prompts[0]
+        assert p.id == "leanb:gencde_arith:c0#g0:0"  # own namespace, keyed by (record, residual index)
+        assert p.context["source_variable"] == "CohortA:weight"
+        assert "GENCDE:c0#g0" in p.user_prompt and "source" in p.user_prompt.lower()
+
+    def test_no_prompt_for_known_conversion(self, hf):
+        # kg->lb is a deterministic N1 conversion -> no residual -> no arithmetic prompt
+        rec, embedded = _numeric_gencde_world(hf, src_units="kg", gencde_units="lb")
+        assert not rec.transforms[0].needs_units
+        assert prepare_gencde_arith_specgen([rec], embedded) == []
+
+    def test_valid_formula_upgrades_residual_and_always_reviews(self, hf):
+        rec, prompts = self._residual_world(hf)
+        resp = {prompts[0].id: {"formula": "source * 2.20462", "confidence": 0.9, "notes": "kg to lb"}}
+        assemble_gencde_arith_specgen(prompts, resp, [rec])
+        assert len(rec.transforms) == 1  # residual replaced, not appended
+        t = rec.transforms[0]
+        assert t.kind == TransformKind.ARITHMETIC
+        assert t.target_cde_id == "GENCDE:c0#g0"  # novel record has no cde_id -> the GenCDE id
+        assert t.formula == "source * 2.20462" and t.inputs == ["source"]
+        assert t.generated_by == "llm" and t.needs_review is True  # LLM-proposed -> always review
+        assert t.confidence == 0.6
+
+    def test_null_formula_keeps_residual(self, hf):
+        rec, prompts = self._residual_world(hf)
+        assemble_gencde_arith_specgen(prompts, {prompts[0].id: {"formula": None}}, [rec])
+        assert rec.transforms[0].kind == TransformKind.UNIT and rec.transforms[0].needs_units
+
+    def test_identity_formula_becomes_identity_spec(self, hf):
+        # M8: a no-op "source" formula -> deterministic IDENTITY (no review), targeting the GenCDE
+        rec, prompts = self._residual_world(hf)
+        assemble_gencde_arith_specgen(prompts, {prompts[0].id: {"formula": "source", "confidence": 0.9}}, [rec])
+        assert len(rec.transforms) == 1
+        t = rec.transforms[0]
+        assert t.kind == TransformKind.IDENTITY and t.generated_by == "rule"
+        assert t.needs_review is False and t.target_cde_id == "GENCDE:c0#g0"
