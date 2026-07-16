@@ -3,6 +3,38 @@
 All notable changes to ddharmon are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
+## [1.1.0]
+
+Adds **GenCDE** — generated Common Data Elements for the *novel* route — together with transform-spec
+generation for those generated targets. Every new stage is **opt-in and default OFF**, so 1.1.0 is a
+drop-in, backward-compatible upgrade over 1.0.0: existing `harmonize_leanb()` callers behave identically
+until they enable the flags.
+
+### Added
+
+- **GenCDE synthesis** (`ddharmon.harmonization.gencde`, opt-in `gencde` stage) — when no existing CDE
+  fits a concept group, synthesize a structured GenCDE (preferred name, definition, data type, permissible
+  values / units, aliases, provenance) from the members' *pooled cross-cohort evidence*, giving the novel
+  route a harmonization target instead of a dead end. Deterministic and cache-stable (temp 0). New helpers
+  `prepare_gencde`, `assemble_gencde`, `observed_answer_labels`; new `LeanBRecord.gencde` field and EITL
+  export columns; adds Benchmark E (FAIRkit reproducibility protocol).
+- **GenCDE transform-spec generation** (opt-in `gencde_specgen` stage) — novel records now carry
+  member→GenCDE transform specs, mirroring the adopt/refine path:
+  - **C1 — categorical recodes** against the GenCDE's permissible values (`prepare_gencde_specgen` /
+    `assemble_gencde_specgen`, reusing the shared recode machinery).
+  - **N1 — unit/scale specs** for numeric source edges (`generate_gencde_unit_specs`).
+  - **N2 — arithmetic recodes**, an LLM formula upgrade of the numeric residuals
+    (`prepare_gencde_arith_specgen` / `assemble_gencde_arith_specgen`); arithmetic **always** routes to
+    review (never auto-approved).
+- **Numeric GenCDE calibration** — `GenCDE.value_coverage` is now `float | None` (numeric domains report
+  N/A rather than a vacuous 1.0); numeric confidence rests on the LLM score (penalized without units/bounds),
+  and a missing numeric domain trips `needs_review`.
+- **Measurand-axis split** (opt-in `measurand_split`, default OFF) — a measurand clause on the split and
+  generate-ideal prompts so distinct quantities (e.g. systolic / diastolic / pulse) partition instead of
+  fusing. Off by default pending further validation.
+
+New public symbols are exported from `ddharmon.harmonization`; the full harmonization suite is green.
+
 ## [1.0.0]
 
 First public release. ddharmon harmonizes biomedical data-dictionary variables across studies by

@@ -1,6 +1,6 @@
 [project]
 name = "ddharmon"
-version = "1.0.0"
+version = "1.1.0"
 description = "Data Dictionary Harmonization Tool: cluster equivalent variables across data dictionaries and anchor them to Common Data Elements (CDEs)"
 readme = "README.md"
 requires-python = ">=3.12"
