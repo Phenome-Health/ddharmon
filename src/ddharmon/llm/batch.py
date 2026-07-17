@@ -62,6 +62,26 @@ _SCHEMA_PREAMBLE = "\n\nRespond with ONLY valid JSON matching this schema (no ma
 _FALLBACK_MODEL = "claude-sonnet-4-6"
 
 
+def _attach_batch_usage(record: dict, message: object) -> None:
+    """Fold a succeeded batch message's realized token usage + model into its response record.
+
+    Best-effort and additive: on any odd/missing usage shape it simply leaves ``record`` unchanged (a stage
+    that can't be priced reports $0 rather than crashing the retrieve). Batch bills at 50% — the discount is
+    applied at pricing time (``cost.price_usage(..., batch=True)``), not here.
+    """
+    try:
+        usage = getattr(message, "usage", None)
+        if usage is None:
+            return
+        record["usage"] = {
+            "input_tokens": int(getattr(usage, "input_tokens", 0) or 0),
+            "output_tokens": int(getattr(usage, "output_tokens", 0) or 0),
+        }
+        record["model"] = getattr(message, "model", None)
+    except Exception:  # noqa: BLE001 — usage capture must never break batch retrieval
+        logger.debug("batch usage capture failed for %s", record.get("id"), exc_info=True)
+
+
 def submit_batch(
     prompts_path: str | Path,
     *,
@@ -256,7 +276,8 @@ def retrieve_batch(
             original_id = id_map.get(result.custom_id, result.custom_id)
             if result.result.type == "succeeded":
                 # message.content is a union of block types; only TextBlock carries .text
-                block = result.result.message.content[0]
+                message = result.result.message
+                block = message.content[0]
                 text = block.text if isinstance(block, TextBlock) else ""
                 try:
                     parsed = _parse_response_text(text)
@@ -264,6 +285,10 @@ def retrieve_batch(
                 except (json.JSONDecodeError, Exception) as e:
                     logger.warning("Failed to parse response for %s: %s", original_id, e)
                     record = {"id": original_id, "response": text}
+                # Preserve realized token usage + the model that ran so cost accounting can price the batch
+                # stage (batch bills at 50% — applied in cost.price_usage). Extra keys are ignored by existing
+                # readers, so this stays backward-compatible with response files written before usage capture.
+                _attach_batch_usage(record, message)
                 f.write(json.dumps(record) + "\n")
                 written += 1
             else:
