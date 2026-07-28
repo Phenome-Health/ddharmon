@@ -264,6 +264,7 @@ class LeanBResult:
     specgen_prompts: list[PromptRecord] = field(default_factory=list)  # stage 4 (transform specs) — Batch export
     gencde_prompts: list[PromptRecord] = field(default_factory=list)  # novel -> GenCDE synthesis — Batch export
     concept_gate_prompts: list[PromptRecord] = field(default_factory=list)  # M7 concept-match gate — Batch export
+    refine_prompts: list[PromptRecord] = field(default_factory=list)  # refine -> derived CDE — Batch export
     substrate: ClusteringSubstrate | None = None  # the frozen clustering partition (save it to replay cheaply)
 
     def buckets(self) -> dict[str, list[LeanBRecord]]:
@@ -714,6 +715,7 @@ def harmonize_leanb(
     specgen: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
     concept_gate: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
     gencde: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
+    refine: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
     cde_cohort: str = CDE_COHORT,
     min_cluster_size: int = 15,
     top_k: int = DEFAULT_TOP_K,
@@ -729,6 +731,7 @@ def harmonize_leanb(
     representation_refine: bool = True,
     measurand_split: bool = False,
     gencde_specgen: bool = False,
+    refine_cdes: bool = False,
     recover_outliers: bool = True,
     residual_min_cluster_size: int = 8,
     max_clusters: int | None = None,
@@ -775,6 +778,14 @@ def harmonize_leanb(
     ``novel`` records that synthesized a categorical GenCDE, so the tail carries transform specs like the
     adopt/refine path (prompts join ``specgen_prompts``; assembled when ``specgen`` is set). Gate on group
     coherence — a recode into an incoherent GenCDE is meaningless.
+    ``refine_cdes`` (OPT-IN / default off): give the ``refine`` bucket a harmonization target of its own —
+    a GenCDE DERIVED from the matched CDE (parent + a typed, minimal delta), attached to
+    ``records[].gencde`` with ``parent_cde_id`` set, so a ``refine`` stops being an ``adopt`` with a caveat.
+    The ``refine`` callable (like ``gencde``) authors the deltas a rule cannot derive; the unit and
+    structural deltas are computed deterministically either way, and ``refine_prompts`` is always exposed
+    for the Batch path. Runs LAST — the triage gate reads the M7 concept-match flag and the coherence
+    verdict, so a match those stages already doubt is never dressed up as a refinement — then re-points the
+    transform specs at the refined element and mechanically closes the recodes the parent could not express.
     NOTE (frozen-substrate cache): these change prompt/candidate TEXT, not the content-addressed prompt ids —
     a replay on a frozen substrate reuses cached split/assign responses and will NOT reflect them; delete the
     affected stages' ``responses_*.jsonl`` to force a re-run.
@@ -949,6 +960,30 @@ def harmonize_leanb(
     result.concept_gate_prompts = prepare_concept_gate(result.records, embedded_dicts, cde_fields, model_tag=model_tag)
     if concept_gate is not None and result.concept_gate_prompts:
         assemble_concept_gate(result.concept_gate_prompts, concept_gate(result.concept_gate_prompts), result.records)
+
+    # Refinement authoring (opt-in, `refine_cdes`): give the `refine` bucket a real harmonization TARGET —
+    # a GenCDE DERIVED from the matched CDE (parent + a typed, minimal delta) — mirroring what `gencde`
+    # does for `novel`. Runs LAST on purpose: the axis triage and its mis-assigned gate read the M7
+    # concept-match flag, which is only set above, and a refinement must never be authored for a match
+    # that stage already doubts.
+    #
+    # Three sub-steps: the $0 deterministic deltas (unit/structural) are attached first so the LLM is
+    # never paid for an answer a rule can derive; `refine_prompts` is then always exposed for the
+    # Batch/driver path; finally `retarget_refined_specs` repoints the transform specs at the refined
+    # element and mechanically closes the recodes the parent's value domain could not express.
+    if refine_cdes:
+        from ddharmon.harmonization.refine import (
+            apply_deterministic_refinements,
+            assemble_refine,
+            prepare_refine,
+            retarget_refined_specs,
+        )
+
+        apply_deterministic_refinements(result.records, cde_fields)
+        result.refine_prompts = prepare_refine(result.records, embedded_dicts, cde_fields, model_tag=model_tag)
+        if refine is not None and result.refine_prompts:
+            assemble_refine(result.refine_prompts, refine(result.refine_prompts), result.records, cde_fields)
+        retarget_refined_specs(result.records, embedded_dicts)
     return result
 
 

@@ -61,6 +61,7 @@ from ddharmon.harmonization.models import (
     GenCDE,
     HarmonizationVerdict,
     LeanBRecord,
+    RefinementAxis,
     TransformKind,
     TransformSpec,
 )
@@ -76,6 +77,14 @@ from ddharmon.harmonization.pipeline import (
     write_prompts_jsonl,
 )
 from ddharmon.harmonization.positional import detect_enumerated_family, detect_positional_enumeration
+from ddharmon.harmonization.refine import (
+    RefineTriage,
+    apply_deterministic_refinements,
+    build_deterministic_refinement,
+    classify_refinement_axis,
+    compute_delta,
+    triage_summary,
+)
 from ddharmon.harmonization.substrate import (
     ClusteringSubstrate,
     build_substrate,
@@ -119,10 +128,13 @@ __all__ = [
     "LeanBRecord",
     "LeanBResult",
     "PromptRecord",
+    "RefineTriage",
+    "RefinementAxis",
     "SubClusterResult",
     "TransformKind",
     "TransformSpec",
     "apply_coherence_gate",
+    "apply_deterministic_refinements",
     "assemble_arith_specgen",
     "assemble_concept_gate",
     "assemble_gencde",
@@ -138,8 +150,12 @@ __all__ = [
     "canonicalness_score",
     "cluster_content_id",
     "clusters_from_substrate",
+    "build_deterministic_refinement",
+    "classify_refinement_axis",
+    "compute_delta",
     "detect_enumerated_family",
     "detect_positional_enumeration",
+    "triage_summary",
     "merge_candidate_pairs",
     "prepare_merge",
     "eval_formula",
