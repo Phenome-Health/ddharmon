@@ -41,6 +41,11 @@ All notable changes to ddharmon are documented here. Format loosely follows
   header falls back to HTML extraction rather than surfacing a parser stack trace — publishers commonly
   answer a `.pdf` URL with an interstitial page.
 
+  Every fetch failure a caller can act on is raised as a `ValueError` naming the recovery, never as a raw
+  `httpx` exception — so a hosted caller maps it to a readable 4xx instead of a 500. That matters most for
+  the common case: a DOI resolving to a paywalled journal that refuses automated readers (403) is reported
+  as exactly that, with "upload the PDF instead", rather than as a crash.
+
 - New optional extra **`sources`** (`pypdf`) for the PDF path, folded into `all`. Imported lazily, so
   paste / URL / repo ingestion works without it.
 
