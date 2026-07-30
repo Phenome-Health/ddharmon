@@ -17,6 +17,11 @@ Fetching is deliberately bounded: http(s) only, every redirect hop re-validated,
 address space refused, a byte cap, and a timeout. The builder is reachable from a hosted UI, so a
 user-supplied URL must not become an SSRF primitive.
 
+Every fetch failure a caller can act on — a publisher 403, a dead link, a timeout — is raised as a
+``ValueError`` naming the recovery, never as a raw ``httpx`` exception. That is the module's contract with a
+hosted caller: it maps ``ValueError`` to a 4xx the user can read, so an expected condition (most journals
+block automated readers) surfaces as guidance rather than a 500.
+
 Metadata-only discipline is unaffected — these are *documents describing a score*, never participant data.
 """
 
@@ -191,6 +196,32 @@ def _check_url(url: str) -> None:
             raise ValueError(f"refusing to fetch {host!r}: resolves to non-public address {ip}")
 
 
+def _status_message(url: str, response: httpx.Response) -> str:
+    """Explain an error status in terms of what the user should do next.
+
+    A publisher 403 is the SINGLE most likely outcome of the URL/DOI path — most journals sit behind
+    Cloudflare or a paywall and refuse an automated reader — so it gets the recovery the panel already
+    advertises (upload the PDF) rather than a bare status line.
+    """
+    code = response.status_code
+    reason = f"{code} {response.reason_phrase}".strip()
+    instead = "open it in a browser and upload the PDF, or paste the definition text, instead"
+    if (httpx.URL(url).host or "").lower().endswith("github.com") and code in (403, 429):
+        return f"{url} hit GitHub's unauthenticated API rate limit ({reason}) — wait a few minutes, or {instead}"
+    if code in (401, 402, 403):
+        return (
+            f"{url} refused the fetch ({reason}) — publishers routinely block automated readers or sit "
+            f"behind a paywall; {instead}"
+        )
+    if code == 404:
+        return f"{url} was not found ({reason}) — check the DOI/URL, or {instead}"
+    if code == 429:
+        return f"{url} is rate-limiting the fetch ({reason}) — wait and retry, or {instead}"
+    if code >= 500:
+        return f"{url} returned a server error ({reason}) — retry later, or {instead}"
+    return f"{url} returned {reason} — {instead}"
+
+
 def _fetch(
     url: str,
     *,
@@ -202,33 +233,43 @@ def _fetch(
     """GET ``url`` with hop-by-hop validation and a hard byte cap. Returns ``(body, content_type, final_url)``.
 
     Redirects are followed manually (``follow_redirects=False``) so each hop passes :func:`_check_url`.
+
+    Every ``httpx`` failure is converted to a ``ValueError`` carrying the recovery — see the module
+    docstring's contract. The cap/redirect ``ValueError``\\ s below pass through untouched.
     """
     current = url
     for _ in range(max_redirects + 1):
         _check_url(current)
-        with client.stream(
-            "GET",
-            current,
-            timeout=timeout,
-            follow_redirects=False,
-            headers={"User-Agent": _USER_AGENT, "Accept": "*/*"},
-        ) as response:
-            if response.status_code in (301, 302, 303, 307, 308):
-                location = response.headers.get("location")
-                if not location:
-                    raise ValueError(f"redirect from {current} without a Location header")
-                current = str(httpx.URL(current).join(location))
-                continue
-            response.raise_for_status()
-            content_type = response.headers.get("content-type", "")
-            chunks: list[bytes] = []
-            total = 0
-            for chunk in response.iter_bytes():
-                total += len(chunk)
-                if total > max_bytes:
-                    raise ValueError(f"{current} exceeds the {max_bytes // 1024 // 1024} MB score-source cap")
-                chunks.append(chunk)
-            return b"".join(chunks), content_type, current
+        try:
+            with client.stream(
+                "GET",
+                current,
+                timeout=timeout,
+                follow_redirects=False,
+                headers={"User-Agent": _USER_AGENT, "Accept": "*/*"},
+            ) as response:
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("location")
+                    if not location:
+                        raise ValueError(f"redirect from {current} without a Location header")
+                    current = str(httpx.URL(current).join(location))
+                    continue
+                if response.is_error:
+                    raise ValueError(_status_message(current, response))
+                content_type = response.headers.get("content-type", "")
+                chunks: list[bytes] = []
+                total = 0
+                for chunk in response.iter_bytes():
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise ValueError(f"{current} exceeds the {max_bytes // 1024 // 1024} MB score-source cap")
+                    chunks.append(chunk)
+                return b"".join(chunks), content_type, current
+        except httpx.TimeoutException as exc:
+            raise ValueError(f"{current} timed out after {timeout:g}s — retry, or upload the PDF instead") from exc
+        except httpx.HTTPError as exc:
+            # Transport/protocol failures: DNS, TLS, connection reset, malformed response.
+            raise ValueError(f"could not fetch {current}: {exc}") from exc
     raise ValueError(f"too many redirects (>{max_redirects}) starting at {url}")
 
 

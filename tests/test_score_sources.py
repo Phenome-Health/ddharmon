@@ -115,6 +115,69 @@ def test_from_url_stops_after_max_redirects():
         from_url("https://paper.example.com/start", client=client, max_redirects=2)
 
 
+# --- fetch failures are user-actionable ValueErrors, never raw httpx ---------------------------
+
+
+def test_publisher_403_names_the_recovery_not_a_raw_httpx_error():
+    """The real smoke-test failure: a DOI resolves to a Cloudflare-protected journal that refuses the fetch.
+
+    Raw `httpx.HTTPStatusError` escaped the hosted route (which maps only ValueError to a 4xx) and became an
+    opaque 500. This is the single most likely outcome of the URL/DOI path, so it must arrive as guidance.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "doi.org":
+            return httpx.Response(302, headers={"location": "https://academic.oup.com/article/74/4/582"})
+        return httpx.Response(403, headers={"content-type": "text/html"}, content=b"<html>Just a moment...</html>")
+
+    with _client(handler) as client, pytest.raises(ValueError) as exc:
+        from_url("10.1093/gerona/gly094", client=client)
+    message = str(exc.value)
+    assert "403" in message
+    assert "academic.oup.com" in message  # the URL that actually refused, post-redirect
+    assert "upload the PDF" in message
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [(404, "was not found"), (429, "rate-limiting"), (500, "server error"), (418, "418")],
+)
+def test_error_statuses_explain_themselves(status, expected):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status)
+
+    with _client(handler) as client, pytest.raises(ValueError, match=expected):
+        from_url("https://paper.example.com/score", client=client)
+
+
+def test_github_rate_limit_is_named_as_such():
+    """GitHub answers an over-quota unauthenticated API call with 403 — 'paywalled publisher' would mislead."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"message": "API rate limit exceeded"})
+
+    with _client(handler) as client, pytest.raises(ValueError, match="rate limit"):
+        from_url("https://github.com/acme/frailty", client=client)
+
+
+def test_timeout_is_a_value_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    with _client(handler) as client, pytest.raises(ValueError, match="timed out after"):
+        from_url("https://paper.example.com/slow", client=client, timeout=3)
+
+
+def test_transport_failure_is_a_value_error():
+    """DNS/TLS/connection-reset failures reach the caller as a readable ValueError too."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    with _client(handler) as client, pytest.raises(ValueError, match="could not fetch"):
+        from_url("https://paper.example.com/down", client=client)
+
+
 def test_from_url_fetches_html_and_records_final_url():
     """Provenance is the URL we actually read (post-redirect), not the one the user typed."""
 
