@@ -3,6 +3,50 @@
 All notable changes to ddharmon are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
+## [Unreleased]
+
+### Added
+
+- **Composite / derived-variable builder** (`ddharmon.harmonization.composite`) — answers, for a finished
+  run, whether a *published composite score* (a frailty index, a PHQ-9 sum, an intrinsic-capacity score) can
+  be computed from the concepts that run harmonized, which concepts compose it, and how. Four stages, only
+  two of which cost an LLM call: transcribe the score from its source document → hybrid-retrieval shortlist
+  per component + one judge pass → deterministic per-cohort feasibility → the derivation recipe.
+  `derive_composite()` is the entry point; `spec_to_dict()` / `spec_to_json()` serialize the result.
+
+  Both dominant published shapes are first-class: **criteria-count** (Fried phenotype — k of n criteria) and
+  **deficit-accumulation** (a frailty index — deficits ÷ items considered), plus sum / weighted-sum /
+  z-composite forms (`CompositeKind`).
+
+  Grounding is structural rather than merely instructed: the judge may only choose among the concept ids
+  RETRIEVED for that component, and anything else is discarded with the component reported MISSING. Concepts
+  are referenced by record id, not label. Nothing is invented — a cutoff the source does not state stays
+  `unstated` and flagged for review, a band list yields no cut-point, a run where nothing matched emits
+  "NOT COMPUTABLE" rather than a runnable-looking division by zero, and a document claiming more items than
+  it lists is reported as incomplete instead of being filled in from prior knowledge.
+
+  Feasibility is honest about its limits: data-dictionary metadata gives per-cohort *presence*, so the report
+  names which cohorts are computable and explicitly does not claim effective N.
+
+  Reviewer overrides (`overrides={component: concept_id | None}`) pin or drop a match and skip the judge, so
+  a fully-pinned re-derive costs **zero** LLM calls.
+
+- **Score-source ingestion** (`ddharmon.harmonization.score_sources`) — the builder's document front door:
+  pasted text, a PDF, or a fetched URL / bare DOI / GitHub repo (README + selected docs), each returning a
+  `ScoreSource` with the extracted text, its provenance, and a sha256 of exactly what was read. A score's
+  definition must come from a real document, never from a model's recollection of it.
+
+  Fetching is deliberately bounded: http(s) only, every redirect hop re-validated against private /
+  loopback / link-local address space, a byte cap, and a timeout. A body advertised as PDF without a `%PDF`
+  header falls back to HTML extraction rather than surfacing a parser stack trace — publishers commonly
+  answer a `.pdf` URL with an interstitial page.
+
+- New optional extra **`sources`** (`pypdf`) for the PDF path, folded into `all`. Imported lazily, so
+  paste / URL / repo ingestion works without it.
+
+- `parse.salvage_objects()` — shared rescue for a long JSON array truncated at the token cap (a 68-item
+  component list makes this a real risk).
+
 ## [1.1.0]
 
 Adds **GenCDE** — generated Common Data Elements for the *novel* route — together with transform-spec

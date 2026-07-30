@@ -1,9 +1,13 @@
-"""Parse LLM responses for the classify-only adopt/refine/novel pass.
+"""Tolerant JSON parsing of LLM responses.
 
 Robust JSON extraction lifted from nb 05 (``_extract_json`` /
 ``_payload_from_response``): models occasionally narrate before the JSON, wrap
 it in ``` fences, or append trailing commentary. We never drop a sub-cluster
 over our own parse strictness.
+
+``extract_json`` / ``payload_from_response`` / ``parse_verdict_payload`` serve the classify-only
+adopt/refine/novel pass; ``salvage_objects`` is the shared long-array rescue used wherever a response
+carries a list long enough to hit the token cap mid-way.
 """
 
 from __future__ import annotations
@@ -43,6 +47,66 @@ def extract_json(text: str) -> dict:
     if best is not None:
         return best
     return json.loads(t)  # nothing decoded — raise a clear JSONDecodeError
+
+
+def salvage_objects(text: str, key: str | None = None) -> list[dict]:
+    """Recover the complete objects from a JSON array the model cut off mid-way (token cap).
+
+    Locates the ``"<key>": [`` array (or the first bare ``[`` when ``key`` is None), then walks brace depth
+    collecting each balanced ``{…}`` and parsing it on its own — so an incomplete trailing object is dropped
+    instead of failing the whole parse. Used where a response carries a long list (a score's components, a
+    batch of ideas) and truncation is a real risk.
+    """
+    t = text.strip()
+    m = _FENCE_RE.search(t)
+    if m:
+        t = m.group(1).strip()
+
+    start = -1
+    if key:
+        km = re.search(rf'"{re.escape(key)}"\s*:\s*\[', t)
+        if km:
+            start = km.end()
+    if start < 0:
+        start = t.find("[") + 1 if "[" in t else -1
+    if start <= 0:
+        return []
+
+    objs: list[dict] = []
+    depth = 0
+    obj_start = -1
+    in_str = False
+    esc = False
+    for i in range(start, len(t)):
+        ch = t[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                obj_start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and obj_start >= 0:
+                    try:
+                        obj = json.loads(t[obj_start : i + 1])
+                    except (ValueError, TypeError):
+                        obj = None
+                    if isinstance(obj, dict):
+                        objs.append(obj)
+                    obj_start = -1
+        elif ch == "]" and depth == 0:
+            break
+    return objs
 
 
 def payload_from_response(resp: object) -> dict:

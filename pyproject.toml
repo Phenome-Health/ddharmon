@@ -85,8 +85,14 @@ clustering = [
 bertopic = [
     "bertopic>=0.16.0",
 ]
+# Reading a composite score's definition out of an uploaded/fetched PDF (harmonization/score_sources.py).
+# HTML and repo sources need no extra dep (httpx is core; HTML is stripped without bs4), and the PDF path
+# imports pypdf lazily — so paste/URL/repo ingestion works without this extra installed.
+sources = [
+    "pypdf>=5.0.0",
+]
 all = [
-    "ddharmon[embeddings,llm,viz,clustering,bertopic]",
+    "ddharmon[embeddings,llm,viz,clustering,bertopic,sources]",
     "nest-asyncio>=1.6.0",
 ]
 dev = [
