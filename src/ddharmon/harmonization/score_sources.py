@@ -10,6 +10,7 @@ Adapters::
 
     from_text(text)             # pasted methods section / component table
     from_pdf(path_or_bytes)     # uploaded paper or supplement (needs ddharmon[sources])
+    from_docx(path_or_bytes)    # uploaded Word supplement, tables included (needs ddharmon[sources])
     from_url(url_or_doi)        # fetched HTML page, PDF, DOI, or GitHub repo
     fetch_source(ref)           # dispatch on what `ref` looks like
 
@@ -55,13 +56,16 @@ _BLANKS_RE = re.compile(r"[ \t]*\n[ \t]*")
 _MULTI_NL_RE = re.compile(r"\n{3,}")
 _REPO_DOC_RE = re.compile(r"(^|/)(readme|methods?|scoring|index|definitions?)[^/]*\.(md|rst|txt)$", re.IGNORECASE)
 _BLOCKED_HOSTNAMES = frozenset({"localhost", "localhost.localdomain", "metadata", "metadata.google.internal"})
+_ZIP_MAGIC = b"PK\x03\x04"  # a .docx is a zip container
+_OLE_MAGIC = b"\xd0\xcf\x11\xe0"  # legacy binary .doc (OLE2 compound file) — a different format, not a bad .docx
+_DOCX_CTYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 @dataclass
 class ScoreSource:
     """A document that defines a composite score, reduced to text plus where it came from.
 
-    ``kind`` is ``paste | pdf | url | repo``. ``provenance`` is human-facing (a URL, a filename, an
+    ``kind`` is ``paste | pdf | docx | url | repo``. ``provenance`` is human-facing (a URL, a filename, an
     ``owner/repo@ref``); ``sha256`` fingerprints the extracted text so a spec can be tied to exactly the
     bytes that produced it. ``parts`` names the constituent documents when several were concatenated
     (a repo's README + docs), and is empty for a single-document source.
@@ -125,6 +129,76 @@ def from_pdf(source: bytes | str | Path, *, provenance: str = "") -> ScoreSource
     return ScoreSource(text=text, kind="pdf", provenance=name)
 
 
+def _table_lines(table: object) -> list[str]:
+    """Render one Word table as pipe-separated rows, so its grid survives into the extracted text.
+
+    A score's item list is a TABLE far more often than it is prose, and the extraction pass reads better
+    when the row structure is still visible than when cells are flattened into a sentence. Cells are emitted
+    verbatim — merged cells legitimately repeat their text across the span, and de-duplicating them would be
+    indistinguishable from dropping a real repeated value (a column of ``0``s in a scoring table).
+    """
+    lines: list[str] = []
+    for row in table.rows:  # type: ignore[attr-defined]
+        cells = [" ".join(str(cell.text or "").split()) for cell in row.cells]
+        if any(cells):
+            lines.append(" | ".join(cells))
+    return lines
+
+
+def docx_to_text(data: bytes) -> str:
+    """Extract text from ``.docx`` bytes — paragraphs AND tables, in document order.
+
+    The tables are the point. A published score's item table is very often carried in a Word supplement, and
+    ``python-docx``'s ``Document.paragraphs`` silently omits table content: a naive reader would return the
+    supplement's prose and drop exactly the 32-item list the caller came for, with nothing to indicate the
+    loss. So this walks the body's XML children instead, keeping paragraphs and tables interleaved as the
+    document orders them.
+
+    Raises ``ImportError`` naming the extra when ``python-docx`` is absent, and ``ValueError`` when the bytes
+    are not a ``.docx`` — including the legacy binary ``.doc``, which is a different format entirely and
+    needs re-saving rather than a better parser.
+    """
+    head = data.lstrip()[:8]
+    if head.startswith(_OLE_MAGIC):
+        raise ValueError("this is a legacy binary .doc, not a .docx — re-save it as .docx (or export a PDF)")
+    if not head.startswith(_ZIP_MAGIC):
+        raise ValueError("not a .docx (no zip container) — the file may be a .doc, an RTF, or renamed")
+    try:  # optional dep — imported only when the Word path is used
+        import docx
+        from docx.oxml.table import CT_Tbl
+        from docx.oxml.text.paragraph import CT_P
+        from docx.table import Table
+        from docx.text.paragraph import Paragraph
+    except ImportError as exc:
+        raise ImportError("reading Word score sources needs python-docx — install `ddharmon[sources]`") from exc
+
+    document = docx.Document(io.BytesIO(data))
+    blocks: list[str] = []
+    for child in document.element.body.iterchildren():
+        if isinstance(child, CT_P):
+            text = " ".join(Paragraph(child, document).text.split())
+            if text:
+                blocks.append(text)
+        elif isinstance(child, CT_Tbl):
+            rows = _table_lines(Table(child, document))
+            if rows:
+                blocks.append("\n".join(rows))
+    return "\n\n".join(blocks)
+
+
+def from_docx(source: bytes | str | Path, *, provenance: str = "") -> ScoreSource:
+    """Extract a score definition from an uploaded/on-disk Word document (``bytes`` or a path)."""
+    if isinstance(source, bytes):
+        data, name = source, provenance or "uploaded.docx"
+    else:
+        path = Path(source)
+        data, name = path.read_bytes(), provenance or path.name
+    text = _normalize(docx_to_text(data))
+    if not text:
+        raise ValueError(f"no extractable text in {name} — the document may hold only images")
+    return ScoreSource(text=text, kind="docx", provenance=name)
+
+
 def html_to_text(markup: str) -> str:
     """Reduce an HTML page to readable text: drop script/style/head, keep block breaks, strip tags.
 
@@ -147,15 +221,20 @@ def _normalize(text: str) -> str:
 
 
 def _decode(body: bytes, content_type: str, name: str = "") -> str:
-    """Turn a fetched body into text, routing on content type (and filename) — PDF, HTML, or plain.
+    """Turn a fetched body into text, routing on content type (and filename) — PDF, Word, HTML, or plain.
 
     A body advertised as PDF that carries no ``%PDF`` header falls through to the HTML/plain path instead of
     failing: a publisher answering a ``.pdf`` URL with an interstitial page is routine, and the page itself
-    may still carry the definition.
+    may still carry the definition. The Word branch is bounded the same way, by the zip magic — a supplement
+    URL that answers with an access page must not reach the docx parser.
     """
     ctype = (content_type or "").lower()
     if ("pdf" in ctype or name.lower().endswith(".pdf")) and body.lstrip()[:5].startswith(b"%PDF"):
         return _normalize(pdf_to_text(body))
+    if (_DOCX_CTYPE in ctype or "msword" in ctype or name.lower().endswith((".docx", ".doc"))) and body.lstrip()[
+        :4
+    ].startswith(_ZIP_MAGIC):
+        return _normalize(docx_to_text(body))
     text = body.decode("utf-8", errors="replace")
     if text.lstrip()[:200].lower().startswith(("<!doctype html", "<html")):
         return html_to_text(text)
@@ -408,24 +487,41 @@ def from_url(
             http.close()
 
 
+def _from_file(path: Path, **kwargs) -> ScoreSource:
+    """Read a local file as the right kind of source, by suffix: PDF, Word, or plain text."""
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        return from_pdf(path, **kwargs)
+    if suffix in (".docx", ".doc"):
+        return from_docx(path, **kwargs)
+    kwargs.setdefault("provenance", path.name)  # from_pdf/from_docx default this themselves; from_text can't
+    return from_text(path.read_text(encoding="utf-8", errors="replace"), **kwargs)
+
+
 def fetch_source(ref: str | bytes | Path, **kwargs) -> ScoreSource:
-    """Dispatch on what ``ref`` looks like: PDF bytes/path → :func:`from_pdf`, URL/DOI/repo →
-    :func:`from_url`, anything else → :func:`from_text`.
+    """Dispatch on what ``ref`` looks like: PDF/Word bytes or path → :func:`from_pdf` / :func:`from_docx`,
+    URL/DOI/repo → :func:`from_url`, anything else → :func:`from_text`.
+
+    Raw ``bytes`` are routed by their magic number rather than by a filename, since an upload may arrive
+    without a usable one.
 
     ``kwargs`` are forwarded to the chosen adapter, so a caller that does not know the source kind up front
     (a CLI flag, a UI field) still gets the right one.
     """
     if isinstance(ref, bytes):
+        head = ref.lstrip()[:8]
+        # OLE2 goes to the Word reader too, so a legacy .doc is told to re-save itself rather than being
+        # handed to the PDF reader, which would blame the wrong format ("not a PDF").
+        if head.startswith(_ZIP_MAGIC) or head.startswith(_OLE_MAGIC):
+            return from_docx(ref, **kwargs)
         return from_pdf(ref, **kwargs)
     if isinstance(ref, Path):
-        return from_pdf(ref, **kwargs) if ref.suffix.lower() == ".pdf" else from_text(ref.read_text(), **kwargs)
+        return _from_file(ref, **kwargs)
 
     text = str(ref).strip()
     if _DOI_RE.match(text) or re.match(r"^https?://", text):
         return from_url(text, **kwargs)
     candidate = Path(text)
     if len(text) < 4096 and "\n" not in text and candidate.is_file():
-        if candidate.suffix.lower() == ".pdf":
-            return from_pdf(candidate, **kwargs)
-        return from_text(candidate.read_text(encoding="utf-8", errors="replace"), provenance=candidate.name)
+        return _from_file(candidate, **kwargs)
     return from_text(text, **kwargs)

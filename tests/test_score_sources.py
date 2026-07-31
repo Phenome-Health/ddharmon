@@ -6,13 +6,16 @@ No real network: every fetch test drives ``from_url`` through an ``httpx.MockTra
 
 from __future__ import annotations
 
+import io
 import json
 
 import httpx
 import pytest
 
 from ddharmon.harmonization import score_sources as ss
-from ddharmon.harmonization.score_sources import ScoreSource, from_text, from_url, html_to_text
+from ddharmon.harmonization.score_sources import ScoreSource, from_docx, from_text, from_url, html_to_text
+
+_ZIP_HEADER = b"PK\x03\x04" + b"\x00" * 8  # enough to pass the container check and reach the parser import
 
 
 @pytest.fixture(autouse=True)
@@ -262,6 +265,119 @@ def test_url_pdf_routes_through_pdf_extraction(monkeypatch):
     assert src.text.startswith("Fried phenotype")
 
 
+# --- Word (.docx) -----------------------------------------------------------------------------
+
+
+def _docx_bytes(build) -> bytes:
+    """Build a real .docx in memory with python-docx and return its bytes."""
+    docx = pytest.importorskip("docx")
+    buffer = io.BytesIO()
+    document = docx.Document()
+    build(document)
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def test_docx_extraction_keeps_table_cells():
+    """THE case this adapter exists for: a supplement whose item table is a table, not prose.
+
+    `Document.paragraphs` omits table content entirely, so a naive reader returns the surrounding prose and
+    silently drops the item list — the one thing the caller came for.
+    """
+
+    def build(document):
+        document.add_paragraph("Supplementary Table 1. Items of the frailty index.")
+        table = document.add_table(rows=3, cols=2)
+        table.cell(0, 0).text = "Deficit"
+        table.cell(0, 1).text = "Cut-point"
+        table.cell(1, 0).text = "Hemoglobin"
+        table.cell(1, 1).text = "<130 g/L"
+        table.cell(2, 0).text = "Grip strength"
+        table.cell(2, 1).text = "lowest quintile"
+
+    src = from_docx(_docx_bytes(build), provenance="supplement.docx")
+    assert src.kind == "docx"
+    assert src.provenance == "supplement.docx"
+    assert "Supplementary Table 1" in src.text  # prose kept
+    assert "Hemoglobin | <130 g/L" in src.text  # ...and the table's rows survived with their structure
+    assert "Grip strength | lowest quintile" in src.text
+
+
+def test_docx_extraction_preserves_document_order():
+    """Paragraphs and tables interleave as the document orders them, so a table stays under its heading."""
+
+    def build(document):
+        document.add_paragraph("Section A")
+        table_a = document.add_table(rows=1, cols=1)
+        table_a.cell(0, 0).text = "belongs to A"
+        document.add_paragraph("Section B")
+        table_b = document.add_table(rows=1, cols=1)
+        table_b.cell(0, 0).text = "belongs to B"
+
+    text = from_docx(_docx_bytes(build)).text
+    assert text.index("Section A") < text.index("belongs to A") < text.index("Section B") < text.index("belongs to B")
+
+
+def test_legacy_doc_is_named_as_a_different_format():
+    """A binary .doc needs re-saving, not a better parser — say so instead of blaming the zip container."""
+    with pytest.raises(ValueError, match="legacy binary .doc"):
+        ss.docx_to_text(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1rest of an OLE2 file")
+
+
+def test_non_docx_bytes_are_rejected_before_the_parser():
+    with pytest.raises(ValueError, match="not a .docx"):
+        ss.docx_to_text(b"{\\rtf1\\ansi an RTF file}")
+
+
+def test_docx_path_reports_the_extra_when_python_docx_missing(monkeypatch):
+    """The Word path is optional — the error must name the extra to install."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "docx" or name.startswith("docx."):
+            raise ImportError("No module named 'docx'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    with pytest.raises(ImportError, match=r"ddharmon\[sources\]"):
+        ss.docx_to_text(_ZIP_HEADER)
+
+
+def test_a_fetched_docx_supplement_is_extracted():
+    """Supplements are often served straight off a publisher's static host as a .docx."""
+
+    def build(document):
+        table = document.add_table(rows=1, cols=2)
+        table.cell(0, 0).text = "Weight loss"
+        table.cell(0, 1).text = ">5% in a year"
+
+    body = _docx_bytes(build)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": ss._DOCX_CTYPE}, content=body)
+
+    with _client(handler) as client:
+        src = from_url("https://paper.example.com/supplement.docx", client=client)
+    assert "Weight loss | >5% in a year" in src.text
+
+
+def test_a_docx_url_serving_html_falls_back_to_html_extraction():
+    """Same guard as the PDF path: an access-check page must not reach the docx parser."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": ss._DOCX_CTYPE},
+            content=b"<!doctype html><html><body><p>Sign in to continue</p></body></html>",
+        )
+
+    with _client(handler) as client:
+        src = from_url("https://paper.example.com/supplement.docx", client=client)
+    assert "Sign in to continue" in src.text
+
+
 # --- GitHub repo ------------------------------------------------------------------------------
 
 
@@ -349,6 +465,27 @@ def test_fetch_source_pdf_bytes_and_path(tmp_path, monkeypatch):
     pdf.write_bytes(b"%PDF-1.4")
     assert ss.fetch_source(pdf).kind == "pdf"
     assert ss.fetch_source(b"%PDF-1.4").text == "deficit accumulation"
+
+
+def test_fetch_source_routes_word_by_magic_and_by_suffix(tmp_path):
+    """Bytes are routed by magic number — an upload may arrive with no usable filename at all."""
+
+    def build(document):
+        document.add_paragraph("Fried phenotype: 5 criteria")
+
+    data = _docx_bytes(build)
+    assert ss.fetch_source(data).kind == "docx"  # bytes: zip magic, no filename involved
+
+    path = tmp_path / "supplement.docx"
+    path.write_bytes(data)
+    assert ss.fetch_source(path).kind == "docx"  # Path
+    assert ss.fetch_source(str(path)).kind == "docx"  # path as a string
+
+
+def test_legacy_doc_bytes_are_routed_to_the_word_reader_not_the_pdf_one():
+    """Otherwise an uploaded .doc is blamed on the wrong format: "not a PDF" instead of "re-save as .docx"."""
+    with pytest.raises(ValueError, match="legacy binary .doc"):
+        ss.fetch_source(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1 an old Word file")
 
 
 def test_json_tree_response_is_parsed_not_stripped():

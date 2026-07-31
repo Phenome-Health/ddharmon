@@ -85,11 +85,14 @@ clustering = [
 bertopic = [
     "bertopic>=0.16.0",
 ]
-# Reading a composite score's definition out of an uploaded/fetched PDF (harmonization/score_sources.py).
-# HTML and repo sources need no extra dep (httpx is core; HTML is stripped without bs4), and the PDF path
-# imports pypdf lazily — so paste/URL/repo ingestion works without this extra installed.
+# Reading a composite score's definition out of an uploaded/fetched PDF or Word supplement
+# (harmonization/score_sources.py). A published score's item table often lives in the supplement, and
+# supplements are routinely .docx. HTML and repo sources need no extra dep (httpx is core; HTML is
+# stripped without bs4), and both document paths import their parser lazily — so paste/URL/repo
+# ingestion works without this extra installed.
 sources = [
     "pypdf>=5.0.0",
+    "python-docx>=1.1.0",
 ]
 all = [
     "ddharmon[embeddings,llm,viz,clustering,bertopic,sources]",
