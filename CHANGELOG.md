@@ -32,9 +32,17 @@ All notable changes to ddharmon are documented here. Format loosely follows
   a fully-pinned re-derive costs **zero** LLM calls.
 
 - **Score-source ingestion** (`ddharmon.harmonization.score_sources`) — the builder's document front door:
-  pasted text, a PDF, or a fetched URL / bare DOI / GitHub repo (README + selected docs), each returning a
-  `ScoreSource` with the extracted text, its provenance, and a sha256 of exactly what was read. A score's
-  definition must come from a real document, never from a model's recollection of it.
+  pasted text, a PDF, a Word (`.docx`) supplement, or a fetched URL / bare DOI / GitHub repo (README +
+  selected docs), each returning a `ScoreSource` with the extracted text, its provenance, and a sha256 of
+  exactly what was read. A score's definition must come from a real document, never from a model's
+  recollection of it.
+
+  The Word path exists because a published score's item table usually lives in the **supplement**, and
+  supplements are routinely `.docx`. `docx_to_text` walks the document body's XML children so paragraphs
+  and **tables** stay interleaved in document order — `python-docx`'s `Document.paragraphs` omits table
+  content entirely, which would silently drop the very item list the caller came for. Tables are rendered
+  as pipe-separated rows so the grid survives into the extraction prompt. A legacy binary `.doc` is
+  identified as a different format needing re-saving, not as a broken `.docx`.
 
   Fetching is deliberately bounded: http(s) only, every redirect hop re-validated against private /
   loopback / link-local address space, a byte cap, and a timeout. A body advertised as PDF without a `%PDF`
@@ -46,8 +54,8 @@ All notable changes to ddharmon are documented here. Format loosely follows
   the common case: a DOI resolving to a paywalled journal that refuses automated readers (403) is reported
   as exactly that, with "upload the PDF instead", rather than as a crash.
 
-- New optional extra **`sources`** (`pypdf`) for the PDF path, folded into `all`. Imported lazily, so
-  paste / URL / repo ingestion works without it.
+- New optional extra **`sources`** (`pypdf`, `python-docx`) for the PDF and Word paths, folded into `all`.
+  Both parsers are imported lazily, so paste / URL / repo ingestion works without it.
 
 - `parse.salvage_objects()` — shared rescue for a long JSON array truncated at the token cap (a 68-item
   component list makes this a real risk).
