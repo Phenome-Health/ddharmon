@@ -109,7 +109,9 @@ from ddharmon.harmonization.pipeline import (
 from ddharmon.harmonization.positional import detect_enumerated_family, detect_positional_enumeration
 from ddharmon.harmonization.score_sources import (
     ScoreSource,
+    docx_to_text,
     fetch_source,
+    from_docx,
     from_pdf,
     from_text,
     from_url,
@@ -201,7 +203,9 @@ __all__ = [
     "prepare_merge",
     "eval_formula",
     "extract_score_definition",
+    "docx_to_text",
     "fetch_source",
+    "from_docx",
     "from_pdf",
     "from_text",
     "from_url",
