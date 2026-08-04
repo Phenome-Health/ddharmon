@@ -3,6 +3,63 @@
 All notable changes to ddharmon are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
+## [Unreleased]
+
+### Added
+
+- **Composite / derived-variable builder** (`ddharmon.harmonization.composite`) — answers, for a finished
+  run, whether a *published composite score* (a frailty index, a PHQ-9 sum, an intrinsic-capacity score) can
+  be computed from the concepts that run harmonized, which concepts compose it, and how. Four stages, only
+  two of which cost an LLM call: transcribe the score from its source document → hybrid-retrieval shortlist
+  per component + one judge pass → deterministic per-cohort feasibility → the derivation recipe.
+  `derive_composite()` is the entry point; `spec_to_dict()` / `spec_to_json()` serialize the result.
+
+  Both dominant published shapes are first-class: **criteria-count** (Fried phenotype — k of n criteria) and
+  **deficit-accumulation** (a frailty index — deficits ÷ items considered), plus sum / weighted-sum /
+  z-composite forms (`CompositeKind`).
+
+  Grounding is structural rather than merely instructed: the judge may only choose among the concept ids
+  RETRIEVED for that component, and anything else is discarded with the component reported MISSING. Concepts
+  are referenced by record id, not label. Nothing is invented — a cutoff the source does not state stays
+  `unstated` and flagged for review, a band list yields no cut-point, a run where nothing matched emits
+  "NOT COMPUTABLE" rather than a runnable-looking division by zero, and a document claiming more items than
+  it lists is reported as incomplete instead of being filled in from prior knowledge.
+
+  Feasibility is honest about its limits: data-dictionary metadata gives per-cohort *presence*, so the report
+  names which cohorts are computable and explicitly does not claim effective N.
+
+  Reviewer overrides (`overrides={component: concept_id | None}`) pin or drop a match and skip the judge, so
+  a fully-pinned re-derive costs **zero** LLM calls.
+
+- **Score-source ingestion** (`ddharmon.harmonization.score_sources`) — the builder's document front door:
+  pasted text, a PDF, a Word (`.docx`) supplement, or a fetched URL / bare DOI / GitHub repo (README +
+  selected docs), each returning a `ScoreSource` with the extracted text, its provenance, and a sha256 of
+  exactly what was read. A score's definition must come from a real document, never from a model's
+  recollection of it.
+
+  The Word path exists because a published score's item table usually lives in the **supplement**, and
+  supplements are routinely `.docx`. `docx_to_text` walks the document body's XML children so paragraphs
+  and **tables** stay interleaved in document order — `python-docx`'s `Document.paragraphs` omits table
+  content entirely, which would silently drop the very item list the caller came for. Tables are rendered
+  as pipe-separated rows so the grid survives into the extraction prompt. A legacy binary `.doc` is
+  identified as a different format needing re-saving, not as a broken `.docx`.
+
+  Fetching is deliberately bounded: http(s) only, every redirect hop re-validated against private /
+  loopback / link-local address space, a byte cap, and a timeout. A body advertised as PDF without a `%PDF`
+  header falls back to HTML extraction rather than surfacing a parser stack trace — publishers commonly
+  answer a `.pdf` URL with an interstitial page.
+
+  Every fetch failure a caller can act on is raised as a `ValueError` naming the recovery, never as a raw
+  `httpx` exception — so a hosted caller maps it to a readable 4xx instead of a 500. That matters most for
+  the common case: a DOI resolving to a paywalled journal that refuses automated readers (403) is reported
+  as exactly that, with "upload the PDF instead", rather than as a crash.
+
+- New optional extra **`sources`** (`pypdf`, `python-docx`) for the PDF and Word paths, folded into `all`.
+  Both parsers are imported lazily, so paste / URL / repo ingestion works without it.
+
+- `parse.salvage_objects()` — shared rescue for a long JSON array truncated at the token cap (a 68-item
+  component list makes this a real risk).
+
 ## [1.1.0]
 
 Adds **GenCDE** — generated Common Data Elements for the *novel* route — together with transform-spec

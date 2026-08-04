@@ -18,6 +18,13 @@ classify (adopt/refine/novel) -> EITL.
     harmonize_dictionaries() -- full sub-cluster-anchored pipeline
     prepare_from_clusters() / assemble_verdicts() / find_anchor_cde()
     HarmonizationResult / HarmonizationVerdict / AnchorResult / SubClusterResult
+
+**Post-run layers** — read a finished run's concepts and say what they enable::
+
+    generate_analysis_ideas() -- downstream cross-cohort analyses the harmonization unlocks (suggest-only)
+    derive_composite()        -- can this run support a published composite score (frailty index, PHQ-9
+                                 sum, intrinsic capacity)? which concepts compose it, and how
+    fetch_source()            -- the composite builder's document front door (paste / URL / DOI / repo / PDF)
 """
 
 from ddharmon.harmonization.analysis_ideas import (
@@ -32,6 +39,30 @@ from ddharmon.harmonization.anchor import (
     canonicalness_score,
     field_richness,
     find_anchor_cde,
+)
+from ddharmon.harmonization.composite import (
+    CodingKind,
+    CohortCoverage,
+    ComponentCoding,
+    ComponentMatch,
+    CompositeKind,
+    CompositeResult,
+    CompositeSpec,
+    ConceptEntry,
+    DerivationStep,
+    FeasibilityReport,
+    ScoreComponent,
+    ScoreDefinition,
+    assess_feasibility,
+    build_composite_spec,
+    build_concept_index,
+    derive_composite,
+    extract_score_definition,
+    match_components,
+    records_from_payload,
+    shortlist_concepts,
+    spec_to_dict,
+    spec_to_json,
 )
 from ddharmon.harmonization.gencde import (
     assemble_gencde,
@@ -76,6 +107,17 @@ from ddharmon.harmonization.pipeline import (
     write_prompts_jsonl,
 )
 from ddharmon.harmonization.positional import detect_enumerated_family, detect_positional_enumeration
+from ddharmon.harmonization.score_sources import (
+    ScoreSource,
+    docx_to_text,
+    fetch_source,
+    from_docx,
+    from_pdf,
+    from_text,
+    from_url,
+    html_to_text,
+    pdf_to_text,
+)
 from ddharmon.harmonization.substrate import (
     ClusteringSubstrate,
     build_substrate,
@@ -113,17 +155,31 @@ __all__ = [
     "CandidateCDE",
     "CdeBackbone",
     "ClusteringSubstrate",
+    "CodingKind",
+    "CohortCoverage",
+    "ComponentCoding",
+    "ComponentMatch",
+    "CompositeKind",
+    "CompositeResult",
+    "CompositeSpec",
+    "ConceptEntry",
+    "DerivationStep",
+    "FeasibilityReport",
     "GenCDE",
     "HarmonizationResult",
     "HarmonizationVerdict",
     "LeanBRecord",
     "LeanBResult",
     "PromptRecord",
+    "ScoreComponent",
+    "ScoreDefinition",
+    "ScoreSource",
     "SubClusterResult",
     "TransformKind",
     "TransformSpec",
     "apply_coherence_gate",
     "assemble_arith_specgen",
+    "assess_feasibility",
     "assemble_concept_gate",
     "assemble_gencde",
     "assemble_gencde_arith_specgen",
@@ -132,17 +188,28 @@ __all__ = [
     "assemble_merge",
     "assemble_specgen",
     "assemble_verdicts",
+    "build_composite_spec",
     "build_concept_digest",
+    "build_concept_index",
     "build_field_lookup",
     "build_substrate",
     "canonicalness_score",
     "cluster_content_id",
     "clusters_from_substrate",
+    "derive_composite",
     "detect_enumerated_family",
     "detect_positional_enumeration",
     "merge_candidate_pairs",
     "prepare_merge",
     "eval_formula",
+    "extract_score_definition",
+    "docx_to_text",
+    "fetch_source",
+    "from_docx",
+    "from_pdf",
+    "from_text",
+    "from_url",
+    "html_to_text",
     "export_eitl_queue",
     "export_leanb_eitl_queue",
     "export_transform_review",
@@ -156,7 +223,13 @@ __all__ = [
     "harmonize_leanb",
     "load_substrate",
     "observed_answer_labels",
+    "match_components",
     "parse_verdict_payload",
+    "pdf_to_text",
+    "records_from_payload",
+    "shortlist_concepts",
+    "spec_to_dict",
+    "spec_to_json",
     "prepare_arith_specgen",
     "prepare_concept_gate",
     "prepare_from_clusters",
