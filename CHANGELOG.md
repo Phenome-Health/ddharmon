@@ -59,6 +59,27 @@ All notable changes to ddharmon are documented here. Format loosely follows
 
 - `parse.salvage_objects()` — shared rescue for a long JSON array truncated at the token cap (a 68-item
   component list makes this a real risk).
+## [1.2.0]
+
+Adds **realized cost accounting** — report what a run *actually* cost from the real token usage each LLM
+call returns, rather than estimating from a hardcoded per-token table. Additive and backward-compatible over
+1.1.0: existing callers are unaffected; the cost is captured automatically and exposed for callers that want
+it.
+
+### Added
+
+- **`ddharmon.llm.cost`** — the source of truth for run cost:
+  - `TokenUsage`, and `price_usage(model, input_tokens, output_tokens, *, batch=False)` — prices captured
+    tokens against **LiteLLM's maintained model→price map** when `litellm` is installed, otherwise against a
+    small built-in Anthropic/OpenAI rate table (so cost works without the optional dependency). The Anthropic
+    Batch API's 50% discount is applied; an unpriceable model reports `$0` rather than guessing.
+  - `CostLedger` — accumulates realized cost + token totals per pipeline stage and per run.
+  - Exported from `ddharmon.llm` (`CostLedger`, `TokenUsage`, `price_usage`).
+- **Token-usage capture on the clients** — `AnthropicClient` / `OpenAIClient` accumulate each call's real
+  input/output token usage into a `usage_log`, drained per stage via the new `BaseLLMClient.drain_usage()`.
+- **Batch usage preserved** — `retrieve_batch` now records each succeeded response's realized token usage and
+  the model that ran, in the responses JSONL (previously discarded), so the Batch path can be priced too.
+  Backward-compatible: response files written before this — and any existing reader — ignore the added keys.
 
 ## [1.1.0]
 

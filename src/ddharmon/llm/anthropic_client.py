@@ -76,6 +76,27 @@ class AnthropicClient(BaseLLMClient):
         self._model_name = model_name
         self._max_tokens = max_tokens
         self._use_structured: bool | None = None  # auto-detect on first call
+        # Realized token usage per call, drained per-stage by cost accounting (see cost.CostLedger). Best-effort:
+        # capture never raises into a run — a missing/odd usage block just means that call isn't priced.
+        self.usage_log: list = []
+
+    def _record_usage(self, response: object) -> None:
+        """Append this response's token usage to ``usage_log`` (best-effort; never raises into a run)."""
+        from ddharmon.llm.cost import TokenUsage
+
+        try:
+            usage = getattr(response, "usage", None)
+            if usage is None:
+                return
+            self.usage_log.append(
+                TokenUsage(
+                    model=self._model_name,
+                    input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
+                    output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
+                )
+            )
+        except Exception:  # noqa: BLE001 — usage capture must never break a run
+            logger.debug("usage capture failed", exc_info=True)
 
     @property
     def provider_name(self) -> str:
@@ -108,6 +129,7 @@ class AnthropicClient(BaseLLMClient):
                     output_format=RerankerResponse,
                 )
                 self._use_structured = True
+                self._record_usage(response)
                 if response.parsed_output is None:
                     raise ValueError("Anthropic structured output returned no parsed result")
                 return response.parsed_output
@@ -128,6 +150,7 @@ class AnthropicClient(BaseLLMClient):
             system=RERANKER_SYSTEM_PROMPT + _JSON_INSTRUCTION,
             messages=[{"role": "user", "content": user_prompt}],
         )
+        self._record_usage(response)
         return _parse_json_response(_message_text(response))
 
     def complete(self, prompt: str, *, system: str | None = None, max_tokens: int = 512) -> str:
@@ -141,4 +164,5 @@ class AnthropicClient(BaseLLMClient):
         if system:
             kwargs["system"] = system
         response = self._client.messages.create(**kwargs)
+        self._record_usage(response)
         return _message_text(response)
