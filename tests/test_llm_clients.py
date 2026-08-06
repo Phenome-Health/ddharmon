@@ -142,7 +142,7 @@ class TestAnthropicClient:
             from ddharmon.llm.anthropic_client import AnthropicClient
 
             client = AnthropicClient()
-            assert client.model_name == "claude-sonnet-4-20250514"
+            assert client.model_name == "claude-sonnet-4-5"
             assert client.provider_name == "anthropic"
 
     def test_has_rerank_candidates_method(self) -> None:

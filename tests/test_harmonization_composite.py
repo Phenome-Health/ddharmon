@@ -29,7 +29,7 @@ from ddharmon.harmonization import (
     records_from_payload,
     spec_to_dict,
 )
-from ddharmon.harmonization.composite import ComponentCoding, _cut_point, shortlist_concepts
+from ddharmon.harmonization.composite import ComponentCoding, MatchReason, _cut_point, shortlist_concepts
 from ddharmon.harmonization.models import GenCDE, LeanBRecord, TransformSpec
 from ddharmon.harmonization.parse import salvage_objects
 from ddharmon.harmonization.score_sources import ScoreSource, from_text
@@ -833,3 +833,150 @@ def test_source_provenance_survives_into_the_spec(run_records):
     spec = derive_composite(source, run_records, complete, embed=None).spec
     assert spec.definition.provenance == "https://doi.org/10.1007/x"
     assert spec_to_dict(spec)["definition"]["provenance"] == "https://doi.org/10.1007/x"
+
+
+# --- the join: a component is found by KEY, not by the name the model echoes back ---------------
+#
+# Regression cover for the 0/N-infeasible investigation (2026-08-05). The join used to run on the
+# echoed name, and that name was used TWICE — the allowlist check and the final lookup — so one
+# character of drift failed a component twice and produced a clean `0/N -> infeasible` with nothing
+# raised. Retrieval was never the problem; H1 and H2 were both refuted offline.
+
+
+def _keyed_match_json(pairs: dict[str, str | None], confidence: float = 0.9) -> str:
+    """A judge that answers with the stable componentKey — what the prompt now asks for."""
+    return json.dumps(
+        {
+            "matches": [
+                {"componentKey": key, "conceptId": cid, "confidence": confidence, "rationale": "measures it"}
+                for key, cid in pairs.items()
+            ]
+        }
+    )
+
+
+def _two_component_def() -> ScoreDefinition:
+    return ScoreDefinition(
+        name="Two-part score",
+        components=[
+            ScoreComponent(name="Weak grip strength", definition="grip strength dynamometry"),
+            ScoreComponent(name="Slow gait speed", definition="usual walking pace over a measured course"),
+        ],
+    )
+
+
+def test_match_prompt_keys_components_and_puts_the_definition_on_its_own_line(run_records):
+    """The rendering that invited the drift: name and definition were joined by an em-dash on ONE line,
+    under an instruction to echo "the component names exactly as given"."""
+    index = build_concept_index(run_records)
+    complete = _fake_complete(_keyed_match_json({"C1": "c1#g0", "C2": "c4#g0"}))
+    match_components(_two_component_def(), index, complete, embed=None)
+    prompt, system = complete.calls[0]["prompt"], complete.calls[0]["system"]
+    assert "[C1] COMPONENT: Weak grip strength" in prompt
+    assert "[C2] COMPONENT: Slow gait speed" in prompt
+    assert "Definition: grip strength dynamometry" in prompt
+    assert "Weak grip strength — grip strength dynamometry" not in prompt  # the old one-line rendering
+    assert "componentKey" in system
+
+
+def test_match_joins_on_the_component_key(run_records):
+    index = build_concept_index(run_records)
+    matches = match_components(
+        _two_component_def(), index, _fake_complete(_keyed_match_json({"C1": "c1#g0", "C2": "c4#g0"})), embed=None
+    )
+    assert [m.concept_id for m in matches] == ["c1#g0", "c4#g0"]
+    assert all(m.reason is MatchReason.MATCHED for m in matches)
+
+
+@pytest.mark.parametrize(
+    "echo",
+    [
+        pytest.param(lambda name, defn: f"{name} — {defn}", id="name-and-definition"),
+        pytest.param(lambda name, _d: name.title(), id="title-cased"),
+        pytest.param(lambda name, _d: f"  {name}  ", id="padded"),
+        pytest.param(lambda name, _d: name.replace("—", "-"), id="dash-normalized"),
+    ],
+)
+def test_a_drifting_echoed_name_no_longer_loses_the_match(run_records, echo):
+    """THE regression. Every one of these sends valid, allowed ids; only the echoed name drifts.
+
+    Before the keyed join, `name — definition` alone turned 2/2 into 0/2 `infeasible`.
+    """
+    index = build_concept_index(run_records)
+    definition = _two_component_def()
+    ids = ["c1#g0", "c4#g0"]
+    raw = json.dumps(
+        {
+            "matches": [
+                {"component": echo(c.name, c.definition), "conceptId": cid, "confidence": 0.9, "rationale": "m"}
+                for c, cid in zip(definition.components, ids, strict=True)
+            ]
+        }
+    )
+    matches = match_components(definition, index, _fake_complete(raw), embed=None)
+    assert [m.concept_id for m in matches] == ids
+    report = assess_feasibility(definition, matches)
+    assert report.verdict == "full"
+
+
+# --- reason: an honest gap must never look like a malfunction -----------------------------------
+
+
+def test_reason_separates_a_declined_candidate_from_one_never_offered(run_records):
+    index = build_concept_index(run_records)
+    definition = ScoreDefinition(
+        name="s",
+        components=[
+            ScoreComponent(name="Weak grip strength", definition="grip strength dynamometry"),
+            # Deliberately nonsense tokens: BM25 is generous, and a plausible-sounding assay name like
+            # "Serum zeta globulin" still overlaps ordinary words ("serum", "in") enough to retrieve.
+            ScoreComponent(name="Zzyzx quokka", definition="quokka zzyzx"),
+        ],
+    )
+    matches = match_components(definition, index, _fake_complete(_keyed_match_json({"C1": None})), embed=None)
+    declined, absent = matches[0], matches[1]
+    assert declined.shortlist and declined.reason is MatchReason.JUDGE_DECLINED
+    # No token overlaps at all, so BM25-only retrieval offers nothing — the judge never had a choice.
+    assert not absent.shortlist and absent.reason is MatchReason.NO_CANDIDATES
+
+
+def test_reason_flags_an_id_rejected_by_the_grounding_guard(run_records):
+    index = build_concept_index(run_records)
+    definition = ScoreDefinition(
+        name="s", components=[ScoreComponent(name="Weak grip strength", definition="grip strength dynamometry")]
+    )
+    matches = match_components(
+        definition, index, _fake_complete(_keyed_match_json({"C1": "TOTALLY-MADE-UP-ID"})), embed=None
+    )
+    assert matches[0].matched is False and matches[0].reason is MatchReason.ID_REJECTED
+
+
+def test_reason_flags_a_component_the_judge_said_nothing_about(run_records):
+    """The old silent-failure signature: valid candidates, no entry for the component, no error."""
+    index = build_concept_index(run_records)
+    matches = match_components(_two_component_def(), index, _fake_complete('{"matches": []}'), embed=None)
+    assert all(m.reason is MatchReason.NO_DECISION for m in matches)
+    assert all(m.shortlist for m in matches)  # candidates WERE offered — so this is not a gap
+
+
+def test_reason_records_reviewer_overrides(run_records):
+    index = build_concept_index(run_records)
+    matches = match_components(
+        _two_component_def(),
+        index,
+        _fake_complete("{}"),
+        embed=None,
+        overrides={"Weak grip strength": "c1#g0", "Slow gait speed": None},
+    )
+    assert matches[0].reason is MatchReason.PINNED
+    assert matches[1].reason is MatchReason.DROPPED
+
+
+def test_reason_travels_out_through_spec_to_dict(run_records):
+    index = build_concept_index(run_records)
+    definition = _two_component_def()
+    matches = match_components(definition, index, _fake_complete(_keyed_match_json({"C1": "c1#g0"})), embed=None)
+    spec = build_composite_spec(definition, matches, assess_feasibility(definition, matches))
+    reasons = {m["component"]: m["reason"] for m in spec_to_dict(spec)["matches"]}
+    assert reasons["Weak grip strength"] == "matched"
+    assert reasons["Slow gait speed"] == "no_decision"

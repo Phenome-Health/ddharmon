@@ -59,7 +59,13 @@ class AnthropicClient(BaseLLMClient):
     """
 
     def __init__(
-        self, model_name: str = "claude-sonnet-4-20250514", max_tokens: int = 2048, *, api_key: str | None = None
+        # Default per project decision 03-01 ("default to Claude Sonnet 4.5 for Anthropic"). The prior pin
+        # (claude-sonnet-4-20250514, Sonnet 4) retired 2026-06-15 and now 404s on a bare AnthropicClient().
+        self,
+        model_name: str = "claude-sonnet-4-5",
+        max_tokens: int = 2048,
+        *,
+        api_key: str | None = None,
     ) -> None:
         import anthropic
 

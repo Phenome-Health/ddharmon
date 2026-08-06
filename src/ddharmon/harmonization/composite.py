@@ -52,7 +52,9 @@ Serializing a :class:`CompositeSpec` into that slot belongs to the export layer,
 from __future__ import annotations
 
 import json
+import logging
 import re
+import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -64,6 +66,8 @@ from ddharmon.harmonization.models import GenCDE, LeanBRecord, TransformKind, Tr
 from ddharmon.harmonization.parse import extract_json, salvage_objects
 from ddharmon.harmonization.score_sources import ScoreSource
 from ddharmon.matching.lexical import BM25, hybrid_topk
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_TOP_K = 8  # candidate concepts shown to the judge per component
 _MAX_COMPONENTS = 80  # FI-Combined is 68 items — the largest published composite we target
@@ -231,12 +235,30 @@ class ConceptEntry:
         return " ".join(p for p in parts if p)
 
 
+class MatchReason(StrEnum):
+    """WHY a component ended up matched or unmatched — the difference between a gap and a malfunction.
+
+    Every unmatched component used to look identical from the outside, which made an honest "this run has
+    no gait speed" indistinguishable from "the join dropped a valid answer". They have opposite fixes, so
+    they get distinct names here and travel all the way out through :func:`spec_to_dict`.
+    """
+
+    MATCHED = "matched"
+    NO_CANDIDATES = "no_candidates"  # retrieval offered nothing — the judge never had a choice
+    JUDGE_DECLINED = "judge_declined"  # real candidates shown, judge returned null: an honest gap
+    ID_REJECTED = "id_rejected"  # judge named an id outside this component's shortlist
+    NO_DECISION = "no_decision"  # the judge's response contained no entry for this component at all
+    PINNED = "pinned"  # reviewer override
+    DROPPED = "dropped"  # reviewer override
+
+
 @dataclass
 class ComponentMatch:
     """The verdict for ONE component: the run concept that measures it, or an honest gap.
 
     ``shortlist`` is the audit trail — the concept ids retrieval offered the judge — so a missing component
-    can be told apart from a component the judge saw good candidates for and still rejected.
+    can be told apart from a component the judge saw good candidates for and still rejected. ``reason``
+    states which of those happened outright; see :class:`MatchReason`.
     """
 
     component: str
@@ -250,6 +272,7 @@ class ComponentMatch:
     required: bool = True
     pinned: bool = False  # set by a reviewer override rather than the judge
     shortlist: list[str] = field(default_factory=list)
+    reason: MatchReason = MatchReason.NO_DECISION
 
     @property
     def matched(self) -> bool:
@@ -636,29 +659,60 @@ def shortlist_concepts(
     return out
 
 
+def _component_key(position: int) -> str:
+    """The stable join token for one component — ``C1``, ``C2``, … — independent of its label."""
+    return f"C{position + 1}"
+
+
+def _normalize_name(value: str) -> str:
+    """Fold a component name for the fallback join: NFKC, dash-unified, collapsed space, casefolded."""
+    folded = unicodedata.normalize("NFKC", value or "")
+    for dash in ("—", "–", "−"):  # em / en / minus -> hyphen
+        folded = folded.replace(dash, "-")
+    return " ".join(folded.split()).casefold()
+
+
 def _match_prompt(
     definition: ScoreDefinition, shortlists: Mapping[str, list[ConceptEntry]]
 ) -> tuple[str, str, dict[str, set[str]]]:
+    """Render the judge pass, keyed by a STABLE per-component token rather than the component's label.
+
+    The join used to run on the name the model echoed back, and that name was used twice — once for the
+    allowlist and once for the final lookup — so a single character of drift failed a component twice and
+    produced a clean ``0/N -> infeasible`` with nothing raised. The old rendering actively invited that
+    drift by putting the name and its definition on ONE line separated by an em-dash, then asking for "the
+    component names exactly as given": echoing the whole rendered line back is a fair reading of that.
+
+    So the key is now ``C1``/``C2``/… — short, unambiguous, and nothing a model is tempted to reformat —
+    and the definition sits on its own line where it cannot be mistaken for part of the name.
+    """
     allowed: dict[str, set[str]] = {}
     blocks: list[str] = []
-    for component in definition.components:
+    for position, component in enumerate(definition.components):
+        key = _component_key(position)
         candidates = shortlists.get(component.name) or []
-        allowed[component.name] = {c.concept_id for c in candidates}
-        lines = [
-            f"    [{c.concept_id}] {c.concept}"
-            + (f"  · cohorts: {', '.join(c.cohorts)}" if c.cohorts else "")
-            + (f"  · units: {c.units}" if c.units else "")
-            for c in candidates
-        ] or ["    (no candidate concepts retrieved)"]
-        head = f"  COMPONENT: {component.name}"
+        allowed[key] = {c.concept_id for c in candidates}
+        lines = [f"  [{key}] COMPONENT: {component.name}"]
         if component.definition:
-            head += f" — {component.definition}"
-        blocks.append("\n".join([head, *lines]))
+            lines.append(f"        Definition: {component.definition}")
+        lines.append("        Candidates:")
+        lines.extend(
+            [
+                f"          [{c.concept_id}] {c.concept}"
+                + (f"  · cohorts: {', '.join(c.cohorts)}" if c.cohorts else "")
+                + (f"  · units: {c.units}" if c.units else "")
+                for c in candidates
+            ]
+            or ["          (no candidate concepts retrieved)"]
+        )
+        blocks.append("\n".join(lines))
 
     system = (
         "You decide, for each COMPONENT of a composite score, whether one of the CANDIDATE CONCEPTS from a "
         "harmonization run actually measures it.\n\n"
         "STRICT RULES:\n"
+        "- Identify each component by its componentKey (C1, C2, …), copied exactly. Do not paraphrase it and "
+        "do not substitute the component's name.\n"
         "- Choose a conceptId ONLY from that component's own candidate list, copied exactly. Never invent an "
         "id, never reuse an id from another component's list.\n"
         '- If no candidate measures the component, return "conceptId": null. A missing component is a useful, '
@@ -669,7 +723,7 @@ def _match_prompt(
         "in the rationale and lower the confidence.\n"
         "- confidence is 0.0–1.0: your certainty that this concept measures this component.\n\n"
         "Respond with ONLY valid JSON (no markdown fences) matching this schema:\n"
-        '{"matches": [{"component": string, "conceptId": string|null, "confidence": number, '
+        '{"matches": [{"componentKey": string, "conceptId": string|null, "confidence": number, '
         '"rationale": string}]}'
     )
     user = (
@@ -678,7 +732,7 @@ def _match_prompt(
         + (f"\nCombination rule: {definition.combination_rule}" if definition.combination_rule else "")
         + "\n\nComponents and their candidate concepts from this run:\n\n"
         + "\n\n".join(blocks)
-        + "\n\nReturn one entry per component, using the component names exactly as given."
+        + "\n\nReturn exactly one entry per component, identified by its componentKey."
     )
     return system, user, allowed
 
@@ -742,19 +796,72 @@ def match_components(
             combination_rule=definition.combination_rule,
         )
         system, user, allowed = _match_prompt(pending_def, shortlists)
+        if not any(allowed.values()):
+            # Nothing was offered for ANY component, so the judge can only answer null. Worth a call still
+            # (a future prompt may reason over the gap), but never worth confusing with a judge's decision.
+            logger.warning(
+                "composite: retrieval offered no candidates for any of %d component(s) of %r — "
+                "every component will report no_candidates",
+                len(pending),
+                definition.name,
+            )
+        # Two ways to find the component an entry refers to: its stable key (what we now ask for), or its
+        # NAME (what older/looser responses send). The fallback is why upgrading the prompt cannot regress
+        # a model that ignores the key — and it deliberately covers the drift actually observed, where the
+        # model echoes the whole rendered line, `name — definition`, back as the component.
+        by_key = {_component_key(i): c for i, c in enumerate(pending)}
+        by_alias: dict[str, str] = {}
+        for i, c in enumerate(pending):
+            key = _component_key(i)
+            for alias in (c.name, f"{c.name} — {c.definition}", f"{c.name}: {c.definition}"):
+                by_alias.setdefault(_normalize_name(alias), key)
         raw = complete(user, system=system, max_tokens=_MATCH_MAX_TOKENS)
+        rejected_ids = 0
         for item in _parse_matches(raw):
-            name = str(item.get("component", "") or "").strip()
+            key = str(item.get("componentKey") or item.get("component_key") or "").strip()
+            if key not in by_key:
+                echoed = str(item.get("component", "") or "")
+                folded = _normalize_name(echoed)
+                key = by_alias.get(folded, "")
+                if not key:
+                    # Last resort: the echo starts with a component's name (a definition, a parenthetical,
+                    # or a unit was appended). Longest name first, so "Grip strength, dominant" is not
+                    # claimed by "Grip strength" when both are components.
+                    for alias, candidate_key in sorted(by_alias.items(), key=lambda kv: -len(kv[0])):
+                        if folded.startswith(alias):
+                            key = candidate_key
+                            break
+                if not key:
+                    logger.warning(
+                        "composite: dropping a judge entry that names no known component "
+                        "(componentKey=%r, component=%r)",
+                        item.get("componentKey"),
+                        echoed[:120],
+                    )
+                    continue
             concept_id = item.get("conceptId") or item.get("concept_id")
             concept_id = str(concept_id).strip() if concept_id else None
-            if concept_id and concept_id not in allowed.get(name, set()):
+            reason = MatchReason.MATCHED if concept_id else MatchReason.JUDGE_DECLINED
+            if concept_id and concept_id not in allowed.get(key, set()):
                 concept_id = None  # hallucinated or cross-component id -> honest gap
-            decisions[name] = {
+                reason = MatchReason.ID_REJECTED
+                rejected_ids += 1
+            decisions[key] = {
                 "concept_id": concept_id,
                 "confidence": _confidence(item.get("confidence")),
                 "rationale": str(item.get("rationale", "") or "").strip(),
+                "reason": reason,
             }
+        if rejected_ids:
+            # A nonzero count here alongside zero matches is the signature of a grounding/join problem
+            # rather than an honest gap — the judge answered, and we threw its answers away.
+            logger.warning(
+                "composite: discarded %d id(s) outside their component's shortlist for %r",
+                rejected_ids,
+                definition.name,
+            )
 
+    pending_key = {c.name: _component_key(i) for i, c in enumerate(pending)}
     matches: list[ComponentMatch] = []
     for component in definition.components:
         if component.name in pins:
@@ -767,18 +874,34 @@ def match_components(
                     pinned=True,
                     confidence=1.0 if entry else 0.0,
                     rationale="pinned by reviewer" if entry else "dropped by reviewer",
+                    reason=MatchReason.PINNED if entry else MatchReason.DROPPED,
                 )
             )
             continue
-        decision = decisions.get(component.name, {})
+        shortlist = [c.concept_id for c in shortlists.get(component.name, [])]
+        decision = decisions.get(pending_key.get(component.name, ""), {})
         entry = by_id.get(str(decision.get("concept_id"))) if decision.get("concept_id") else None
+        if entry:
+            reason = MatchReason.MATCHED
+        elif not shortlist:
+            # Checked BEFORE the decision: retrieval offering nothing is the upstream cause, and reporting
+            # a judge that "declined" a list it was never shown is the exact conflation this field exists
+            # to end. True even when the judge dutifully returned a null entry for it.
+            reason = MatchReason.NO_CANDIDATES
+        elif not decision:
+            # The judge returned nothing for this component. Distinct from a decline: with the keyed join
+            # this should be rare, and a run where EVERY component lands here is a parse/join failure.
+            reason = MatchReason.NO_DECISION
+        else:
+            reason = MatchReason(decision.get("reason") or MatchReason.JUDGE_DECLINED)
         matches.append(
             _match_for(
                 component,
                 entry,
                 confidence=float(decision.get("confidence", 0.0)) if entry else 0.0,
                 rationale=str(decision.get("rationale", "")),
-                shortlist=[c.concept_id for c in shortlists.get(component.name, [])],
+                shortlist=shortlist,
+                reason=reason,
             )
         )
     return matches
@@ -1162,6 +1285,11 @@ def spec_to_dict(spec: CompositeSpec) -> dict[str, Any]:
                 "required": m.required,
                 "pinned": m.pinned,
                 "shortlist": m.shortlist,
+                # Why this component is (un)matched: matched | no_candidates | judge_declined |
+                # id_rejected | no_decision | pinned | dropped. A UI must not render every unmatched
+                # component the same way — "we found nothing to offer" and "the judge saw good options and
+                # said no" are different answers to the reviewer, with different next actions.
+                "reason": str(m.reason),
             }
             for m in spec.matches
         ],
