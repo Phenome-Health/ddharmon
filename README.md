@@ -1,5 +1,11 @@
 # ddharmon — Data Dictionary Harmonization Tool
 
+> ⚠️ **Actively under development and internal review.** ddharmon is under active development and
+> its methods, outputs, and reported figures are undergoing internal review. Interfaces and results
+> may change without notice, and its harmonization recommendations are **not yet validated** — every
+> recommendation is meant to be checked by a domain expert before it is acted on. Treat anything the
+> tool produces as provisional. Feedback and issues are welcome.
+
 ddharmon harmonizes biomedical **data dictionaries**. It clusters equivalent variables across many
 studies, assigns each concept to an existing **Common Data Element (CDE)** from the NIH catalog — or
 flags it for a newly generated CDE when nothing fits — and routes every recommendation to expert review.
