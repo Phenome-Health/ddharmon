@@ -57,17 +57,36 @@ class PromptRecord:
     schema: str
     model_tag: str
     context: dict = field(default_factory=dict)
+    # Opt-in: when set, a driver issues a FORCED tool call whose input conforms to this JSON Schema
+    # (structurally enforced) instead of appending ``schema`` as soft text — this is what kills the
+    # split stage's ~35% wrapper-drop. The bundled batch submitter ignores the field for now, so a
+    # driver that does not read it degrades to the soft-schema behaviour rather than failing.
+    tool_schema: dict | None = None
+    tool_name: str | None = None
+    # Per-record output-token budget; overrides a driver's stage default. Set higher for the enforced
+    # split (a large cluster's tool-call JSON otherwise truncates -> empty tool input -> 0 members).
+    max_tokens: int | None = None
 
     def to_jsonl_record(self) -> dict:
         """Serialize to the ``{id, system_prompt, user_prompt, schema, model_tag}`` shape
-        consumed by ``ddharmon.llm.batch.submit_batch`` / ``process_prompts*.sh``."""
-        return {
+        consumed by ``ddharmon.llm.batch.submit_batch`` / ``process_prompts*.sh``.
+
+        ``tool_schema``/``tool_name``/``max_tokens`` are emitted only when set, so records without them
+        serialize byte-for-byte as before.
+        """
+        rec: dict[str, object] = {
             "id": self.id,
             "system_prompt": self.system_prompt,
             "user_prompt": self.user_prompt,
             "schema": self.schema,
             "model_tag": self.model_tag,
         }
+        if self.tool_schema is not None:
+            rec["tool_schema"] = self.tool_schema
+            rec["tool_name"] = self.tool_name or "emit"
+        if self.max_tokens is not None:
+            rec["max_tokens"] = self.max_tokens
+        return rec
 
 
 @dataclass

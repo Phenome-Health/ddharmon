@@ -25,6 +25,7 @@ from pathlib import Path
 import ftfy
 
 from ddharmon.models.data_dictionary import DataDictionary, Field
+from ddharmon.text_hygiene import clean_field_text
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class PreprocessingReport:
     dictionary_name: str
     total_fields: int
     unicode_fixed: int = 0
+    admin_text_stripped: int = 0  # fields whose description/question_text had administrative wrappers removed
     placeholders_replaced: int = 0
     placeholder_values: list[str] = field(default_factory=list)  # the placeholder descriptions that were replaced
     prefix_stripped: int = 0
@@ -53,6 +55,7 @@ class PreprocessingReport:
     def __str__(self) -> str:
         lines = [f"Preprocessing {self.dictionary_name} ({self.total_fields} fields):"]
         lines.append(f"  Unicode fixes:      {self.unicode_fixed} fields")
+        lines.append(f"  Admin text stripped: {self.admin_text_stripped} fields")
         if self.placeholders_replaced:
             for pv in self.placeholder_values:
                 lines.append(
@@ -111,6 +114,7 @@ def preprocess_dictionary(
     prefix_min_length: int = 8,
     prefix_min_ratio: float = 0.5,
     normalize_unicode: bool = True,
+    strip_administrative_text: bool = True,
     drop_description_echoing_option: bool = True,
     strip_common_prefixes: bool = True,
     dedup_name_in_description: bool = True,
@@ -124,6 +128,10 @@ def preprocess_dictionary(
 
     Steps (in order):
         1. Unicode normalization (ftfy) — fix mojibake, curly quotes, encoding artifacts
+        1a. Administrative-text stripping — remove instrument-administration wrappers ("ACE
+           touchscreen question \"…\""), trailing help-message HTML, HTML tags/entities, and
+           survey/CDE instruction boilerplate from description + question_text. Cohort-agnostic
+           (:func:`ddharmon.text_hygiene.clean_field_text`); never blanks a field.
         1b. Option-echo description clearing — if a field's description is just one
            of its own response-option labels (e.g. UKBB description == '"Do not
            know"' / '"Less than a year"'), clear it: the label is noise that
@@ -149,6 +157,8 @@ def preprocess_dictionary(
         prefix_min_ratio: Minimum fraction of fields that must share a prefix
             for it to be stripped (0.0–1.0). Higher = more conservative.
         normalize_unicode: Whether to run ftfy unicode normalization.
+        strip_administrative_text: Whether to strip instrument-administration wrappers, help-message
+            HTML, HTML tags, and survey boilerplate from description/question_text (default True).
         drop_description_echoing_option: Whether to clear a description that merely
             echoes one of the field's own response-option labels (default True).
         strip_common_prefixes: Whether to detect and strip common prefixes.
@@ -176,6 +186,11 @@ def preprocess_dictionary(
     # Step 1: Unicode normalization
     if normalize_unicode:
         report.unicode_fixed = _normalize_unicode(fields)
+
+    # Step 1a: Strip administrative / data-collection wrappers (runs early so downstream steps —
+    # option-echo, dedup, whitespace — operate on the cleaned text).
+    if strip_administrative_text:
+        report.admin_text_stripped = _strip_administrative_text(fields)
 
     # Step 1b: Drop descriptions that merely echo a response-option label.
     # Must run before placeholder replacement so an echoed sentinel isn't first
@@ -249,6 +264,41 @@ def _normalize_unicode(fields: list[Field]) -> int:
             f.short_label = ftfy.fix_text(f.short_label)
     if count:
         logger.info("Unicode normalization: fixed %d fields", count)
+    return count
+
+
+# ---------------------------------------------------------------------------
+# Step 1a: Administrative / data-collection text stripping
+# ---------------------------------------------------------------------------
+
+
+def _strip_administrative_text(fields: list[Field]) -> int:
+    """Strip instrument-administration wrappers, help-message HTML, tags, and boilerplate from
+    ``description`` and ``question_text`` via :func:`ddharmon.text_hygiene.clean_field_text`.
+
+    NEVER blanks a field: the cleaned value is applied only when it is a non-empty change, so a field
+    whose text was *pure* markup/boilerplate keeps its original (the whitespace pass + option-echo
+    step handle the residue, and ``to_embedding_text()`` still falls back to variable_name).
+    Cohort-agnostic; returns the count of fields where at least one text attribute changed.
+    """
+    count = 0
+    for f in fields:
+        changed = False
+        # strip_boilerplate=False: at ingest we target STRUCTURAL wrappers (HTML / instrument preamble
+        # / help tail), not mid-sentence boilerplate phrases (whose removal leaves "( )" / "." residue).
+        cleaned_desc = clean_field_text(f.description, strip_boilerplate=False)
+        if cleaned_desc and cleaned_desc != f.description:
+            f.description = cleaned_desc
+            changed = True
+        if f.question_text:
+            cleaned_q = clean_field_text(f.question_text, strip_boilerplate=False)
+            if cleaned_q and cleaned_q != f.question_text:
+                f.question_text = cleaned_q
+                changed = True
+        if changed:
+            count += 1
+    if count:
+        logger.info("Administrative-text stripping: cleaned %d fields", count)
     return count
 
 

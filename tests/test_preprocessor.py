@@ -255,6 +255,95 @@ class TestDropDescriptionEchoingOptions:
         assert dd.fields["v"].description == '"Do not know"'
 
 
+class TestStripAdministrativeText:
+    """Tests for administrative / data-collection wrapper stripping (Step 1a)."""
+
+    def test_unwraps_instrument_preamble_in_description(self) -> None:
+        from ddharmon.ingestion.preprocessor import _strip_administrative_text
+        from ddharmon.models.data_dictionary import Field
+
+        f = Field(
+            variable_name="smoke_now",
+            description='ACE touchscreen question "Do you smoke tobacco now?" <table>help</table>',
+        )
+        assert _strip_administrative_text([f]) == 1
+        assert f.description == "Do you smoke tobacco now?"
+
+    def test_cleans_question_text_too(self) -> None:
+        from ddharmon.ingestion.preprocessor import _strip_administrative_text
+        from ddharmon.models.data_dictionary import Field
+
+        f = Field(
+            variable_name="q",
+            description="Coffee intake",
+            question_text="<p>How many cups of coffee&nbsp;per day?</p>",
+        )
+        assert _strip_administrative_text([f]) == 1
+        assert f.question_text == "How many cups of coffee per day?"
+
+    def test_never_blanks_pure_markup(self) -> None:
+        from ddharmon.ingestion.preprocessor import _strip_administrative_text
+        from ddharmon.models.data_dictionary import Field
+
+        # A description that cleans to "" must be left as the original (never blanked).
+        f = Field(variable_name="x", description="<p></p>")
+        assert _strip_administrative_text([f]) == 0
+        assert f.description == "<p></p>"
+
+    def test_benign_text_untouched(self) -> None:
+        from ddharmon.ingestion.preprocessor import _strip_administrative_text
+        from ddharmon.models.data_dictionary import Field
+
+        f = Field(variable_name="age", description="Age of participant at baseline")
+        assert _strip_administrative_text([f]) == 0
+        assert f.description == "Age of participant at baseline"
+
+    def test_does_not_strip_boilerplate_phrases(self) -> None:
+        from ddharmon.ingestion.preprocessor import _strip_administrative_text
+        from ddharmon.models.data_dictionary import Field
+
+        # Ingest is structural-only: a whole-description boilerplate phrase is left intact (no "." residue).
+        f = Field(variable_name="spec", description="Please specify.")
+        assert _strip_administrative_text([f]) == 0
+        assert f.description == "Please specify."
+
+    def test_preserves_domain_angle_brackets(self) -> None:
+        from ddharmon.ingestion.preprocessor import _strip_administrative_text
+        from ddharmon.models.data_dictionary import Field
+
+        # MESA ECG-code disjunction: `<OR>` is a domain token, not HTML — must survive.
+        f = Field(variable_name="ecg", description="VF <OR> ASYSTOLE")
+        assert _strip_administrative_text([f]) == 0
+        assert f.description == "VF <OR> ASYSTOLE"
+
+    def test_runs_within_preprocess_dictionary_and_reports(self) -> None:
+        from ddharmon.ingestion.preprocessor import preprocess_dictionary
+        from ddharmon.models.data_dictionary import DataDictionary, Field
+
+        dd = DataDictionary(
+            name="UKBB",
+            fields={
+                "smoke_now": Field(
+                    variable_name="smoke_now",
+                    description='ACE touchscreen question "Do you smoke tobacco now?" <table>help</table>',
+                ),
+            },
+        )
+        preprocess_dictionary(dd)
+        assert dd.fields["smoke_now"].description == "Do you smoke tobacco now?"
+        assert dd.preprocessing_report.admin_text_stripped == 1
+
+    def test_flag_disables_step(self) -> None:
+        from ddharmon.ingestion.preprocessor import preprocess_dictionary
+        from ddharmon.models.data_dictionary import DataDictionary, Field
+
+        raw = 'ACE touchscreen question "Do you smoke tobacco now?" <table>help</table>'
+        dd = DataDictionary(name="UKBB", fields={"s": Field(variable_name="s", description=raw)})
+        preprocess_dictionary(dd, strip_administrative_text=False)
+        assert dd.preprocessing_report.admin_text_stripped == 0
+        assert dd.fields["s"].description == raw
+
+
 class TestStripCommonPrefixes:
     """Tests for common prefix stripping on fields."""
 
