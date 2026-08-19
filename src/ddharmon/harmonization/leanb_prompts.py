@@ -92,6 +92,48 @@ SPLIT_SCHEMA = json.dumps(
     }
 )
 
+# M15 — ENFORCED split output (opt-in). The soft TEXT schema above is dropped by the model on ~35% of
+# clusters (bare single-group, no `groups` wrapper) → the residual members route novel. This is a real
+# JSON Schema for a FORCED tool call: the wrapper +
+# per-group required fields are structurally guaranteed, so the model cannot return a bare object. It does
+# NOT force semantic completeness (the model still chooses member_ids) — the "every member in exactly one
+# group" completeness is instructed here + repaired downstream by the residual group. Kills the FORMAT drop.
+SPLIT_TOOL_NAME = "emit_groups"
+SPLIT_TOOL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "groups": {
+            "type": "array",
+            "minItems": 1,
+            "description": "The distinct-concept partition of the members. Every member id (m1, m2, …) "
+            "must appear in exactly ONE group; do not omit any member.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "member_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "ids like m1, m2 that belong to this concept",
+                    },
+                    "concept": {"type": "string", "description": "short concept label"},
+                    "ranking": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "candidate numbers, best realizing this concept first",
+                    },
+                    "verdict": {"type": "string", "enum": ["adopt", "refine", "novel"]},
+                    "cde_id": {"type": ["string", "null"], "description": "chosen candidate number, null for novel"},
+                    "rationale": {"type": "string", "description": "one sentence"},
+                },
+                "required": ["member_ids", "concept", "verdict"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["groups"],
+    "additionalProperties": False,
+}
+
 # ── stage 3: per-group single-concept re-assign (over per-group re-retrieved candidates) ──
 SYS_GROUP_REASSIGN = (
     "You assign ONE source concept to a Common Data Element (CDE). You are given (1) the concept label; (2) a "
@@ -171,24 +213,86 @@ MEASURAND_IDEAL_CLAUSE = (
 )
 
 
-def split_system_prompt(representation_refine: bool = False, measurand_split: bool = False) -> str:
-    """Stage-2 split system prompt, optionally with the M4 representation and/or M11 measurand clauses."""
+# ── (b) coherence levers — OPT-IN, default OFF; validate via frozen-substrate A/B before default-on ──
+# Root cause of an observed blood-pressure over-merge: the
+# generate-ideal SEED framed distinct measurands as ONE CDE ("systolic and diastolic ... recorded as two
+# separate fields"), and a BUNDLING candidate CDE then licensed a single `adopt` over 24 heterogeneous
+# members. The split CRITERION was NOT at fault — it faithfully followed a bundling seed + a bundling
+# candidate. So these levers target the SEED and the ADOPT-decision, not the split criterion (broadening
+# that regressed via the split wrapper-drop and the measurand_split A/B). Kept as
+# TWO separate flags so an A/B attributes each independently (the refuted measurand_split arm bundled its
+# split-clause and its ideal-clause together and could not separate them).
+
+# M13 — de-bias generate-ideal (full variant, NOT an append): the base prompt opens with "fields that
+# measure the same thing", presuming one concept, and only handles different QUALIFIERS. This variant drops
+# that presumption and instructs enumeration of distinct MEASURANDS/CONCEPTS as distinct ideals. General
+# (measurand + semantic-category), no cohort- or example-specific rule.
+SYS_GENERATE_IDEAL_DEBIASED = (
+    "You are a biomedical Common Data Element (CDE) expert. Given a source cluster of data-dictionary fields "
+    "grouped by an embedding that IGNORES the variable name — so the cluster MAY pool more than one distinct "
+    "concept — describe the IDEAL CDE(s) that would capture it: concept/measurement, the question answered, "
+    "and the expected answer type or units. Output concise, catalog-style CDE description(s). Describe what "
+    "the ideal WOULD be from first principles — do NOT reference, assume, or defer to any existing catalog or "
+    "candidate list.\n"
+    "ONE CONCEPT PER IDEAL — DO NOT BUNDLE. If the members measure DIFFERENT quantities/measurands, or "
+    "represent DIFFERENT concepts (e.g. a diagnosis vs a family history vs a medication; two distinct physical "
+    "measurements taken at the same encounter), enumerate EACH as its OWN ideal CDE rather than merging them "
+    "into one composite — even when they co-occur. Members that are only different VALUES of ONE property of "
+    "the same object (different specific conditions, different medications) are ONE concept — keep them "
+    "together. Measurement metadata (device/method, timing, posture) is NOT the measured quantity.\n"
+    "PRESERVE the source qualifier, never invent one: if the fields specify a qualifier (address type "
+    "[home/work/mailing], subject/person [self/spouse/contact], laterality [left/right], body site, "
+    "condition, or time window) — often carried in the variable NAME when the question text is generic — "
+    "reflect it in the ideal. Do NOT assume a default context (e.g. do not call a ZIP 'residential' unless "
+    "the source says so). If members carry DIFFERENT qualifiers (e.g. work vs home vs another person's "
+    "address), enumerate them rather than picking one. Return JSON only."
+)
+
+# M14 — bundling-candidate→adopt guard: ONE short clause (kept minimal — lengthening the split prompt
+# regressed output-format compliance / wrapper-drop). Appended to the stage-2 split + stage-3 re-assign
+# prompts. General: any candidate that bundles multiple measured quantities/concepts, not just paired BP.
+BUNDLING_GUARD_CLAUSE = (
+    "BUNDLING GUARD: a candidate that BUNDLES several distinct measured quantities or concepts (e.g. one "
+    "element pairing two different measurements) does NOT license a shared adopt. If the members span more "
+    "than one measured quantity or concept, SPLIT them into separate groups FIRST, then each group may "
+    "adopt/refine the part that fits — never adopt a bundling candidate to keep distinct measures merged."
+)
+
+
+def split_system_prompt(
+    representation_refine: bool = False, measurand_split: bool = False, bundle_guard: bool = False
+) -> str:
+    """Stage-2 split system prompt, optionally with the M4 representation, M11 measurand, and/or M14 guard."""
     prompt = SYS_SPLIT
     if representation_refine:
         prompt = f"{prompt}\n{REPRESENTATION_REFINE_CLAUSE}"
     if measurand_split:
         prompt = f"{prompt}\n{MEASURAND_SPLIT_CLAUSE}"
+    if bundle_guard:
+        prompt = f"{prompt}\n{BUNDLING_GUARD_CLAUSE}"
     return prompt
 
 
-def generate_ideal_system_prompt(measurand_split: bool = False) -> str:
-    """Stage-1 generate-ideal system prompt, optionally with the M11 measurand-enumeration clause appended."""
+def generate_ideal_system_prompt(measurand_split: bool = False, debias_ideal: bool = False) -> str:
+    """Stage-1 generate-ideal system prompt.
+
+    ``debias_ideal`` (M13) SELECTS the de-biased variant (no presumption of one concept; enumerate distinct
+    measurands/concepts). ``measurand_split`` (M11, refuted) appends the narrow measurand clause. M13 is a
+    full-variant swap and takes precedence over the M11 append when both are set (they target the same bias).
+    """
+    if debias_ideal:
+        return SYS_GENERATE_IDEAL_DEBIASED
     return f"{SYS_GENERATE_IDEAL}\n{MEASURAND_IDEAL_CLAUSE}" if measurand_split else SYS_GENERATE_IDEAL
 
 
-def group_reassign_system_prompt(representation_refine: bool = False) -> str:
-    """Stage-3 per-group re-assign system prompt, optionally with the M4 representation clause appended."""
-    return f"{SYS_GROUP_REASSIGN}\n{REPRESENTATION_REFINE_CLAUSE}" if representation_refine else SYS_GROUP_REASSIGN
+def group_reassign_system_prompt(representation_refine: bool = False, bundle_guard: bool = False) -> str:
+    """Stage-3 per-group re-assign system prompt, optionally with the M4 representation and/or M14 guard."""
+    prompt = SYS_GROUP_REASSIGN
+    if representation_refine:
+        prompt = f"{prompt}\n{REPRESENTATION_REFINE_CLAUSE}"
+    if bundle_guard:
+        prompt = f"{prompt}\n{BUNDLING_GUARD_CLAUSE}"
+    return prompt
 
 
 def build_ideal_user_prompt(member_lines: list[str]) -> str:
@@ -221,4 +325,189 @@ def build_group_assign_user_prompt(concept: str, member_lines: list[str], candid
         f"Member fields (sample): {sample}\n\n"
         f"Candidate CDEs (retrieved for THIS concept):\n{cand_block}\n\n"
         f"Rank, then return verdict + chosen candidate number as JSON."
+    )
+
+
+# ── step 2: dual-sample coherence judge (post-assign, read-only) ──────────────────────────────────
+# A proposed concept-GROUP is verified by summarizing its k1 centroid-CLOSEST members (the core theme)
+# and checking that its k2 centroid-FURTHEST members share that theme. Our improvement over Islam 2026: Islam
+# uses the SAME centroid-closest sample to generate AND verify (self-fulfilling — a tight core with an
+# off-concept boundary always passes); the DISJOINT k1/k2 sampling catches exactly the tight-core /
+# heterogeneous-boundary failure the BP-measurand and arthritis over-merges are. The granularity verdict names
+# whether the group is ONE concept (single), a matrix collapsible only with a varying slot (qualify), or too
+# varied for even that (split). This is a FLAG, never an auto-split — the cure is human re-adjudication.
+SYS_COHERENCE = (
+    "You are a domain expert in biomedical data dictionary harmonization. You are evaluating whether a "
+    "proposed GROUP of cohort field descriptions forms a coherent semantic concept — the same underlying "
+    "measurement/concept, regardless of phrasing — or whether it over-merges distinct concepts that one "
+    "CDE would silently collapse.\n"
+    "Cohort attribution rule: refer to cohort source ONLY as given in each field's `cohort:variable_name` "
+    "prefix in the prompt. Do NOT infer cohort identity from variable-code patterns (e.g. 3-letter prefixes, "
+    "`dsN_M` codes). If variable codes are opaque, say so without guessing which cohort or instrument they "
+    "belong to — the prompt's explicit cohort tag is authoritative.\n"
+    "Granularity check: a group can be coherent yet still pool many distinct measurements. Judge it from your "
+    "own summary. If the summary stays faithful to ALL members with NO placeholder, set "
+    'granularity.verdict = "single". If it is faithful only as a TEMPLATE needing one varying slot (e.g. '
+    '"...for [condition]" or "various conditions"), set "qualify" and record that slot as `axis` with its '
+    '`distinct_values`. If members are too varied for even a one-slot summary, set "split". A "qualify"/'
+    '"split" group is a matrix of distinct things one CDE would silently collapse.\n'
+    "Return JSON only, no commentary outside the JSON object. Schema:\n"
+    "{\n"
+    '  "summary": "<one-sentence theme of the group core>",\n'
+    '  "coherent": <true if the peripheral items share the core theme; false otherwise>,\n'
+    '  "outliers": [<periphery position of items that do not fit, 1-indexed>],\n'
+    '  "granularity": {\n'
+    '    "verdict": "single | qualify | split",\n'
+    '    "axis": "<the slot your summary needed to stay faithful, e.g. mental-health condition> | null",\n'
+    '    "distinct_values": ["<the distinct fillers across members, e.g. ADHD, depression, ...>"]\n'
+    "  }\n"
+    "}"
+)
+COHERENCE_SCHEMA = json.dumps(
+    {
+        "summary": "<one-sentence theme of the group core>",
+        "coherent": "<true|false — do the periphery members share the core theme>",
+        "outliers": ["<1-indexed periphery positions that do not fit>"],
+        "granularity": {
+            "verdict": "single|qualify|split",
+            "axis": "<varying slot, or null>",
+            "distinct_values": ["<distinct fillers across members>"],
+        },
+    }
+)
+
+
+def build_coherence_user_prompt(n_members: int, core_texts: list[str], periphery_texts: list[str]) -> str:
+    """Step-2 user prompt: the k1 CORE members (centroid-closest) + the k2 PERIPHERY members (furthest).
+
+    Two-step framing (summarize the core theme, then verify the periphery against it) so the periphery is
+    judged against a summary built from the core — never from itself (the self-fulfilling failure we fix).
+    """
+    core = "\n".join(f"  core {i + 1}: {t}" for i, t in enumerate(core_texts))
+    periphery = "\n".join(f"  periphery {i + 1}: {t}" for i, t in enumerate(periphery_texts))
+    return (
+        f"This proposed harmonization group has {n_members} members. Below are the {len(core_texts)} CORE "
+        f"members (closest to the group centroid) and {len(periphery_texts)} PERIPHERY members (furthest "
+        f"from the centroid).\n\n"
+        f"Step 1 — Summarize the THEME shared by the core members:\n{core}\n\n"
+        f"Step 2 — Decide whether each PERIPHERY member shares that theme. The group is coherent only if the "
+        f"periphery clearly belongs to the same concept as the core.\n\n"
+        f"{periphery}\n\n"
+        f"Return the JSON object specified in the system prompt. List the 1-indexed periphery positions of "
+        f"any items that don't fit the core theme. Then set granularity: does your Step 1 summary hold for "
+        f"ALL members with no placeholder (single), only as a one-slot template like 'X for [condition]' "
+        f"(qualify — give axis and distinct_values), or not even then (split)?"
+    )
+
+
+# ── distinct-KINDS discriminator (R2): the second read on a `qualify` group ───────────────────────
+# The coherence judge calls a group `qualify` when its one-sentence summary holds only as a one-slot
+# TEMPLATE (an axis + distinct values). That is ambiguous: the axis may be a qualifier value-set of ONE
+# concept (milk *by fat content*, PHQ items — coherent, don't flag) OR a label papering over genuinely
+# DIFFERENT measurands (a length + a mass + a rate — an over-merge, flag). This cheap second call resolves
+# that split. It reads ONLY the judge's own outputs (summary / axis / distinct_values), so it runs after
+# the coherence stage on qualify groups. R2 flags a qualify group iff this returns `distinct_kinds`.
+# Validated on returned human pairwise gold: the distinct-kinds rule reached 100% recall on the
+# human-confirmed over-merges, recovering the qualify-fusions the split-only rule misses.
+SYS_KINDS = (
+    "A prior step grouped several survey/clinical variables and found they all vary along ONE named axis. "
+    "Your job: decide whether this group is ONE harmonizable concept (a single attribute recorded with a "
+    "value-set / qualifier) or an OVER-MERGE of genuinely distinct concepts that only share an axis label.\n\n"
+    "Given the group SUMMARY, the AXIS name, and the DISTINCT VALUES observed along that axis, classify:\n\n"
+    "• values_of_one_property — the values are alternative VALUES of a SINGLE attribute:\n"
+    "    - a which-X rollup (which country, which language, which brand);\n"
+    "    - a by-WHEN / by-WHERE / by-WHICH-VISIT rollup (morning vs evening; visit 1 vs 2);\n"
+    "    - the same measurement repeated or indexed (trial 1, 2, 3).\n"
+    "  One concept plus a qualifier value-set. → coherent, do NOT flag.\n\n"
+    "• distinct_kinds — the values name genuinely DIFFERENT attributes or referents, not values of one:\n"
+    "    - different physical quantities of the same object (a length vs a mass vs a rate);\n"
+    "    - different referent populations (the participant vs a relative);\n"
+    "    - an unrelated mix of dimensions bundled together (a status + an exposure + a history item).\n"
+    "  An over-merge that should be re-adjudicated. → flag.\n\n"
+    "Decide by asking: are these ONE thing recorded under different settings/instances, or SEVERAL different "
+    "things? If a single well-formed CDE with a value-set could faithfully capture EVERY member, it is "
+    "values_of_one_property; if faithful capture needs SEPARATE CDEs, it is distinct_kinds. Return only the "
+    "tool call."
+)
+KINDS_TOOL_NAME = "classify_group"
+KINDS_TOOL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "kind": {"type": "string", "enum": ["values_of_one_property", "distinct_kinds"]},
+        "rationale": {"type": "string", "description": "one line"},
+    },
+    "required": ["kind", "rationale"],
+}
+
+
+def build_kinds_user_prompt(summary: str, axis: str, distinct_values: list[str]) -> str:
+    """Discriminator user prompt from the coherence judge's own outputs (summary / axis / distinct_values)."""
+    dv = distinct_values or []
+    return (
+        f"SUMMARY: {summary or ''}\n"
+        f"AXIS: {axis or ''}\n"
+        f"DISTINCT VALUES ({len(dv)}): {json.dumps(dv, ensure_ascii=False)}"
+    )
+
+
+# ── re-adjudication: human-triggered re-split of an over-merged group ─────────────────────────────
+# When a group has been FLAGGED as over-merged (by the coherence judge's `split` verdict or a human
+# reviewer marking it incoherent), this prompt re-partitions it. It differs from SYS_SPLIT in its PRIOR:
+# the split stage defaults to ONE group and splits only on a clear change; here the group is ALREADY known
+# to fuse ≥2 concepts, so the default is INVERTED — find the distinct concepts. It shares SYS_SPLIT's axes
+# and guards (so it does not over-split values of one property / repeating measures / cosmetic synonyms) and
+# emits the SAME {groups:[…]} output contract (SPLIT_SCHEMA / SPLIT_TOOL_SCHEMA) so downstream reuse is exact.
+SYS_READJUDICATE = (
+    "You assign data-dictionary fields to Common Data Elements (CDEs). This group of MEMBER fields (each "
+    "prefixed with an id like [m1]) was already FLAGGED as OVER-MERGED — a prior judgment found it fuses "
+    "TWO OR MORE distinct concepts into one. Your job is to RE-PARTITION it into distinct-concept groups. "
+    "Do NOT return it as one group — it is known to be multiple; find the genuine concept boundaries.\n"
+    "PARTITION AXES — split on any axis where the members are genuinely different concepts:\n"
+    "  • OBJECT/REFERENT — the who/what being measured changes (home vs employer address; self vs spouse).\n"
+    "  • MEASURAND/QUANTITY — distinct physical quantities sharing one object/encounter (systolic vs "
+    "diastolic blood pressure vs pulse; height vs weight); measurement metadata (device/method, timing, "
+    "posture) is its OWN group, not the measured quantity.\n"
+    "  • SEMANTIC CATEGORY — a diagnosis vs a family history vs a medication vs a symptom/flare of the SAME "
+    "condition are DISTINCT concepts and MUST be separate groups.\n"
+    "  • ENTITY SLOT — a shared question template over many distinct entities (a provider seen for "
+    "[condition]; liking for [food]) collapses distinct measurements; separate the distinct entities.\n"
+    "GUARDS — do NOT manufacture splits: members that are only different VALUES of ONE property of the same "
+    "object (different specific cancer types, different medications the subject takes) are ONE concept; do "
+    "NOT split a REPEATING MEASURE (same concept across numbered occurrences — reading 1..N; the slot number "
+    "is an occurrence index, never a qualifier); do NOT split cosmetic synonyms ('zip' vs 'postal code').\n"
+    "For EACH resulting group: rank the candidate CDEs by how well each realizes that group's concept, then "
+    "commit a verdict — adopt (a candidate IS the concept exactly), refine (reachable from a candidate but "
+    "needs specialization; set cde_id to it and put the precise concept in 'concept'), or novel (no candidate "
+    "realizes it). Judge on meaning, not wording. Return JSON only."
+)
+
+
+def build_readjudicate_user_prompt(
+    numbered_members: list[tuple[str, str]],
+    candidate_block: str,
+    *,
+    axis: str = "",
+    distinct_values: list[str] | None = None,
+    desired_n: int | None = None,
+) -> str:
+    """Re-adjudication user prompt: the flagged members + candidates + the incoherence hint from the judge.
+
+    ``axis`` / ``distinct_values`` are the coherence judge's granularity signal (the axis on which the group
+    was found to fuse distinct concepts, and the observed fillers). ``desired_n`` is an optional
+    human-supplied target sub-concept count ("split this into ~N").
+    """
+    mlines = "\n".join(f"  [{mid}] {txt}" for mid, txt in numbered_members)
+    hint = ""
+    if axis:
+        hint = f"\nPrior judgment: this group fuses distinct concepts along the axis '{axis[:120]}'."
+        if distinct_values:
+            hint += f" Observed distinct values: {', '.join(str(v) for v in distinct_values[:15])}."
+    if desired_n and desired_n > 0:
+        hint += f"\nThe reviewer expects approximately {desired_n} distinct concept(s)."
+    return (
+        f"This group was flagged as over-merged and must be re-partitioned into distinct concepts.{hint}\n\n"
+        f"Member fields:\n{mlines}\n\n"
+        f"Candidate CDEs:\n{candidate_block}\n\n"
+        f"Partition the members into distinct-concept groups (find the genuine boundaries — do NOT return one "
+        f"group), then for each group return ranking + verdict + chosen candidate number as JSON."
     )

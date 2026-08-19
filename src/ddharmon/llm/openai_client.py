@@ -61,6 +61,26 @@ class OpenAIClient(BaseLLMClient):
         self._model_name = model_name
         self._max_tokens = max_tokens
         self._use_structured: bool | None = None  # auto-detect on first call
+        # Realized token usage per call, drained per-stage by cost accounting (see cost.CostLedger).
+        self.usage_log: list = []
+
+    def _record_usage(self, response: object) -> None:
+        """Append this response's token usage to ``usage_log`` (best-effort; never raises into a run)."""
+        from ddharmon.llm.cost import TokenUsage
+
+        try:
+            usage = getattr(response, "usage", None)
+            if usage is None:
+                return
+            self.usage_log.append(
+                TokenUsage(
+                    model=self._model_name,
+                    input_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
+                    output_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
+                )
+            )
+        except Exception:  # noqa: BLE001 — usage capture must never break a run
+            logger.debug("usage capture failed", exc_info=True)
 
     @property
     def provider_name(self) -> str:
@@ -96,6 +116,7 @@ class OpenAIClient(BaseLLMClient):
                     response_format=RerankerResponse,
                 )
                 self._use_structured = True
+                self._record_usage(response)
                 parsed = response.choices[0].message.parsed
                 if parsed is None:
                     raise ValueError("OpenAI structured output returned no parsed result")
@@ -117,6 +138,7 @@ class OpenAIClient(BaseLLMClient):
             max_tokens=self._max_tokens,
             messages=cast("list[ChatCompletionMessageParam]", messages),
         )
+        self._record_usage(response)
         return _parse_json_response(_require_content(response.choices[0].message.content))
 
     def complete(self, prompt: str, *, system: str | None = None, max_tokens: int = 512) -> str:
@@ -130,4 +152,5 @@ class OpenAIClient(BaseLLMClient):
             max_tokens=max_tokens,
             messages=cast("list[ChatCompletionMessageParam]", messages),
         )
+        self._record_usage(response)
         return _require_content(response.choices[0].message.content)

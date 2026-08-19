@@ -767,6 +767,52 @@ class TestMemberPromptText:
         ref = FieldReference("CohortA", "x", "desc")
         assert _member_prompt_text(None, ref) == _member_text(None, ref)
 
+    def test_prompt_text_drops_missing_sentinel_options(self):
+        # The concept-identity route (judge/gen-ideal/split/assign) must NOT see missing/DK sentinels.
+        fld = Field(
+            variable_name="fhx",
+            description="Family history of asthma",
+            question_text="Family history of asthma",
+            value_encoding_raw="-9=MISSING|0=No|1=Yes|9=Do not know",
+            data_type="categorical",
+        )
+        ref = FieldReference("CohortA", "fhx", "Family history of asthma")
+        prompt = _member_prompt_text(fld, ref)
+        assert "0=No|1=Yes" in prompt
+        assert "MISSING" not in prompt and "Do not know" not in prompt
+
+    def test_prompt_text_numeric_sentinel_only_shows_no_value_tail(self):
+        # MESA `-9=MISSING` on a numeric field must NOT render as a single-option categorical.
+        fld = Field(
+            variable_name="fhxasta2",
+            description="Age at asthma diagnosis",
+            question_text="Age at asthma diagnosis",
+            value_encoding_raw="-9=MISSING",
+            data_type="numeric",
+        )
+        ref = FieldReference("CohortA", "fhxasta2", "Age at asthma diagnosis")
+        prompt = _member_prompt_text(fld, ref)
+        assert "values:" not in prompt and "MISSING" not in prompt
+
+    def test_value_set_text_keeps_sentinels_by_default_for_specgen(self):
+        # spec-gen calls _value_set_text(fld) with the default -> sentinels PRESERVED (needed for recodes).
+        fld = Field(variable_name="fhx", description="d", value_encoding_raw="-9=MISSING|0=No|1=Yes")
+        assert _value_set_text(fld) == "-9=MISSING|0=No|1=Yes"
+        assert _value_set_text(fld, drop_sentinels=True) == "0=No|1=Yes"
+
+    def test_value_set_drop_sentinels_from_response_options(self):
+        fld = Field(
+            variable_name="x",
+            description="d",
+            response_options=[
+                ResponseOption(code="-9", label="Missing"),
+                ResponseOption(code="0", label="No"),
+                ResponseOption(code="1", label="Yes"),
+            ],
+        )
+        assert _value_set_text(fld, drop_sentinels=True) == "0=No|1=Yes"
+        assert _value_set_text(fld) == "-9=Missing|0=No|1=Yes"
+
 
 # ── M10: outlier recovery (recover_outlier_clusters) ─────────────
 
@@ -844,3 +890,325 @@ def test_harmonize_leanb_default_run_threads_representation_refine(world):
     result = harmonize_leanb(embedded, substrate=sub, generate=_ideal_resp, split=None)
     assert result.split_prompts
     assert "representation mismatch is refine" in result.split_prompts[0].system_prompt.lower()
+
+
+# ── 08-04: staged-review stage ordering + the one resumable boundary (STGD-02, core half) ──
+#
+# The staged review flow pauses a run by EXITING at a stage boundary, so where a stage sits in the
+# sequence is a product contract, not an implementation detail: Gate 1 pauses at the shipped
+# ``classify=None`` early return and must be able to render each concept group's coherence verdict, which
+# is only true if the judge's verdict pass runs BEFORE assign.
+
+
+@pytest.fixture
+def judgeable_world(hf):
+    """Eight near-identical smoking variables across two cohorts + one smoking CDE.
+
+    Large enough for the coherence judge to build a prompt (>= COHERENCE_MIN_MEMBERS members in the big
+    group) and tight enough that the assign stage's chosen candidate clears the M5 adopt floor — so a
+    default run reaches the categorical transform-spec stage with real prompts.
+    """
+    enc = "1=Yes|0=No"
+    a_fields = [hf.field(f"smoke_a{i}", "Do you currently smoke cigarettes", encoding=enc) for i in range(4)]
+    b_fields = [hf.field(f"smoke_b{i}", "Do you currently smoke cigarettes", encoding=enc) for i in range(4)]
+    cde_fields = [
+        hf.field(
+            "SmokeCDE",
+            "Current cigarette smoking status",
+            field_id="cde_smoke",
+            question_text="Do you currently smoke cigarettes?",
+            encoding=enc,
+        )
+    ]
+    ed_a = hf.embedded_dict("CohortA", a_fields, sem_vecs=hf.l2(np.array([[1, 0.01 * i] for i in range(4)], float)))
+    ed_b = hf.embedded_dict(
+        "CohortB", b_fields, sem_vecs=hf.l2(np.array([[1, 0.01 * (i + 4)] for i in range(4)], float))
+    )
+    ed_cde = hf.embedded_dict("NIH_CDE", cde_fields, sem_vecs=hf.l2(np.array([[1, 0.0]], float)))
+    embedded = [ed_a, ed_b, ed_cde]
+    _docs, embeddings, field_refs, _cohorts = collect_inputs(embedded)
+    cohort_refs = [r for r in field_refs if r.dictionary_name != "NIH_CDE"]
+    sub = build_substrate([_cluster(0, cohort_refs)], min_cluster_size=15, n_fields=len(field_refs))
+    return embedded, sub
+
+
+def _staged_stages(order: list[str], *, coherence_verdict: str = "split"):
+    """One recording fake per injectable stage; each appends its own name then answers plausibly.
+
+    The split fake carves the cluster into a big 7-member group (judgeable, routed ``adopt``) and a
+    1-member group (routed ``novel``, so the GenCDE stage has work), which is what makes every stage in
+    the sequence actually fire.
+    """
+
+    def generate(prompts):
+        order.append("generate")
+        return {p.id: {"ideal_cde": f"ideal for {p.context['cluster_id']}"} for p in prompts}
+
+    def split(prompts):
+        order.append("split")
+        out = {}
+        for p in prompts:
+            ids = [m["member_id"] for m in p.context["members"]]
+            out[p.id] = {
+                "groups": [
+                    {"member_ids": ids[:-1], "concept": "current smoking", "verdict": "adopt"},
+                    {"member_ids": ids[-1:], "concept": "smoking outlier", "verdict": "novel"},
+                ]
+            }
+        return out
+
+    def classify(prompts):
+        order.append("classify")
+        out = {}
+        for p in prompts:
+            novel = p.context["n_members"] == 1
+            out[p.id] = (
+                {"verdict": "novel", "ranking": [], "rationale": "no candidate fits"}
+                if novel
+                else {"verdict": "adopt", "cde_id": "1", "ranking": [1], "rationale": "same concept"}
+            )
+        return out
+
+    def coherence(prompts):
+        order.append("coherence")
+        return {
+            p.id: {
+                "summary": "current smoking",
+                "coherent": False,
+                "outliers": [1],
+                "granularity": {
+                    "verdict": coherence_verdict,
+                    "axis": "measurand",
+                    "distinct_values": ["cigarettes", "cigars"],
+                },
+            }
+            for p in prompts
+        }
+
+    def gencde(prompts):
+        order.append("gencde")
+        return {
+            p.id: {"preferred_name": "smoking_outlier", "definition": "d", "data_type": "categorical"} for p in prompts
+        }
+
+    def specgen(prompts):
+        order.append("specgen")
+        return {p.id: {"mappings": []} for p in prompts}
+
+    def merge(prompts):
+        order.append("merge")
+        return {p.id: {"merge": False} for p in prompts}
+
+    return {
+        "generate": generate,
+        "split": split,
+        "classify": classify,
+        "merge": merge,
+        "coherence": coherence,
+        "gencde": gencde,
+        "specgen": specgen,
+    }
+
+
+def test_coherence_judge_runs_after_split_and_before_assign(judgeable_world, monkeypatch):
+    """The ordering contract: judge verdicts exist by the time the assign boundary is reached.
+
+    Gate 1 of the staged review flow pauses at the ``classify=None`` early return, so a verdict stamped
+    after ``classify`` does not exist when the reviewer needs it.
+    """
+    from ddharmon.harmonization import leanb as leanb_mod
+
+    embedded, sub = judgeable_world
+    order: list[str] = []
+    real_propagate = leanb_mod.propagate_coherence_review
+
+    def spy_propagate(records):
+        order.append("propagate")
+        return real_propagate(records)
+
+    monkeypatch.setattr(leanb_mod, "propagate_coherence_review", spy_propagate)
+    result = harmonize_leanb(embedded, substrate=sub, **_staged_stages(order))
+
+    assert "coherence" in order, order
+    assert order.index("split") < order.index("coherence") < order.index("classify"), order
+    # the propagation half stays late — it lands needs_review on artifacts that only exist after specgen/gencde
+    assert order.index("gencde") < order.index("propagate"), order
+    assert order.index("specgen") < order.index("propagate"), order
+    assert result.records
+
+
+def test_coherence_verdicts_are_available_at_the_gate_1_boundary(judgeable_world):
+    """``classify=None`` returns with the judge already run — verdicts on the concept groups, no assign paid."""
+    embedded, sub = judgeable_world
+    order: list[str] = []
+    stages = _staged_stages(order)
+    result = harmonize_leanb(
+        embedded,
+        substrate=sub,
+        generate=stages["generate"],
+        split=stages["split"],
+        classify=None,
+        coherence=stages["coherence"],
+    )
+
+    assert "classify" not in order  # the assign stage was never paid for
+    assert result.group_assign_prompts and result.concept_groups
+    assert result.substrate is not None
+    judged = [g for g in result.concept_groups if g.coherence_verdict]
+    assert judged, [g.n_members for g in result.concept_groups]
+    assert all(g.coherence_verdict == "split" and g.incoherent is True for g in judged)
+
+
+def test_early_verdicts_are_transferred_onto_the_assembled_records(judgeable_world):
+    """The verdicts stamped before assign must reach the real records once assemble_leanb builds them."""
+    embedded, sub = judgeable_world
+    order: list[str] = []
+    result = harmonize_leanb(embedded, substrate=sub, **_staged_stages(order))
+
+    flagged = [r for r in result.records if r.coherence_verdict == "split"]
+    assert flagged, [(r.group_id, r.coherence_verdict, r.n_members) for r in result.records]
+    for r in flagged:
+        assert r.incoherent is True
+        assert all(t.needs_review for t in r.transforms)  # propagation landed
+        if r.gencde is not None:
+            assert r.gencde.needs_review is True
+
+
+def test_pipeline_never_auto_invokes_re_adjudication(judgeable_world, monkeypatch):
+    """SPEC prohibition: the pipeline FLAGS an over-merge, a human resolves it. Nothing here re-splits."""
+    from ddharmon.harmonization import leanb as leanb_mod
+
+    embedded, sub = judgeable_world
+    called: list[str] = []
+    monkeypatch.setattr(leanb_mod, "prepare_readjudicate", lambda *a, **k: called.append("prepare_readjudicate") or [])
+    monkeypatch.setattr(leanb_mod, "readjudicate", lambda *a, **k: called.append("readjudicate") or [])
+
+    order: list[str] = []
+    result = harmonize_leanb(embedded, substrate=sub, **_staged_stages(order))
+
+    assert called == []
+    assert any(r.incoherent for r in result.records)  # it DID flag — it just did not resolve
+    assert all(r.readjudicated_from == "" for r in result.records)
+
+
+# ── the one new named boundary: stop_after="gencde" (Gate 1 -> Gate 2) ──
+
+
+def test_stop_after_is_feature_detectable():
+    """The UI adapter guards on inspect.signature to degrade gracefully against an older pinned core."""
+    import inspect
+
+    params = inspect.signature(harmonize_leanb).parameters
+    assert "stop_after" in params
+    assert params["stop_after"].default is None  # additive: the default reproduces today's behaviour
+    assert params["stop_after"].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+def test_stop_after_accepts_exactly_one_boundary_name():
+    from ddharmon.harmonization.leanb import STOP_AFTER_BOUNDARIES
+
+    assert STOP_AFTER_BOUNDARIES == ("gencde",)
+
+
+@pytest.mark.parametrize("bad", ["gencd", "specgen", "cluster", "ideal", "split", "assign", "coherence", ""])
+def test_unrecognised_stop_after_raises_before_any_work(judgeable_world, bad):
+    """T-08-20: a typo must never be a silent no-op that runs the whole paid pipeline to completion."""
+    embedded, sub = judgeable_world
+    order: list[str] = []
+
+    with pytest.raises(ValueError) as exc:
+        harmonize_leanb(embedded, substrate=sub, stop_after=bad, **_staged_stages(order))
+
+    assert "gencde" in str(exc.value)  # names the accepted set
+    assert order == []  # rejected before a single stage ran
+
+
+def test_stop_after_gencde_returns_a_resumable_partial(judgeable_world):
+    embedded, sub = judgeable_world
+    order: list[str] = []
+    result = harmonize_leanb(embedded, substrate=sub, stop_after="gencde", **_staged_stages(order))
+
+    assert order.index("gencde") == len(order) - 1  # gencde ran last
+    assert "specgen" not in order  # and specgen was never paid for
+    assert result.substrate is not None  # the resume key — without it a resumed run re-clusters
+    assert result.records  # the assignment records are present
+    assert result.specgen_prompts == []  # no spec output yet
+    assert all(r.transforms == [] for r in result.records)
+    assert result.concept_groups  # the Gate 1 rows travel with the partial
+
+
+def test_every_early_return_carries_the_substrate(judgeable_world):
+    """T-08-19: a partial result missing ``substrate`` strands every gate decision made against a partition."""
+    embedded, sub = judgeable_world
+    order: list[str] = []
+    stages = _staged_stages(order)
+    partials = [
+        harmonize_leanb(embedded, substrate=sub, generate=None),
+        harmonize_leanb(embedded, substrate=sub, generate=stages["generate"], split=None),
+        harmonize_leanb(embedded, substrate=sub, generate=stages["generate"], split=stages["split"], classify=None),
+        harmonize_leanb(embedded, substrate=sub, stop_after="gencde", **stages),
+    ]
+    assert all(p.substrate is not None for p in partials)
+
+
+def test_stop_after_none_reproduces_the_default_run(judgeable_world):
+    """T-08-20: the boundary is additive — an existing caller passing nothing is byte-for-byte unaffected."""
+    embedded, sub = judgeable_world
+
+    def run(**extra):
+        order: list[str] = []
+        res = harmonize_leanb(embedded, substrate=sub, **_staged_stages(order), **extra)
+        return order, [
+            (r.group_id, r.verdict, r.route, r.cde_id, r.coherence_verdict, r.incoherent, len(r.transforms))
+            for r in res.records
+        ]
+
+    baseline_order, baseline_records = run()
+    explicit_order, explicit_records = run(stop_after=None)
+
+    assert explicit_order == baseline_order
+    assert explicit_records == baseline_records
+
+
+# ── forward-port guard: the keywords only the CLI passes must survive a port ──
+#
+# `max_clusters` is a `harmonize_leanb` keyword with exactly one consumer — `ddharmon.cli.harmonize`,
+# which passes it in its `common` kwarg dict. `tests/test_cli.py` monkeypatches `harmonize_leanb` with a
+# `lambda *a, **k`, so the CLI tests keep passing even if the keyword is deleted from the real function.
+# That combination is how a forward-port can silently ship a package whose own CLI raises TypeError on
+# every `ddharmon harmonize` invocation — permanently, once the version is on PyPI. These two tests are
+# the trip-wire: one pins the signature, the other pins the behaviour.
+
+
+def test_cli_kwargs_are_accepted_by_harmonize_leanb():
+    """Every keyword `ddharmon harmonize` passes must still exist on `harmonize_leanb`."""
+    import inspect
+
+    params = inspect.signature(harmonize_leanb).parameters
+    # Mirrors the `common` dict built in ddharmon.cli.harmonize.
+    for kw in ("cde_cohort", "min_cluster_size", "top_k", "retrieval_floor", "model_tag", "max_clusters"):
+        assert kw in params, f"harmonize_leanb lost the CLI keyword {kw!r} — `ddharmon harmonize` would break"
+    assert params["max_clusters"].default is None  # uncapped by default
+
+
+def test_max_clusters_caps_split_units_largest_first(world):
+    """The cost cap keeps the LARGEST units (most members first) and drops the rest."""
+    embedded, embeddings, field_refs, by_key = world
+    big = _cluster(
+        1,
+        [
+            by_key[("CohortA", "home_residence_zip")],
+            by_key[("CohortA", "employer_workplace_zip")],
+            by_key[("CohortA", "age")],
+        ],
+    )
+    small = _cluster(2, [by_key[("CohortB", "smoke_b")], by_key[("CohortA", "smoke")]])
+    sub = build_substrate([big, small], min_cluster_size=15, n_fields=len(field_refs))
+
+    uncapped = harmonize_leanb(embedded, substrate=sub, generate=None)
+    assert len(uncapped.ideal_prompts) == 2
+
+    capped = harmonize_leanb(embedded, substrate=sub, generate=None, max_clusters=1)
+    assert len(capped.ideal_prompts) == 1
+    kept = capped.ideal_prompts[0]
+    assert len(kept.context["members"]) == 3  # the larger unit survived, not merely the first one

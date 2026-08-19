@@ -115,6 +115,41 @@ def check_cli_entry_point(expected: str) -> None:
         raise SmokeTestError(f"`ddharmon --version` output {result.stdout.strip()!r} missing {expected!r}")
 
 
+def check_public_surface() -> None:
+    """Assert the affordances this release's changelog claims are really in the installed wheel.
+
+    A changelog can claim an argument the wheel does not have; a consumer that feature-detects with
+    ``inspect.signature`` would then silently degrade instead of failing. These are the names downstream
+    callers guard on, plus ``max_clusters`` — a keyword whose only consumer is this package's own CLI, and
+    therefore the one a forward-port can delete without any other test noticing.
+
+    Needs the optional extras, because importing the harmonization package pulls in scipy; reported as a
+    skip in core mode rather than a failure, since a core-only install is a legitimate install shape.
+    """
+    import inspect
+
+    try:
+        from ddharmon.harmonization.leanb import (  # noqa: F401
+            STOP_AFTER_BOUNDARIES,
+            assemble_coherence_verdicts,
+            harmonize_leanb,
+            propagate_coherence_review,
+            readjudicate,
+        )
+    except ImportError as exc:
+        if exc.name in {"scipy", "sklearn", "umap", "bertopic", "sentence_transformers", "torch"}:
+            print(f"    (skipped: needs `ddharmon[all]` — missing {exc.name})")
+            return
+        raise SmokeTestError(f"public surface missing from the installed wheel: {exc}") from exc
+
+    params = inspect.signature(harmonize_leanb).parameters
+    for kw in ("stop_after", "concept_gate", "max_clusters"):
+        if kw not in params:
+            raise SmokeTestError(f"harmonize_leanb is missing the {kw!r} keyword in the installed wheel")
+    if STOP_AFTER_BOUNDARIES != ("gencde",):
+        raise SmokeTestError(f"STOP_AFTER_BOUNDARIES is {STOP_AFTER_BOUNDARIES!r}, expected ('gencde',)")
+
+
 # --- optional deep check ---------------------------------------------------
 
 
@@ -172,6 +207,7 @@ def main(argv: list[str] | None = None) -> int:
     _run_check("value-encoding parsing", check_value_encoding, failures)
     _run_check("ingestion + preprocessing on toy data", check_ingestion, failures)
     _run_check("CLI entry point (ddharmon --version)", lambda: check_cli_entry_point(args.expected), failures)
+    _run_check("public surface (signature + coherence entry points)", check_public_surface, failures)
 
     if args.full:
         _run_check("full embed->cluster->anchor pipeline", check_full_pipeline, failures)

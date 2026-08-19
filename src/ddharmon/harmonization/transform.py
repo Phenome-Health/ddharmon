@@ -29,6 +29,7 @@ from ddharmon.harmonization.models import LeanBRecord, TransformKind, TransformS
 from ddharmon.harmonization.parse import extract_json
 from ddharmon.harmonization.pipeline import PromptRecord
 from ddharmon.harmonization.positional import detect_positional_enumeration, signature
+from ddharmon.harmonization.selection import select_records
 from ddharmon.harmonization.substrate import content_token
 from ddharmon.matching.confidence import TransformConfidenceConfig, score_transform_spec
 from ddharmon.models.data_dictionary import Field, ResponseOption
@@ -1399,8 +1400,14 @@ def export_transform_review(
     path: str | Path,
     *,
     model_tag: str = DEFAULT_MODEL_TAG,
+    select: object = None,
 ) -> int:
     """Export the transform specs as an EITL ``transform_review`` campaign (importable pair contract).
+
+    ``select`` scopes the export to the concepts a user marked (see
+    :mod:`ddharmon.harmonization.selection`): pass the edited ``list[ExportConcept]`` table, a set of
+    ``group_id``/``cluster_id`` ids, a ``{id: keep}`` mapping, or a ``predicate(record) -> bool``. ``None``
+    (default) exports every concept — the lean output comes from marking, not from this call.
 
     Emits the A->B fields the EITL importer enforces — ``source_text``/``source_id``/``source_dataset`` /
     ``target_text``/``target_id``/``target_dataset``/``pair_type`` (+ ``llm_reasoning``/``llm_model``/
@@ -1421,6 +1428,7 @@ def export_transform_review(
 
     Per-source-encoding dedup (family collapse) is a later refinement.
     """
+    records = select_records(records, select)
     field_lookup = build_field_lookup(embedded_dicts)
     rows: list[dict] = []
     for rec in records:

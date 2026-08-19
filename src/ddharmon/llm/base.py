@@ -64,3 +64,16 @@ class BaseLLMClient(ABC):
             f"{type(self).__name__} does not implement complete(). "
             "Override complete() to enable generic LLM calls (e.g., cluster labeling)."
         )
+
+    def drain_usage(self) -> list:
+        """Return and clear the token-usage records accumulated since the last drain.
+
+        Concrete clients that can read the provider's usage block append a
+        :class:`~ddharmon.llm.cost.TokenUsage` per call to ``self.usage_log``; cost accounting drains this
+        after each stage to attribute realized spend. Clients that don't track usage return ``[]``.
+        """
+        log = getattr(self, "usage_log", None)
+        if not log:
+            return []
+        self.usage_log = []
+        return log

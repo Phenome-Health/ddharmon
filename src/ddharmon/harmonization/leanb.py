@@ -28,11 +28,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -41,16 +43,27 @@ from ddharmon.embedding.service import EmbeddedDictionary
 from ddharmon.harmonization.anchor import CDE_COHORT, build_field_lookup
 from ddharmon.harmonization.leanb_prompts import (
     ASSIGN_SCHEMA,
+    COHERENCE_SCHEMA,
     IDEAL_SCHEMA,
+    KINDS_TOOL_NAME,
+    KINDS_TOOL_SCHEMA,
     SPLIT_SCHEMA,
+    SPLIT_TOOL_NAME,
+    SPLIT_TOOL_SCHEMA,
+    SYS_COHERENCE,
+    SYS_KINDS,
+    SYS_READJUDICATE,
+    build_coherence_user_prompt,
     build_group_assign_user_prompt,
     build_ideal_user_prompt,
+    build_kinds_user_prompt,
+    build_readjudicate_user_prompt,
     build_split_user_prompt,
     generate_ideal_system_prompt,
     group_reassign_system_prompt,
     split_system_prompt,
 )
-from ddharmon.harmonization.models import CandidateCDE, GenCDE, LeanBRecord
+from ddharmon.harmonization.models import CandidateCDE, ConceptGroup, GenCDE, LeanBRecord
 from ddharmon.harmonization.parse import extract_json
 from ddharmon.harmonization.pipeline import PromptRecord
 from ddharmon.harmonization.substrate import (
@@ -62,8 +75,15 @@ from ddharmon.harmonization.substrate import (
 from ddharmon.matching import BM25, hybrid_topk, tokenize
 from ddharmon.models.cluster import FieldCluster, FieldReference
 from ddharmon.models.data_dictionary import Field
+from ddharmon.text_hygiene import CDE_TEXT_BOILERPLATE, is_sentinel_label, strip_sentinel_encodings
 
 logger = logging.getLogger(__name__)
+
+# Prompt-hygiene ablation hook: the SHIPPED default is ON (drop missing/refused/DK sentinels from the
+# concept-identity prompt route; the ingestion admin-text strip is separately default-on). Set
+# DDHARMON_PROMPT_HYGIENE=0 ONLY to reproduce pre-hygiene behavior for a validation A/B — production
+# never sets it. Read once at import; the calibration/subset harness reads the same var for admin-text.
+_PROMPT_HYGIENE = os.environ.get("DDHARMON_PROMPT_HYGIENE", "1") != "0"
 
 DEFAULT_MODEL_TAG = "claude-sonnet-4-6"
 DEFAULT_TOP_K = 20  # wide pool for the assignment engine
@@ -80,33 +100,36 @@ DEFAULT_ADOPT_FLOOR = 0.55
 MAX_SHOW = 45  # members shown to the split LLM in one call (~the reliable-enumeration limit; M2 Phase 2a
 # raised this from 22 — the old cap truncated 68% of clusters before the LLM ever saw them. Clusters larger
 # than this are chunked by `chunk_oversized` so every unit is shown in full; tunable in the 2b A/B run.
+SPLIT_ENFORCE_MAX_TOKENS = 4096  # M15: output budget for the ENFORCED split tool-call; the structured JSON
+# for a full partition of a large cluster overflows the 1024 stage default (observed empty {} at 1024 on the
+# 25-member BP cluster). 4096 covers a chunk_cap(45)-member partition with headroom.
 _SAMPLE_MEMBERS = 5  # members in the generate-ideal / per-group sample line
 _CAND_TRUNC = 170
 _MEMBER_TRUNC = 200  # retrieval member text (lean, concept-only — value codes are noise in BM25/dense)
 _VALUE_ENC_TRUNC = 240  # cap the source value-set string fed into a prompt (CLSA country lists etc. are long)
 _MEMBER_PROMPT_TRUNC = 420  # prompt-side member text: concept + symbolic value metadata (richer than retrieval)
 
-# M5 index hygiene (opt-in): generic survey/CDE instruction boilerplate that carries no concept signal but
-# pollutes BM25 (spurious lexical hits) and the candidate block shown to the assign LLM. These are UNIVERSAL
-# data-collection artifacts (interviewer/skip-logic/multi-select instructions), NOT cohort-specific — the
-# audit's worst case was ethnicity matching a CDE whose only distinctive text was "READ IF NECESSARY" @0.45.
-# Matched case-insensitively as whole phrases; extend generically, do not add cohort-specific terms.
-CDE_TEXT_BOILERPLATE = (
-    "read if necessary",
-    "do not read",
-    "read out",
-    "read all that apply",
-    "select all that apply",
-    "check all that apply",
-    "mark all that apply",
-    "choose all that apply",
-    "select one",
-    "if necessary",
-    "for office use only",
-    "office use only",
-    "see instructions",
-    "please specify",
-)
+# Dual-sample coherence judge. k1 centroid-CLOSEST members anchor the summary; k2 centroid-FURTHEST
+# members verify it (DISJOINT — the fix for the self-fulfilling same-sample verification of the published
+# cluster-refinement method this stage builds on).
+COHERENCE_K1 = 5  # fixed core sample (centroid-closest) for the summary
+COHERENCE_K2_FLOOR = 5  # min periphery sample
+COHERENCE_K2_CEILING = 20  # max periphery sample (token budget + diminishing returns)
+COHERENCE_MIN_MEMBERS = COHERENCE_K1 + 1  # groups smaller than this are trivially coherent -> not judged
+# The VOLUNTARY stop boundaries `harmonize_leanb(stop_after=...)` accepts. Each name means "this stage
+# COMPLETED — stop before the next one", which is the opposite reading from the unset-callable early
+# returns (those are named for the stage that has NOT run and hand back its prompts). Deliberately ONE
+# name: a string parameter can learn another accepted value without breaking a caller, so a boundary is
+# added when a consumer actually needs it. An unrecognised value RAISES — a silent no-op would run the
+# whole paid pipeline past the stop the caller asked for.
+STOP_AFTER_BOUNDARIES: tuple[str, ...] = ("gencde",)
+_COH_TEXT_TRUNC = 1000  # per-member text shown to the judge. Raised from 200: the old cap cut long
+# descriptions mid-sentence (instrument-administration preambles are routinely longer than that) before the
+# judge ever saw them.
+
+# M5 index hygiene (opt-in): generic survey/CDE instruction boilerplate is now defined once in
+# :mod:`ddharmon.text_hygiene` (:data:`CDE_TEXT_BOILERPLATE`, imported above and re-exported here for
+# back-compat) so ingestion, the prompts, and the calibration tooling share one cohort-agnostic list.
 # An opaque catalog code (leading designation token) — mostly caps/digits/underscores, no lowercase word.
 _OPAQUE_CODE_RE = re.compile(r"^[A-Z0-9][A-Z0-9_\-.]{2,}$")
 _BOILERPLATE_RE = re.compile("|".join(re.escape(p) for p in CDE_TEXT_BOILERPLATE), re.IGNORECASE)
@@ -176,13 +199,23 @@ def _member_text(fld: Field | None, ref: FieldReference) -> str:
     return _aug_text(ref.variable_name, _base_member_text(fld, ref))
 
 
-def _value_set_text(fld: Field) -> str:
-    """Readable source value set for a prompt: the raw encoding, else reconstructed from parsed options."""
+def _value_set_text(fld: Field, *, drop_sentinels: bool = False) -> str:
+    """Readable source value set for a prompt: the raw encoding, else reconstructed from parsed options.
+
+    ``drop_sentinels`` (default False) removes missing/refused/don't-know sentinel options (e.g.
+    ``-9=MISSING``, ``-3=Prefer not to answer``) so a field whose ONLY encoding is a sentinel renders
+    empty (read as numeric, not a single-option categorical). It is ON for the concept-identity route
+    (:func:`_member_prompt_text` → judge / gen-ideal / split / assign) and OFF for spec-gen
+    (``transform.py``), which needs the missing codes to author value-recode transforms.
+    """
     raw = (fld.value_encoding_raw or "").strip()
     if raw:
-        return raw
+        return strip_sentinel_encodings(raw) if drop_sentinels else raw
     if fld.response_options:
-        return "|".join(f"{ro.code}={ro.label}" for ro in fld.response_options)
+        opts = fld.response_options
+        if drop_sentinels:
+            opts = [ro for ro in opts if not is_sentinel_label(ro.label)]
+        return "|".join(f"{ro.code}={ro.label}" for ro in opts)
     return ""
 
 
@@ -202,7 +235,11 @@ def _member_prompt_text(fld: Field | None, ref: FieldReference) -> str:
         extras.append(f"type {fld.data_type.strip()}")
     if fld.units and fld.units.strip():
         extras.append(f"units {fld.units.strip()}")
-    values = _value_set_text(fld)
+    # drop_sentinels: missing/refused/DK codes are noise for the concept-identity stages this text feeds
+    # (gen-ideal / split / assign / coherence judge) — a numeric field encoded only as `-9=MISSING` should
+    # read as numeric, not a single-option categorical. spec-gen sources values separately (keeps them).
+    # Gated on the _PROMPT_HYGIENE ablation hook (shipped ON; =0 only to reproduce pre-hygiene for an A/B).
+    values = _value_set_text(fld, drop_sentinels=_PROMPT_HYGIENE)
     if values:
         extras.append(f"values: {values[:_VALUE_ENC_TRUNC]}")
     return f"{base} [{'; '.join(extras)}]" if extras else base
@@ -254,16 +291,25 @@ class LeanBResult:
     ``ideal_prompts`` are populated when the generate stage has not run inline (export for Batch);
     ``split_prompts`` when generate has run but split has not; ``group_assign_prompts`` when split has run
     but the per-group assign has not. ``records`` are the final per-group decisions.
+
+    ``concept_groups`` are the post-split groups those per-group assign prompts describe — the shape that
+    exists once ``split`` has run and before ``classify`` has decided anything. They carry the coherence
+    judge's verdicts (stamped pre-assign), so a caller that stopped at the ``classify=None`` boundary can
+    render each group's coherence state without paying for assign.
     """
 
     records: list[LeanBRecord] = field(default_factory=list)
     ideal_prompts: list[PromptRecord] = field(default_factory=list)
     split_prompts: list[PromptRecord] = field(default_factory=list)
     group_assign_prompts: list[PromptRecord] = field(default_factory=list)
+    concept_groups: list[ConceptGroup] = field(default_factory=list)  # post-split groups, judged pre-assign
     merge_prompts: list[PromptRecord] = field(default_factory=list)  # M2 cross-record merge — Batch export
     specgen_prompts: list[PromptRecord] = field(default_factory=list)  # stage 4 (transform specs) — Batch export
     gencde_prompts: list[PromptRecord] = field(default_factory=list)  # novel -> GenCDE synthesis — Batch export
     concept_gate_prompts: list[PromptRecord] = field(default_factory=list)  # M7 concept-match gate — Batch export
+    coherence_prompts: list[PromptRecord] = field(default_factory=list)  # step-2 coherence judge — Batch export
+    kinds_prompts: list[PromptRecord] = field(default_factory=list)  # R2 distinct-KINDS discriminator — Batch export
+    refine_prompts: list[PromptRecord] = field(default_factory=list)  # refine -> derived CDE — Batch export
     substrate: ClusteringSubstrate | None = None  # the frozen clustering partition (save it to replay cheaply)
 
     def buckets(self) -> dict[str, list[LeanBRecord]]:
@@ -345,6 +391,7 @@ def prepare_leanb(
     model_tag: str = DEFAULT_MODEL_TAG,
     clean_cde_text: bool = False,
     measurand_split: bool = False,
+    debias_ideal: bool = False,
 ) -> list[PromptRecord]:
     """Retrieve candidates and build the stage-1 generate-ideal prompts (one per non-empty cluster).
 
@@ -357,6 +404,8 @@ def prepare_leanb(
     ``clean_cde_text`` (M5) applies :func:`_clean_cde_text` index hygiene to the CDE candidate pool.
     ``measurand_split`` (M11) appends the measurand-enumeration clause to the generate-ideal prompt so the
     seed does not bundle distinct measurands (systolic/diastolic/pulse) into one concept.
+    ``debias_ideal`` (M13) selects the de-biased generate-ideal variant (drops the "one concept" presumption;
+    enumerate distinct measurands/concepts as distinct ideals). Takes precedence over ``measurand_split``.
     """
     field_lookup = build_field_lookup(embedded_dicts)
     row_of = {(r.dictionary_name, r.variable_name): i for i, r in enumerate(field_refs)}
@@ -403,7 +452,7 @@ def prepare_leanb(
         records.append(
             PromptRecord(
                 id=f"leanb:ideal:{base['cluster_id']}",
-                system_prompt=generate_ideal_system_prompt(measurand_split),
+                system_prompt=generate_ideal_system_prompt(measurand_split, debias_ideal),
                 user_prompt=build_ideal_user_prompt(prompt_lines[:_SAMPLE_MEMBERS]),
                 schema=IDEAL_SCHEMA,
                 model_tag=model_tag,
@@ -422,6 +471,8 @@ def prepare_split(
     max_show: int = MAX_SHOW,
     representation_refine: bool = False,
     measurand_split: bool = False,
+    bundle_guard: bool = False,
+    enforce_schema: bool = False,
 ) -> list[PromptRecord]:
     """Build the stage-2 split-assign prompts from the generated ideals + the carried members/candidates.
 
@@ -433,8 +484,12 @@ def prepare_split(
     different encoding (banding/flag/composite/unit) routes to refine, not novel.
     ``measurand_split`` (M11) appends the measurand-axis clause so distinct quantities sharing one object
     (systolic vs diastolic BP vs pulse) are partitioned into separate groups instead of fused.
+    ``bundle_guard`` (M14) appends the bundling-candidate guard so a candidate bundling several measurands/
+    concepts does not license a shared adopt over a heterogeneous group (split first).
+    ``enforce_schema`` (M15) issues the split as a FORCED tool call (structurally guaranteed ``{groups:[…]}``
+    wrapper) instead of a soft text schema — eliminates the ~35% wrapper-drop that dropped residual members.
     """
-    sys_prompt = split_system_prompt(representation_refine, measurand_split)
+    sys_prompt = split_system_prompt(representation_refine, measurand_split, bundle_guard)
     records: list[PromptRecord] = []
     for rec in ideal_records:
         ctx = rec.context
@@ -450,6 +505,11 @@ def prepare_split(
                 schema=SPLIT_SCHEMA,
                 model_tag=model_tag,
                 context={**ctx, "ideal_cde": ideal_cde},
+                tool_schema=SPLIT_TOOL_SCHEMA if enforce_schema else None,
+                tool_name=SPLIT_TOOL_NAME if enforce_schema else None,
+                # Enforced tool-call JSON for a large cluster (up to chunk_cap members) overflows the 1024
+                # stage default -> truncated tool input -> 0 members (observed on the 25-member BP cluster).
+                max_tokens=SPLIT_ENFORCE_MAX_TOKENS if enforce_schema else None,
             )
         )
     logger.info("prepare_split: %d ideal prompts -> %d split prompts", len(ideal_records), len(records))
@@ -469,6 +529,7 @@ def prepare_group_assign(
     model_tag: str = DEFAULT_MODEL_TAG,
     clean_cde_text: bool = False,
     representation_refine: bool = False,
+    bundle_guard: bool = False,
 ) -> list[PromptRecord]:
     """Parse the split groups and build one per-group, re-retrieved single-concept assign prompt.
 
@@ -479,10 +540,11 @@ def prepare_group_assign(
 
     ``clean_cde_text`` (M5) cleans the per-group candidate pool; ``representation_refine`` (M4) appends the
     representation-mismatch clause to the per-group assign prompt.
+    ``bundle_guard`` (M14) appends the bundling-candidate guard to the per-group assign prompt.
     """
     field_lookup = build_field_lookup(embedded_dicts)
     backbone = _build_backbone(embedded_dicts, field_lookup, cde_cohort, cde_dict, clean_text=clean_cde_text)
-    sys_prompt = group_reassign_system_prompt(representation_refine)
+    sys_prompt = group_reassign_system_prompt(representation_refine, bundle_guard)
     row_of = {(r.dictionary_name, r.variable_name): i for i, r in enumerate(field_refs)}
 
     records: list[PromptRecord] = []
@@ -656,6 +718,655 @@ def assemble_leanb(
     return LeanBResult(records=records, group_assign_prompts=group_assign_records)
 
 
+def concept_groups_from_prompts(group_assign_records: list[PromptRecord]) -> list[ConceptGroup]:
+    """Materialize the post-split concept groups the per-group assign prompts describe — $0, no LLM.
+
+    One :class:`~.models.ConceptGroup` per assign prompt, read straight out of the prompt's own context.
+    This is the shape that exists between ``split`` and ``classify``: the split stage has partitioned every
+    cluster into distinct concepts, but nothing has assigned any of them a CDE yet. It is what the coherence
+    judge's verdict pass runs on, and what a caller pausing at the ``classify=None`` boundary renders.
+
+    Deterministic and order-preserving: group ``i`` here corresponds to ``group_assign_records[i]``, hence to
+    ``assemble_leanb``'s record ``i``. :func:`transfer_coherence_verdicts` relies only on the ids, not the
+    order, so a merge or a residual sweep between the two cannot mis-pair them.
+    """
+    groups: list[ConceptGroup] = []
+    for rec in group_assign_records:
+        ctx = rec.context
+        groups.append(
+            ConceptGroup(
+                cluster_id=ctx["cluster_id"],
+                group_id=ctx.get("group_id", ""),
+                concept=ctx.get("concept", ""),
+                ideal_cde=ctx.get("ideal_cde", ""),
+                top1_cos=ctx.get("top1_cos"),
+                member_variable_names=list(ctx.get("member_variable_names", [])),
+                cohorts=list(ctx.get("cohorts", [])),
+                cross_cohort=bool(ctx.get("cross_cohort", False)),
+                n_members=int(ctx.get("n_members", 0)),
+            )
+        )
+    return groups
+
+
+# ── step 2: dual-sample coherence judge (post-SPLIT, pre-assign; read-only) ───────────────────────
+#
+# The judge runs in TWO passes, and the order matters:
+#
+#   1. the VERDICT pass (:func:`assemble_coherence_verdicts`) — after ``split``, before ``classify``, at
+#      the judge's native post-split concept-group granularity. It stamps the verdict fields AND the hard
+#      ``incoherent`` flag, both of which are pure functions of the judge response with no dependence on
+#      anything the assign stage produces. A caller that pauses at the ``classify=None`` boundary can
+#      therefore render a group's coherence state without having paid for assign.
+#   2. the PROPAGATION pass (:func:`propagate_coherence_review`) — after specgen / gencde, because
+#      ``needs_review`` lands on ``rec.transforms`` and ``rec.gencde``, and neither exists before then.
+#
+# :func:`transfer_coherence_verdicts` bridges the two: it copies pass 1's verdicts from the pre-record
+# :class:`~.models.ConceptGroup` shapes onto the real records the moment :func:`assemble_leanb` builds
+# them. :func:`assemble_coherence` survives as a thin wrapper running both passes back to back.
+#
+# The R2 distinct-KINDS discriminator (:func:`prepare_kinds`) reads ``LeanBRecord`` fields and therefore
+# stays where it is, AFTER :func:`assemble_leanb` — it cannot move early with the verdict pass.
+
+
+@runtime_checkable
+class CoherenceTarget(Protocol):
+    """The structural shape the coherence judge reads and stamps.
+
+    Satisfied by both :class:`~.models.ConceptGroup` (the pre-record, post-split group the verdict pass
+    actually runs on) and :class:`~.models.LeanBRecord` (the post-assign record the shipped
+    :func:`assemble_coherence` wrapper still accepts). Declared structurally rather than as a concrete
+    class so the verdict pass is testable against a hand-built shape and so the pass provably cannot
+    touch a record's route or assignment verdict — neither is in this protocol.
+    """
+
+    cluster_id: str
+    group_id: str
+    member_variable_names: list[str]
+    n_members: int
+    matrix_suspect: bool
+    coherent: bool
+    coherence_verdict: str
+    coherence_summary: str
+    coherence_axis: str
+    coherence_distinct_values: list[str]
+    coherence_outliers: list[str]
+    incoherent: bool
+
+
+def _adaptive_k2(n: int) -> int:
+    """Periphery sample size: 20% of the group clipped to [floor, ceiling]; small groups take the remainder.
+
+    ``(n + 4) // 5 == ceil(0.2 * n)`` (integer, no float).
+    """
+    if n < 10:
+        return max(1, n - COHERENCE_K1)
+    return min(COHERENCE_K2_CEILING, max(COHERENCE_K2_FLOOR, (n + 4) // 5))
+
+
+def _dual_sample(rows: list[int], embeddings: NDArray[np.float32]) -> tuple[list[int], list[int]] | None:
+    """Split a group's member rows into (k1 centroid-closest, k2 centroid-furthest) DISJOINT local indices.
+
+    "Centroid" is the cosine MEDOID (the member most similar to all others) — robust to the off-concept
+    boundary members we are trying to surface. Returns local indices into ``rows``, or ``None`` when the
+    group is too small to judge (< :data:`COHERENCE_MIN_MEMBERS`). The disjoint k1/k2 sampling is the fix
+    for the self-fulfilling verification of the published method (same closest-sample summarizes AND verifies).
+    """
+    if len(rows) < COHERENCE_MIN_MEMBERS:
+        return None
+    embs = embeddings[rows]
+    norms = np.linalg.norm(embs, axis=1, keepdims=True)
+    embs_n = embs / np.where(norms == 0, 1.0, norms)
+    sim = embs_n @ embs_n.T
+    medoid = int(np.argmax(sim.sum(axis=1)))
+    order = np.argsort(1.0 - sim[medoid]).tolist()  # closest-to-medoid first
+    k1_idx = order[:COHERENCE_K1]
+    k1_set = set(k1_idx)
+    k2_idx = [i for i in reversed(order) if i not in k1_set][: _adaptive_k2(len(rows))]
+    return k1_idx, k2_idx
+
+
+def _matrix_skeleton(tokens: list[str], df: dict[str, int], rare_cut: int) -> tuple[str, int]:
+    """Collapse a member's tokens to a TEMPLATE skeleton (contiguous varying-slot tokens -> one '·' marker).
+
+    Returns ``(skeleton, n_template_tokens)``. A token is a varying SLOT if it is a digit or appears in
+    ``<= rare_cut`` members (document frequency); everything else is stable template.
+    """
+    sk: list[str] = []
+    kept = 0
+    prev_slot = False
+    for t in tokens:
+        if t.isdigit() or df.get(t, 0) <= rare_cut:
+            if not prev_slot:
+                sk.append("·")
+            prev_slot = True
+        else:
+            sk.append(t)
+            kept += 1
+            prev_slot = False
+    return " ".join(sk), kept
+
+
+def _matrix_suspect(texts: list[str], *, min_template_coverage: float = 0.45, min_members: int = 2) -> bool:
+    """$0 deterministic pre-filter: True when ``>= min_members`` texts collapse to one template skeleton.
+
+    Vocabulary-agnostic frequent-template/rare-slot detector for matrix groups (one question template ×
+    many entity fillers — "seeing a provider for {condition}", "reading {N}"). High precision, cheap; an
+    OPTIONAL pre-filter / triage sort, NOT the primary coherence mechanism (that is the LLM judge).
+    """
+    texts = [t for t in texts if t]
+    if len(texts) < min_members:
+        return False
+    tok = [re.findall(r"[a-z]+|\d+", t.lower()) for t in texts]
+    df: dict[str, int] = defaultdict(int)
+    for ts in tok:
+        for w in set(ts):
+            df[w] += 1
+    rare_cut = max(1, len(texts) // 10)  # a slot filler appears in <= 10% of members
+    skel: dict[str, int] = defaultdict(int)
+    for ts in tok:
+        if not ts:
+            continue
+        sk, kept = _matrix_skeleton(ts, df, rare_cut)
+        if kept / len(ts) >= min_template_coverage:  # ignore mostly-slot members
+            skel[sk] += 1
+    return any(c >= min_members for c in skel.values())
+
+
+def prepare_coherence(
+    records: Sequence[CoherenceTarget],
+    embedded_dicts: list[EmbeddedDictionary],
+    embeddings: NDArray[np.float32],
+    field_refs: list[FieldReference],
+    *,
+    model_tag: str = DEFAULT_MODEL_TAG,
+    pre_filter: bool = True,
+) -> list[PromptRecord]:
+    """Build one read-only coherence-judge prompt per group large enough to judge (>= 6 members).
+
+    Accepts anything satisfying :class:`CoherenceTarget` — the pre-record
+    :class:`~.models.ConceptGroup` (the post-split shape the pipeline judges) or a
+    :class:`~.models.LeanBRecord` (the shipped post-assign call path). It reads only member names, member
+    count and the group/cluster ids, all of which the split stage has already produced, so the judge needs
+    no assign-stage data.
+
+    Dual-samples each group's members (k1 centroid-closest core / k2 centroid-furthest periphery) from the
+    frozen ``embeddings`` and renders each sampled member as ``cohort:var — <concept text>`` (the lean,
+    value-free retrieval text — value codes are geometric noise). Groups below
+    :data:`COHERENCE_MIN_MEMBERS` get NO prompt and are left EXPLICITLY UNJUDGED (``coherence_verdict``
+    stays ``""`` — never ``"single"``). When ``pre_filter`` is set, the deterministic matrix detector
+    is stamped on ``matrix_suspect`` here (a $0 signal independent of the LLM).
+    :func:`assemble_coherence_verdicts` folds the LLM verdicts back on.
+    """
+    field_lookup = build_field_lookup(embedded_dicts)
+    row_of = {(r.dictionary_name, r.variable_name): i for i, r in enumerate(field_refs)}
+
+    def member_key(fid: str) -> tuple[str, str]:
+        cohort, _, var = fid.partition(":")
+        return cohort, var
+
+    prompts: list[PromptRecord] = []
+    for rec in records:
+        resolved = [(f, row_of[member_key(f)]) for f in rec.member_variable_names if member_key(f) in row_of]
+        rows = [row for _, row in resolved]
+        fids = [f for f, _ in resolved]
+        texts = [
+            _member_text(field_lookup.get(member_key(f)), field_refs[row])[:_COH_TEXT_TRUNC] for f, row in resolved
+        ]
+        if pre_filter:
+            rec.matrix_suspect = _matrix_suspect(texts)
+        sample = _dual_sample(rows, embeddings)
+        if sample is None:
+            continue  # group too small to judge -> stays coherent by default
+        k1_idx, k2_idx = sample
+        core = [f"{fids[i]} — {texts[i]}" for i in k1_idx]
+        periphery = [f"{fids[i]} — {texts[i]}" for i in k2_idx]
+        prompts.append(
+            PromptRecord(
+                id=f"leanb:coherence:{rec.group_id or rec.cluster_id}",
+                system_prompt=SYS_COHERENCE,
+                user_prompt=build_coherence_user_prompt(rec.n_members, core, periphery),
+                schema=COHERENCE_SCHEMA,
+                model_tag=model_tag,
+                context={
+                    "group_id": rec.group_id,
+                    "cluster_id": rec.cluster_id,
+                    "periphery_fids": [fids[i] for i in k2_idx],
+                },
+            )
+        )
+    logger.info(
+        "prepare_coherence: %d records -> %d judge prompts (groups >= %d members)",
+        len(records),
+        len(prompts),
+        COHERENCE_MIN_MEMBERS,
+    )
+    return prompts
+
+
+def _parse_coherence(resp: object) -> dict | None:
+    if resp is None:
+        return None
+    try:
+        payload = extract_json(resp if isinstance(resp, str) else json.dumps(resp))
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _coherence_key(cluster_id: str, group_id: str) -> str:
+    """The judge's fold key: the concept group when there is one, else the cluster.
+
+    Mirrors the prompt id (``leanb:coherence:{group_id or cluster_id}``) so the fold cannot miss an item
+    the prompt was built for. The predecessor keyed on ``group_id`` alone and SILENTLY DROPPED any item
+    carrying only ``cluster_id`` — the verdict vanished with no error. The judge's operating granularity is
+    still the post-split concept group; this fallback is a no-silent-drop guard, not a second granularity.
+    """
+    return group_id or cluster_id
+
+
+def assemble_coherence_verdicts(
+    coherence_records: list[PromptRecord],
+    responses: dict[str, object],
+    targets: Sequence[CoherenceTarget],
+) -> Sequence[CoherenceTarget]:
+    """Fold the dual-sample judge verdicts onto the judged groups — FLAG, never gate.
+
+    Pass 1 of 2 (see the section header). Runs after ``split`` and BEFORE ``classify``, on the post-split
+    :class:`~.models.ConceptGroup` shapes, so a caller pausing at the ``classify=None`` boundary already has
+    every field below. Sets ``coherent`` / ``coherence_verdict`` / ``coherence_summary`` /
+    ``coherence_axis`` / ``coherence_distinct_values`` / ``coherence_outliers`` on each judged group.
+
+    The HARD flag ``incoherent`` (→ ``needs_review`` on the recodes / GenCDE, surfaced for human
+    re-adjudication) is stamped HERE, by the verdict pass — it is a pure function of the verdict with no
+    dependence on post-assign state, and a reviewer screen that renders before assign must be able to show
+    it. Deferring it to :func:`propagate_coherence_review` would make every pre-assign row read as coherent.
+
+    It fires ONLY on ``verdict == "split"`` — a group too varied to be one concept even as a one-slot
+    template. Calibrated on the held-out 5-cohort run: treating ``qualify`` as a
+    hard flag over-fired 46% (coherent concepts that merely carry a value/qualifier axis — "milk
+    consumption *by fat content*", PHQ/GAD items); ``split`` alone is the precise 14% over-merge signal.
+    ``qualify`` is therefore an ADVISORY — its ``axis`` + ``distinct_values`` ARE the CDE × qualifier
+    value-set hint, recorded but NOT ``needs_review``. ``coherent`` false + the flagged
+    ``coherence_outliers`` stay a secondary signal.
+
+    A group with no response, an unparseable response or a response carrying no usable verdict is left
+    EXPLICITLY UNJUDGED (``coherence_verdict == ""``) and never resolves to ``"single"`` — the same state a
+    sub-threshold group is left in, so "not judged" is never rendered as "judged coherent". Parse failures
+    degrade rather than raise, so a malformed judge response cannot unwind a paid run.
+
+    The group's route and assignment verdict are LEFT UNCHANGED — neither is even reachable through
+    :class:`CoherenceTarget`. The pipeline NEVER silently re-splits an over-merged group (the cure is the
+    human loop).
+    """
+    by_group = {_coherence_key(t.cluster_id, t.group_id): t for t in targets}
+    for cr in coherence_records:
+        payload = _parse_coherence(responses.get(cr.id))
+        if payload is None:
+            continue
+        gid = cr.context.get("group_id") or cr.context.get("cluster_id")
+        rec = by_group.get(gid) if isinstance(gid, str) else None
+        if rec is None:
+            continue
+        gran = payload.get("granularity")
+        gran = gran if isinstance(gran, dict) else {}
+        verdict = str(gran.get("verdict", "")).strip().lower()
+        rec.coherent = bool(payload.get("coherent", True))
+        rec.coherence_summary = str(payload.get("summary", ""))
+        rec.coherence_verdict = verdict if verdict in ("single", "qualify", "split") else ""
+        axis = gran.get("axis")
+        rec.coherence_axis = "" if axis in (None, "null", "") else str(axis)
+        dv = gran.get("distinct_values")
+        rec.coherence_distinct_values = [str(x) for x in dv] if isinstance(dv, list) else []
+        periphery_fids = cr.context.get("periphery_fids", [])
+        positions: list[int] = []
+        for x in payload.get("outliers", []) if isinstance(payload.get("outliers"), list) else []:
+            try:
+                positions.append(int(x))
+            except (TypeError, ValueError):
+                continue
+        rec.coherence_outliers = [periphery_fids[i - 1] for i in positions if 1 <= i <= len(periphery_fids)]
+        # RECALIBRATED on the held-out 5-cohort run: ONLY `split` is a hard flag. `qualify` is advisory (over-fired 46%
+        # on coherent-with-qualifier groups); `coherent`/`coherence_outliers` are a secondary signal.
+        rec.incoherent = rec.coherence_verdict == "split"
+    return targets
+
+
+_COHERENCE_VERDICT_FIELDS = (
+    "coherent",
+    "coherence_verdict",
+    "coherence_summary",
+    "coherence_axis",
+    "coherence_distinct_values",
+    "coherence_outliers",
+    "incoherent",
+    "matrix_suspect",
+)
+
+
+def transfer_coherence_verdicts(
+    groups: Sequence[CoherenceTarget],
+    records: list[LeanBRecord],
+) -> list[LeanBRecord]:
+    """Copy the early verdict pass's output from the pre-record groups onto the assembled records.
+
+    The bridge between the two judge passes. :func:`assemble_coherence_verdicts` runs before ``classify``,
+    so it stamps :class:`~.models.ConceptGroup` shapes; :func:`assemble_leanb` then builds the real
+    :class:`~.models.LeanBRecord` objects from the same per-group assign prompts. Without this step the
+    verdicts would be stranded on the groups and every record would read as unjudged — which is exactly the
+    silent "unjudged rendered as coherent" failure the judge's own contract forbids.
+
+    Matched on :func:`_coherence_key` (group id, cluster id as fallback), so a one-identifier item is not
+    dropped. Copies the verdict fields and the $0 ``matrix_suspect`` pre-filter, and NOTHING else — it does
+    not propagate ``needs_review`` (that is :func:`propagate_coherence_review`'s job, after specgen) and it
+    does not touch the record's verdict or route. Idempotent: a replay re-copies the same values.
+    """
+    by_group = {_coherence_key(g.cluster_id, g.group_id): g for g in groups}
+    for rec in records:
+        grp = by_group.get(_coherence_key(rec.cluster_id, rec.group_id))
+        if grp is None:
+            continue
+        for name in _COHERENCE_VERDICT_FIELDS:
+            setattr(rec, name, getattr(grp, name))
+    return records
+
+
+def propagate_coherence_review(records: list[LeanBRecord]) -> list[LeanBRecord]:
+    """Land the hard coherence flag on the artifacts that only exist after assign — pass 2 of 2.
+
+    This is the ONLY part of the judge that depends on post-assign state: ``rec.transforms`` is populated
+    by the transform-spec stage and ``rec.gencde`` by the GenCDE stage, so neither exists when the verdict
+    pass runs. An ``incoherent`` record's recodes and GenCDE are marked ``needs_review`` — a recode into a
+    group that is not one concept is meaningless until a human re-adjudicates it.
+
+    IDEMPOTENT, because a resumed run may replay it: setting ``needs_review`` twice is the same as setting
+    it once, and a coherent record is never touched. Also safe to call when the judge never ran — no record
+    carries ``incoherent``, so it is a no-op. FLAG, never gate: verdict and route are left alone, and
+    nothing here re-groups anything.
+    """
+    for rec in records:
+        if not rec.incoherent:
+            continue
+        for t in rec.transforms:
+            t.needs_review = True
+        if rec.gencde is not None:
+            rec.gencde.needs_review = True
+    return records
+
+
+def assemble_coherence(
+    coherence_records: list[PromptRecord],
+    responses: dict[str, object],
+    records: list[LeanBRecord],
+) -> list[LeanBRecord]:
+    """Both judge passes back to back, on post-assign records — the shipped single-call entry point.
+
+    Retained verbatim in behaviour for the Batch/driver path and the notebooks, which fold the judge in one
+    step over finished records. New code inside the pipeline calls the two halves separately, because the
+    verdict pass has to run before ``classify`` and the propagation pass cannot
+    (:func:`assemble_coherence_verdicts`, :func:`propagate_coherence_review`).
+    """
+    assemble_coherence_verdicts(coherence_records, responses, records)
+    return propagate_coherence_review(records)
+
+
+# ── R2: distinct-KINDS discriminator over `qualify` groups (opt-in, ADDITIVE over the R0 split flag) ──
+# R0 (shipped default, set in assemble_coherence) flags only `split`. R2 additionally flags a `qualify`
+# group when this cheap second LLM read calls it `distinct_kinds` (genuinely different measurands sharing an
+# axis label) rather than `values_of_one_property` (one concept + a qualifier value-set). Validated on the
+# returned human pairwise gold — 100% recall on human-confirmed over-merges.
+_INT_RE = re.compile(r"^\s*-?\d+\s*$")
+
+
+def _is_positional(distinct_values: list[str]) -> bool:
+    """True when a majority of the judge's ``distinct_values`` are bare integers — an occurrence index /
+    repeating measure (numbered trials, Minnesota T-wave 1..8): one concept measured repeatedly, NEVER an
+    over-merge. R2 excludes these (reproduces the ``exclude_positional`` guard the rule was validated with;
+    discovered-not-hardcoded — keys on value SHAPE, no cohort/vocabulary specifics)."""
+    if len(distinct_values) < 2:
+        return False
+    bare = sum(1 for v in distinct_values if _INT_RE.match(str(v)))
+    return bare >= (len(distinct_values) + 1) // 2
+
+
+def prepare_kinds(records: list[LeanBRecord]) -> list[PromptRecord]:
+    """R2 — build a distinct-KINDS discriminator prompt for each ``qualify`` record.
+
+    Only ``qualify`` groups need it (``single`` is coherent; ``split`` is already R0-flagged). Positional /
+    repeating-measure groups are skipped ($0 exclusion → never flagged, and no wasted call). Reads the
+    coherence judge's own outputs (summary / axis / distinct_values) — so it MUST run after
+    :func:`assemble_coherence` has stamped them.
+    """
+    prompts: list[PromptRecord] = []
+    for rec in records:
+        if rec.coherence_verdict != "qualify" or _is_positional(rec.coherence_distinct_values):
+            continue
+        prompts.append(
+            PromptRecord(
+                id=f"leanb:kinds:{rec.group_id or rec.cluster_id}",
+                system_prompt=SYS_KINDS,
+                user_prompt=build_kinds_user_prompt(
+                    rec.coherence_summary, rec.coherence_axis, rec.coherence_distinct_values
+                ),
+                schema=json.dumps(KINDS_TOOL_SCHEMA),
+                model_tag=DEFAULT_MODEL_TAG,
+                context={"group_id": rec.group_id, "cluster_id": rec.cluster_id},
+                tool_schema=KINDS_TOOL_SCHEMA,
+                tool_name=KINDS_TOOL_NAME,
+            )
+        )
+    logger.info("prepare_kinds: %d qualify groups -> distinct-KINDS discriminator prompts (R2)", len(prompts))
+    return prompts
+
+
+def assemble_kinds(
+    kinds_prompts: list[PromptRecord],
+    responses: dict[str, object],
+    records: list[LeanBRecord],
+) -> list[LeanBRecord]:
+    """Fold the distinct-KINDS discriminator verdicts onto the records — R2 = R0 ∪ (qualify ∧ distinct_kinds).
+
+    A ``distinct_kinds`` verdict HARD-flags the qualify group (``incoherent=True`` + ``needs_review`` on its
+    recodes / GenCDE — the SAME escalation as a ``split``); ``values_of_one_property`` leaves it coherent.
+    ADDITIVE — never clears an existing R0 (``split``) flag. Stamps ``coherence_kind`` for audit. FLAG, never
+    gate: verdict/route are unchanged (the cure is the human re-adjudication loop, as with R0).
+
+    Folds on :func:`_coherence_key`, matching the prompt id ``leanb:kinds:{group_id or cluster_id}``. The
+    predecessor keyed on ``group_id`` alone while the prompt id already fell back to ``cluster_id``, so a
+    record carrying only ``cluster_id`` got a prompt built and paid for, and then had its verdict SILENTLY
+    discarded — the same no-silent-drop defect fixed in the coherence fold.
+    """
+    by_group = {_coherence_key(r.cluster_id, r.group_id): r for r in records}
+    for cr in kinds_prompts:
+        payload = _parse_coherence(responses.get(cr.id))  # generic tolerant JSON/tool-call parse
+        if payload is None:
+            continue
+        gid = cr.context.get("group_id") or cr.context.get("cluster_id")
+        rec = by_group.get(gid) if isinstance(gid, str) else None
+        if rec is None:
+            continue
+        kind = str(payload.get("kind", "")).strip().lower()
+        rec.coherence_kind = kind if kind in ("values_of_one_property", "distinct_kinds") else ""
+        if rec.coherence_kind == "distinct_kinds":
+            rec.incoherent = True
+            for t in rec.transforms:
+                t.needs_review = True
+            if rec.gencde is not None:
+                rec.gencde.needs_review = True
+    return records
+
+
+# ── re-adjudication: human-triggered re-split of a flagged over-merged group ──────────────────────
+
+
+def prepare_readjudicate(
+    flagged_records: list[LeanBRecord],
+    embedded_dicts: list[EmbeddedDictionary],
+    embeddings: NDArray[np.float32],
+    field_refs: list[FieldReference],
+    *,
+    cde_cohort: str = CDE_COHORT,
+    cde_dict: EmbeddedDictionary | None = None,
+    top_k: int = DEFAULT_TOP_K,
+    model_tag: str = DEFAULT_MODEL_TAG,
+    clean_cde_text: bool = False,
+    enforce_schema: bool = True,
+    desired_n: dict[str, int] | None = None,
+) -> list[PromptRecord]:
+    """Build one re-split prompt per FLAGGED over-merged record, to re-partition it into coherent concepts.
+
+    Reconstructs each flagged group's members (``member_variable_names`` -> embedding rows + text),
+    re-retrieves cluster-level CDE candidates, and builds a split-shaped :class:`PromptRecord` whose
+    ``context`` matches what :func:`prepare_group_assign` consumes — so re-adjudication reuses the normal
+    split -> per-group-assign machinery verbatim. The prompt carries the coherence judge's ``axis`` +
+    ``distinct_values`` as a hint and an optional per-group ``desired_n`` target. Each child's ids are
+    namespaced under the PARENT ``group_id`` (``context['cluster_id'] = parent.group_id``) so re-split
+    children are unique and traceable to the group they were carved from.
+    """
+    field_lookup = build_field_lookup(embedded_dicts)
+    backbone = _build_backbone(embedded_dicts, field_lookup, cde_cohort, cde_dict, clean_text=clean_cde_text)
+    row_of = {(r.dictionary_name, r.variable_name): i for i, r in enumerate(field_refs)}
+    desired_n = desired_n or {}
+
+    records: list[PromptRecord] = []
+    for rec in flagged_records:
+        members: list[dict] = []
+        for k, fid in enumerate(rec.member_variable_names, 1):
+            cohort, _, var = fid.partition(":")
+            key = (cohort, var)
+            if key not in row_of:
+                continue
+            fld = field_lookup.get(key)
+            ref = field_refs[row_of[key]]
+            members.append(
+                {
+                    "member_id": f"m{k}",
+                    "dictionary_name": cohort,
+                    "variable_name": var,
+                    "text": _member_text(fld, ref)[:_MEMBER_TRUNC],
+                    "prompt_text": _member_prompt_text(fld, ref)[:_MEMBER_PROMPT_TRUNC],
+                    "row": row_of[key],
+                }
+            )
+        if len(members) < 2:
+            continue  # nothing to re-partition
+        rows = [m["row"] for m in members]
+        cands, top1 = _retrieve(rows, [m["text"] for m in members], embeddings, backbone, top_k)
+        if not cands:
+            continue
+        parent_gid = rec.group_id or rec.cluster_id
+        numbered = [(m["member_id"], m["prompt_text"]) for m in members[:MAX_SHOW]]
+        ctx = {
+            "cluster_id": parent_gid,  # namespaces the child records under the parent group (traceable + unique)
+            "cohorts": rec.cohorts,
+            "cross_cohort": rec.cross_cohort,
+            "n_members": len(members),
+            "members": members,
+            "candidates": cands,
+            "top1_cos": round(top1, 4),
+            "ideal_cde": rec.ideal_cde,
+        }
+        records.append(
+            PromptRecord(
+                id=f"leanb:readjudicate:{parent_gid}",
+                system_prompt=SYS_READJUDICATE,
+                user_prompt=build_readjudicate_user_prompt(
+                    numbered,
+                    _numbered_candidate_block(cands),
+                    axis=rec.coherence_axis,
+                    distinct_values=rec.coherence_distinct_values,
+                    desired_n=desired_n.get(parent_gid),
+                ),
+                schema=SPLIT_SCHEMA,
+                model_tag=model_tag,
+                context=ctx,
+                tool_schema=SPLIT_TOOL_SCHEMA if enforce_schema else None,
+                tool_name=SPLIT_TOOL_NAME if enforce_schema else None,
+                max_tokens=SPLIT_ENFORCE_MAX_TOKENS if enforce_schema else None,
+            )
+        )
+    logger.info("prepare_readjudicate: %d flagged records -> %d re-split prompts", len(flagged_records), len(records))
+    return records
+
+
+def readjudicate(
+    result: LeanBResult,
+    embedded_dicts: list[EmbeddedDictionary],
+    embeddings: NDArray[np.float32],
+    field_refs: list[FieldReference],
+    *,
+    split: Callable[[list[PromptRecord]], dict[str, object]],
+    classify: Callable[[list[PromptRecord]], dict[str, object]],
+    group_ids: list[str] | None = None,
+    desired_n: dict[str, int] | None = None,
+    cde_cohort: str = CDE_COHORT,
+    cde_dict: EmbeddedDictionary | None = None,
+    top_k: int = DEFAULT_TOP_K,
+    model_tag: str = DEFAULT_MODEL_TAG,
+    clean_cde_text: bool = True,
+    representation_refine: bool = True,
+    enforce_schema: bool = True,
+    retrieval_floor: float = DEFAULT_RETRIEVAL_FLOOR,
+    adopt_floor: float | None = DEFAULT_ADOPT_FLOOR,
+) -> LeanBResult:
+    """Human-triggered re-adjudication: re-split flagged over-merged groups and splice children back in.
+
+    Selects the records to re-adjudicate (``group_ids`` if given, else every record with ``incoherent``),
+    re-splits each into distinct concepts, then re-retrieves + re-assigns each child (reusing
+    :func:`prepare_group_assign` + :func:`assemble_leanb`) and REPLACES each flagged parent in
+    ``result.records`` with its children (tagged ``readjudicated_from``). The pipeline never re-splits
+    automatically — the coherence flag is a suggestion; this pass runs only when a caller invokes it (the
+    workbench action / the driver), so ``split`` + ``classify`` are supplied by the caller (mirror
+    harmonize_leanb's stage callables). A parent that re-splits to a single group is effectively unchanged
+    (one child replaces it). The GenCDE/spec tail is NOT re-run here — the caller re-runs the standard
+    gencde/specgen stages over the updated ``result.records`` (the new novel children are picked up there).
+    """
+    selected = (
+        [r for r in result.records if r.incoherent]
+        if group_ids is None
+        else [r for r in result.records if r.group_id in set(group_ids)]
+    )
+    if not selected:
+        return result
+    readj_prompts = prepare_readjudicate(
+        selected,
+        embedded_dicts,
+        embeddings,
+        field_refs,
+        cde_cohort=cde_cohort,
+        cde_dict=cde_dict,
+        top_k=top_k,
+        model_tag=model_tag,
+        clean_cde_text=clean_cde_text,
+        enforce_schema=enforce_schema,
+        desired_n=desired_n,
+    )
+    if not readj_prompts:
+        return result
+    child_assign_prompts = prepare_group_assign(
+        readj_prompts,
+        split(readj_prompts),
+        embedded_dicts,
+        embeddings,
+        field_refs,
+        cde_cohort=cde_cohort,
+        cde_dict=cde_dict,
+        top_k=top_k,
+        model_tag=model_tag,
+        clean_cde_text=clean_cde_text,
+        representation_refine=representation_refine,
+    )
+    children = assemble_leanb(
+        child_assign_prompts, classify(child_assign_prompts), retrieval_floor=retrieval_floor, adopt_floor=adopt_floor
+    ).records
+    for c in children:
+        c.readjudicated_from = c.cluster_id  # prepare_readjudicate set ctx cluster_id = the parent group_id
+    reworked = {r.group_id for r in selected}
+    result.records = [r for r in result.records if r.group_id not in reworked] + children
+    logger.info("readjudicate: %d flagged group(s) -> %d re-split children (spliced)", len(selected), len(children))
+    return result
+
+
 def recover_outlier_clusters(
     clusters: list[FieldCluster],
     substrate: ClusteringSubstrate,
@@ -713,7 +1424,10 @@ def harmonize_leanb(
     merge: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
     specgen: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
     concept_gate: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
+    coherence: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
+    distinct_kinds: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
     gencde: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
+    refine: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
     cde_cohort: str = CDE_COHORT,
     min_cluster_size: int = 15,
     top_k: int = DEFAULT_TOP_K,
@@ -729,9 +1443,11 @@ def harmonize_leanb(
     representation_refine: bool = True,
     measurand_split: bool = False,
     gencde_specgen: bool = False,
+    refine_cdes: bool = False,
     recover_outliers: bool = True,
     residual_min_cluster_size: int = 8,
     max_clusters: int | None = None,
+    stop_after: str | None = None,
 ) -> LeanBResult:
     """Run the full pipeline: cluster -> retrieve -> generate-ideal -> split -> per-group assign -> route.
 
@@ -775,6 +1491,14 @@ def harmonize_leanb(
     ``novel`` records that synthesized a categorical GenCDE, so the tail carries transform specs like the
     adopt/refine path (prompts join ``specgen_prompts``; assembled when ``specgen`` is set). Gate on group
     coherence — a recode into an incoherent GenCDE is meaningless.
+    ``refine_cdes`` (OPT-IN / default off): give the ``refine`` bucket a harmonization target of its own —
+    a GenCDE DERIVED from the matched CDE (parent + a typed, minimal delta), attached to
+    ``records[].gencde`` with ``parent_cde_id`` set, so a ``refine`` stops being an ``adopt`` with a caveat.
+    The ``refine`` callable (like ``gencde``) authors the deltas a rule cannot derive; the unit and
+    structural deltas are computed deterministically either way, and ``refine_prompts`` is always exposed
+    for the Batch path. Runs LAST — the triage gate reads the M7 concept-match flag and the coherence
+    verdict, so a match those stages already doubt is never dressed up as a refinement — then re-points the
+    transform specs at the refined element and mechanically closes the recodes the parent could not express.
     NOTE (frozen-substrate cache): these change prompt/candidate TEXT, not the content-addressed prompt ids —
     a replay on a frozen substrate reuses cached split/assign responses and will NOT reflect them; delete the
     affected stages' ``responses_*.jsonl`` to force a re-run.
@@ -785,8 +1509,42 @@ def harmonize_leanb(
     normal pipeline. The recovered partition is folded into the returned substrate (the residual re-cluster
     uses UMAP, not bit-reproducible, so it must be frozen for an exact replay). No-op when there are no
     outliers; set ``False`` to disable.
+
+    ``max_clusters`` (default ``None`` = no cap) is the CLI's cost cap: keep only the largest
+    ``max_clusters`` split units so a bounded run harmonizes the highest-coverage concepts first.
+
+    ``stop_after`` (default ``None`` = run to completion): stop VOLUNTARILY at a named stage boundary and
+    return the partial :class:`LeanBResult` produced so far. It reads as "this stage COMPLETED — stop
+    before the next one", and it is a SEPARATE mechanism from the ``None``-callable early returns above:
+    those fire because a stage's callable is unset, so they hand back that stage's *prepared prompts* and
+    are named for the stage that has NOT run. Here the callable IS set, the stage HAS run, and its output
+    is on the result.
+
+    Exactly one boundary name is accepted (:data:`STOP_AFTER_BOUNDARIES`); anything else raises
+    ``ValueError`` before a single stage runs, because a silently-ignored typo would run the entire paid
+    pipeline past the stop the caller asked for. The vocabulary is deliberately minimal — a string
+    parameter can learn another accepted value without breaking any caller, so names are added when a
+    consumer needs one, not in advance.
+
+    - ``"gencde"`` — after ``classify`` / ``assemble`` / ``merge`` / ``gencde``, before the transform-spec
+      stage. This is the stop where a reviewer commits to the assignments before ``specgen`` is paid for.
+
+    The staged review flow's other pause points need no name here: the pause before assign is the shipped
+    ``classify=None`` early return (with the coherence judge's verdict pass already run, so the groups
+    carry their verdicts), and the pause after the last paid stage needs no boundary at all because the
+    pipeline has simply finished. ``generate=None`` now serves a $0 preview run rather than a review pause.
+
+    The returned partial result is a RESUME INPUT, not a preview: like every early return it carries
+    ``substrate``, so a resumed run replays the identical clustering partition instead of re-clustering
+    non-deterministically and stranding the decisions the reviewer already made against the old one.
     """
     from ddharmon.clustering.topic_engine import collect_inputs, topic_model_dictionaries
+
+    if stop_after is not None and stop_after not in STOP_AFTER_BOUNDARIES:
+        raise ValueError(
+            f"stop_after={stop_after!r} is not a recognised stage boundary. "
+            f"Accepted: {', '.join(repr(b) for b in STOP_AFTER_BOUNDARIES)}, or None to run to completion."
+        )
 
     if substrate is None:
         tm = topic_model_dictionaries(embedded_dicts, min_cluster_size=min_cluster_size)
@@ -861,13 +1619,40 @@ def harmonize_leanb(
         clean_cde_text=clean_cde_text,
         representation_refine=representation_refine,
     )
+    # Step-2 dual-sample coherence judge, VERDICT pass — post-split, PRE-assign, read-only. Flags
+    # over-merged/incoherent GROUPS (the BP systolic+diastolic+pulse fusion, the arthritis semantic
+    # umbrella) for human re-adjudication — NEVER auto-split. It runs
+    # HERE, at the judge's native post-split concept-group granularity and before anything has been
+    # assigned, because a caller that pauses at the `classify=None` boundary below must be able to render
+    # each group's coherence state; a verdict stamped after `classify` does not exist when that caller
+    # needs it. Nothing in this pass depends on assign-stage output. Prompts are always prepared ($0
+    # dual-sampling; the $0 deterministic matrix pre-filter is stamped on ConceptGroup.matrix_suspect too);
+    # the LLM judge applies only when `coherence` is set. `propagate_coherence_review` lands the resulting
+    # flag on the recodes / GenCDE much later, once those artifacts exist.
+    concept_groups = concept_groups_from_prompts(group_assign_prompts)
+    coherence_prompts = prepare_coherence(concept_groups, embedded_dicts, embeddings, field_refs, model_tag=model_tag)
+    if coherence is not None and coherence_prompts:
+        assemble_coherence_verdicts(coherence_prompts, coherence(coherence_prompts), concept_groups)
+
     if classify is None:
-        return LeanBResult(group_assign_prompts=group_assign_prompts, substrate=substrate)
+        return LeanBResult(
+            group_assign_prompts=group_assign_prompts,
+            concept_groups=concept_groups,
+            coherence_prompts=coherence_prompts,
+            substrate=substrate,
+        )
 
     result = assemble_leanb(
         group_assign_prompts, classify(group_assign_prompts), retrieval_floor=retrieval_floor, adopt_floor=adopt_floor
     )
     result.substrate = substrate
+    result.concept_groups = concept_groups
+    result.coherence_prompts = coherence_prompts
+    # Carry the pre-assign verdicts onto the records the assign stage just built. Without this the
+    # verdicts stay stranded on the groups and every record reads as UNJUDGED — the "not judged rendered
+    # as coherent" failure the judge's contract forbids. Matched on group id (cluster id as fallback), so
+    # it is order-independent and a one-identifier group is not dropped.
+    transfer_coherence_verdicts(concept_groups, result.records)
 
     # M2 cross-record merge (opt-in): reunite same-concept records that split + chunking left separate.
     # Runs BEFORE stage 4 so specs are generated for the final grouping. merge_prompts is always exposed
@@ -888,6 +1673,13 @@ def harmonize_leanb(
     result.gencde_prompts = prepare_gencde(result.records, embedded_dicts, model_tag=model_tag)
     if gencde is not None and result.gencde_prompts:
         result.records = assemble_gencde(result.gencde_prompts, gencde(result.gencde_prompts), result.records)
+
+    # `stop_after="gencde"` — the one named VOLUNTARY boundary. The assignments (and their GenCDEs) are
+    # decided and on `result`; the transform-spec stage below has not been paid for. `result.substrate` was
+    # set right after assemble_leanb, so this partial is a resume input: a continuation replays the exact
+    # same partition rather than re-clustering and stranding the decisions made against the old one.
+    if stop_after == "gencde":
+        return result
 
     # stage 4: transform-spec generation (verifying post-pass over adopt/refine records).
     # Local import avoids a module-level cycle (transform imports leanb). N1 unit specs are deterministic
@@ -949,6 +1741,48 @@ def harmonize_leanb(
     result.concept_gate_prompts = prepare_concept_gate(result.records, embedded_dicts, cde_fields, model_tag=model_tag)
     if concept_gate is not None and result.concept_gate_prompts:
         assemble_concept_gate(result.concept_gate_prompts, concept_gate(result.concept_gate_prompts), result.records)
+
+    # R2 (opt-in, `distinct_kinds`): second read over `qualify` groups → upgrades the R0 split-only flag to
+    # R2 (also flag qualify∧distinct_kinds). It reads the coherence judge's OWN outputs off LeanBRecord, so
+    # it cannot move early with the verdict pass — it stays here, after assemble_leanb has built the records
+    # and transfer_coherence_verdicts has carried the verdicts onto them. The Batch/driver path calls
+    # prepare_kinds/assemble_kinds itself; kinds_prompts is always exposed for it. Default
+    # (distinct_kinds=None) leaves the shipped R0 behavior unchanged.
+    if coherence is not None and result.coherence_prompts:
+        result.kinds_prompts = prepare_kinds(result.records)
+        if distinct_kinds is not None and result.kinds_prompts:
+            assemble_kinds(result.kinds_prompts, distinct_kinds(result.kinds_prompts), result.records)
+
+    # Step-2 coherence judge, PROPAGATION pass — the genuinely post-assign half. `needs_review` lands on
+    # `rec.transforms` and `rec.gencde`, and neither existed when the verdict pass ran before `classify`.
+    # UNCONDITIONAL and idempotent: it acts only on records already flagged `incoherent`, so it is a no-op
+    # when the judge never ran, and it still fires for a resumed run whose verdicts came from persisted
+    # state rather than from a `coherence` callable in this process.
+    propagate_coherence_review(result.records)
+
+    # Refinement authoring (opt-in, `refine_cdes`): give the `refine` bucket a real harmonization TARGET —
+    # a GenCDE DERIVED from the matched CDE (parent + a typed, minimal delta) — mirroring what `gencde`
+    # does for `novel`. Runs LAST on purpose: the axis triage and its mis-assigned gate read the M7
+    # concept-match flag and the coherence judge's verdict, both of which are only set above, and a
+    # refinement must never be authored for a match those stages already doubt.
+    #
+    # Three sub-steps: the $0 deterministic deltas (unit/structural) are attached first so the LLM is
+    # never paid for an answer a rule can derive; `refine_prompts` is then always exposed for the
+    # Batch/driver path; finally `retarget_refined_specs` repoints the transform specs at the refined
+    # element and mechanically closes the recodes the parent's value domain could not express.
+    if refine_cdes:
+        from ddharmon.harmonization.refine import (
+            apply_deterministic_refinements,
+            assemble_refine,
+            prepare_refine,
+            retarget_refined_specs,
+        )
+
+        apply_deterministic_refinements(result.records, cde_fields)
+        result.refine_prompts = prepare_refine(result.records, embedded_dicts, cde_fields, model_tag=model_tag)
+        if refine is not None and result.refine_prompts:
+            assemble_refine(result.refine_prompts, refine(result.refine_prompts), result.records, cde_fields)
+        retarget_refined_specs(result.records, embedded_dicts)
     return result
 
 
@@ -1100,6 +1934,10 @@ def export_leanb_eitl_queue(result: LeanBResult, path: str | Path) -> int:
         "coverage_gap",
         "floored",
         "coherence_gap",
+        "incoherent",
+        "coherence_verdict",
+        "coherence_axis",
+        "matrix_suspect",
         "cross_cohort",
         "n_members",
         "cohorts",
@@ -1153,6 +1991,10 @@ def export_leanb_eitl_queue(result: LeanBResult, path: str | Path) -> int:
                         str(r.coverage_gap),
                         str(r.floored),
                         str(r.coherence_gap),
+                        str(r.incoherent),
+                        r.coherence_verdict,
+                        clean(r.coherence_axis),
+                        str(r.matrix_suspect),
                         str(r.cross_cohort),
                         str(r.n_members),
                         ";".join(r.cohorts),

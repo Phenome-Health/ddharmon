@@ -22,9 +22,12 @@ __all__ = [
     "BaseLLMClient",
     "CachedLLMClient",
     "CandidateJudgment",
+    "CostLedger",
     "OpenAIClient",
     "RerankerResponse",
+    "TokenUsage",
     "get_client",
+    "price_usage",
     "resume_and_wait",
     "retrieve_batch",
     "submit_and_wait",
@@ -36,6 +39,7 @@ if TYPE_CHECKING:  # import-time only for type checkers; never at runtime
     from ddharmon.llm.base import BaseLLMClient
     from ddharmon.llm.batch import resume_and_wait, retrieve_batch, submit_and_wait, submit_batch
     from ddharmon.llm.cached_client import CachedLLMClient
+    from ddharmon.llm.cost import CostLedger, TokenUsage, price_usage
     from ddharmon.llm.openai_client import OpenAIClient
     from ddharmon.llm.prompts import CandidateJudgment, RerankerResponse
 
@@ -48,6 +52,9 @@ _LAZY_EXPORTS = {
     "retrieve_batch": "ddharmon.llm.batch",
     "BaseLLMClient": "ddharmon.llm.base",
     "CachedLLMClient": "ddharmon.llm.cached_client",
+    "CostLedger": "ddharmon.llm.cost",
+    "TokenUsage": "ddharmon.llm.cost",
+    "price_usage": "ddharmon.llm.cost",
     "CandidateJudgment": "ddharmon.llm.prompts",
     "RerankerResponse": "ddharmon.llm.prompts",
     "AnthropicClient": "ddharmon.llm.anthropic_client",
