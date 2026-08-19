@@ -155,6 +155,46 @@ class CandidateCDE:
 
 
 @dataclass
+class ConceptGroup:
+    """A post-split concept group BEFORE the assign stage has decided anything about it.
+
+    The split stage partitions a semantic cluster into distinct-concept groups; the per-group assign
+    stage then turns each one into a :class:`LeanBRecord`. Between those two stages there is no record
+    yet — only a group. This is that intermediate shape, and it exists for one reason: the coherence
+    judge's verdict pass runs THERE, after ``split`` and before ``classify``, so a caller that pauses at
+    the ``classify=None`` boundary can render a group's coherence verdict without having paid for assign.
+    Materialize one per per-group assign prompt with
+    :func:`~ddharmon.harmonization.leanb.concept_groups_from_prompts`.
+
+    The coherence fields mirror :class:`LeanBRecord`'s exactly, and
+    :func:`~ddharmon.harmonization.leanb.transfer_coherence_verdicts` copies them across once the records
+    exist — the verdict is stamped once, early, and never re-judged. Everything above the coherence block
+    is descriptive metadata the split stage already produced (it is NOT a decision): a group carries no
+    verdict, no route and no CDE, because nothing has assigned it one yet.
+    """
+
+    cluster_id: str
+    group_id: str = ""  # f"{cluster_id}#g{idx}" — distinct concept-group within the cluster
+    concept: str = ""  # the group's concept label (from the split stage)
+    ideal_cde: str = ""  # the independently-generated ideal the split stage worked from
+    top1_cos: float | None = None  # nearest-candidate dense cosine for this group (retrieval signal)
+    member_variable_names: list[str] = field(default_factory=list)  # this group's members as "cohort:var"
+    cohorts: list[str] = field(default_factory=list)
+    cross_cohort: bool = False
+    n_members: int = 0  # the GROUP's member count
+    # ── the coherence judge's verdict pass writes these (field-for-field identical to LeanBRecord) ──
+    coherent: bool = True
+    coherence_verdict: str = ""  # single | qualify | split | "" (unjudged: too small, or no usable response)
+    coherence_summary: str = ""
+    coherence_axis: str = ""
+    coherence_distinct_values: list[str] = field(default_factory=list)
+    coherence_outliers: list[str] = field(default_factory=list)
+    coherence_kind: str = ""  # distinct-KINDS discriminator (runs post-assign; left "" here)
+    incoherent: bool = False  # HARD flag — verdict == split. Stamped by the VERDICT pass, not propagation.
+    matrix_suspect: bool = False  # the $0 deterministic matrix pre-filter, stamped by prepare_coherence
+
+
+@dataclass
 class LeanBRecord:
     """One harmonization decision from the lean head/tail pipeline — per concept-GROUP.
 
@@ -189,10 +229,22 @@ class LeanBRecord:
     )
     coherence_gap: bool = False  # M3: coded edges mostly unmappable (NONE) -> over-broad match, flagged/demoted
     concept_mismatch: bool = False  # M7: assigned CDE fails the concept-match gate (right values, wrong concept)
-    # Set by the coherence judge, which is not part of this release; refine's mis-assigned gate reads it.
-    # Absent that judge it stays False, so the gate simply never fires on this condition — the point is to
-    # never author a refinement for a group already judged over-merged.
-    incoherent: bool = False
+    # Dual-sample coherence judge (post-assign propagation is read-only). A group is judged from a k1
+    # centroid-CLOSEST summary verified against a k2 centroid-FURTHEST periphery. Flag-not-gate: an
+    # incoherent/over-merged group (a systolic+diastolic+pulse fusion, an "arthritis" umbrella) is FLAGGED
+    # for human re-adjudication, NEVER auto-split. Empty/True defaults = "not judged / coherent".
+    coherent: bool = True  # judge verdict: do the periphery members share the core theme?
+    coherence_verdict: str = ""  # granularity: single | qualify | split | "" (group too small to judge, n<6)
+    coherence_summary: str = ""  # the judge's one-sentence theme of the group core (k1)
+    coherence_axis: str = ""  # qualify/split: the varying slot the summary needed (e.g. "condition")
+    coherence_distinct_values: list[str] = field(default_factory=list)  # the distinct fillers across members
+    coherence_outliers: list[str] = field(default_factory=list)  # periphery members ("cohort:var") judged off-theme
+    coherence_kind: str = ""  # distinct-KINDS discriminator: "" (not run) | values_of_one_property | distinct_kinds
+    incoherent: bool = False  # HARD flag -> needs_review. Default rule: verdict == split. Opt-in rule: also a
+    # `qualify` group the distinct-KINDS discriminator calls `distinct_kinds`. refine's mis-assigned gate reads
+    # it, so a refinement is never authored for a group already judged over-merged.
+    matrix_suspect: bool = False  # $0 deterministic pre-filter: frequent-template/rare-slot matrix pattern
+    readjudicated_from: str = ""  # if this record is a re-split child, the parent group_id it was carved from
     member_variable_names: list[str] = field(default_factory=list)  # this group's members as "cohort:var"
     cohorts: list[str] = field(default_factory=list)
     cross_cohort: bool = False
