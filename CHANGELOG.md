@@ -3,9 +3,101 @@
 All notable changes to ddharmon are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
-## [Unreleased]
+## [1.3.0]
+
+Adds the **coherence judge** as a public capability, moves its verdicts ahead of assignment, and adds a
+named **resumable stage boundary** so a caller can stop a run at a decided point and resume it against the
+identical clustering partition. Both additions are opt-in and default OFF.
+
+This is also the first release published to PyPI since 1.1.0, so it delivers everything recorded under
+1.2.0 (realized cost accounting) plus the composite/derived-variable builder and score-source ingestion
+below, which had accumulated unreleased.
 
 ### Added
+
+- **The coherence judge.** `harmonize_leanb` can now be given a `coherence` stage callable. The judge
+  examines each post-split concept group and records whether the group holds a single concept or has pooled
+  more than one, together with a short summary, the axis along which the group varies, the distinct values
+  it saw and any members it considered outliers.
+
+  The judge **flags; it does not act.** A group judged over-merged is marked, and that mark travels with the
+  record so a downstream reviewer can see it. Nothing is re-split, re-routed or re-assigned on the judge's
+  word, and the judge cannot reach a group's route or its assignment verdict — the type it is given exposes
+  neither.
+
+  A group the judge could not evaluate is recorded as **unjudged**, never as coherent. A malformed or missing
+  response degrades to unjudged rather than unwinding the run.
+
+  Public names, all exported from `ddharmon.harmonization`:
+
+  | Name | What it is |
+  | --- | --- |
+  | `assemble_coherence_verdicts` | the verdict pass — folds judge responses onto the groups |
+  | `transfer_coherence_verdicts` | carries those verdicts onto the assembled records |
+  | `propagate_coherence_review` | marks the affected transforms and generated CDEs for review |
+  | `assemble_coherence` | the combined entry point — verdicts, then propagation |
+  | `ConceptGroup` | the post-split, pre-assignment group shape |
+  | `CoherenceTarget` | the structural protocol both group and record satisfy |
+  | `concept_groups_from_prompts` | builds the group shape from prepared assignment prompts |
+  | `prepare_coherence` | builds the judge prompts ($0 — no LLM call) |
+  | `prepare_kinds` / `assemble_kinds` | the opt-in second read that widens the flag rule |
+  | `prepare_readjudicate` / `readjudicate` | an opt-in second look at a flagged group, driven by the caller |
+
+  `LeanBResult` gains `concept_groups`, so the groups and their verdicts are available at the point where
+  assignment has not yet run. `LeanBRecord` and `ConceptGroup` carry the verdict fields themselves
+  (`coherent`, `coherence_verdict`, `coherence_summary`, `coherence_axis`, `coherence_distinct_values`,
+  `coherence_outliers`, `coherence_kind`, `incoherent`, `matrix_suspect`), and `LeanBRecord` also carries
+  `readjudicated_from` for a record carved out of a re-adjudicated parent group.
+
+- **A named resumable stage boundary.** `harmonize_leanb` accepts a new argument:
+
+  ```python
+  harmonize_leanb(..., stop_after="gencde")
+  ```
+
+  The named stage runs to completion and the pipeline then stops, returning a partial result that carries
+  the clustering substrate along with the records produced so far and the prompts prepared for the stages
+  that did not run. Because the substrate is on the result, a later call can replay the exact same partition
+  rather than re-deriving one.
+
+  **The accepted vocabulary is exactly one name.**
+
+  ```python
+  STOP_AFTER_BOUNDARIES == ("gencde",)
+  ```
+
+  Any other non-`None` value raises `ValueError` naming the accepted set, and it raises before any stage
+  runs — a mistyped boundary cannot silently execute a whole billable pipeline past the requested stop.
+  Callers that want to feature-detect the argument can look for `stop_after` in
+  `inspect.signature(harmonize_leanb).parameters`.
+
+  Do not assume any other boundary name exists. One more can be added later without breaking any caller, so
+  the vocabulary starts at the single name that is actually needed.
+
+- **`ddharmon.text_hygiene`** — one lightweight, cohort-agnostic home (standard library only) for the
+  source-data artifacts that pollute what the model and the embeddings see: instrument-administration
+  wrappers and help-message markup (`clean_field_text`), missing/refused/don't-know sentinel response codes
+  (`is_sentinel_label`, `strip_sentinel_encodings`), and the generic survey/CDE instruction boilerplate list
+  `CDE_TEXT_BOILERPLATE`, which previously lived inside the harmonization module and is re-exported from
+  there unchanged.
+
+- **Export selection** (`ddharmon.harmonization.selection`) — `select_records`, `list_export_concepts`,
+  `concepts_matching` and the `ExportConcept` row shape let a caller scope an export to the concepts a
+  reviewer marked. `export_transform_review` takes a matching `select=` argument; the default (`None`)
+  exports every concept, exactly as before.
+
+- **Opt-in prompt levers**, each default OFF and individually switchable so an A/B can attribute them
+  separately: `prepare_leanb(debias_ideal=...)` (a generate-ideal variant that drops the one-concept
+  presumption and enumerates distinct measurands), `prepare_split(bundle_guard=...)` /
+  `prepare_group_assign(bundle_guard=...)` (a candidate that bundles several measured quantities does not
+  license a shared adopt), and `prepare_split(enforce_schema=...)` (issue the split as a forced tool call so
+  the `{groups: [...]}` wrapper is structurally guaranteed instead of instructed).
+
+- **`PromptRecord` gains `tool_schema`, `tool_name` and `max_tokens`**, emitted into
+  `to_jsonl_record()` only when set. They carry the forced-tool-call request through to whichever driver
+  submits the prompts. **The batch submitter bundled in this release does not read them yet** — a driver
+  that ignores them degrades to the previous soft-schema behaviour rather than failing, and a record that
+  sets none of them serializes byte-for-byte as before.
 
 - **Composite / derived-variable builder** (`ddharmon.harmonization.composite`) — answers, for a finished
   run, whether a *published composite score* (a frailty index, a PHQ-9 sum, an intrinsic-capacity score) can
@@ -59,6 +151,50 @@ All notable changes to ddharmon are documented here. Format loosely follows
 
 - `parse.salvage_objects()` — shared rescue for a long JSON array truncated at the token cap (a 68-item
   component list makes this a real risk).
+
+### Changed
+
+- **The judge now evaluates groups before assignment, not after.** Verdicts are stamped immediately after
+  the split stage and before assignment begins; the review marks they imply are applied later, after
+  transform specification and generated-CDE synthesis.
+
+  One consequence is worth stating plainly for anyone comparing runs: the judge now sees groups **as the
+  split stage produced them**, before the cross-record merge reunites members that were separated. A re-run
+  therefore scores a slightly different population of groups than a run judged under the previous ordering.
+  This is the intended ordering — the judge's calibration was measured at post-split group granularity,
+  which is now what it is given — but two runs across the change are not directly comparable
+  group-for-group.
+
+- **The review-mark pass runs unconditionally.** It does nothing when no group was flagged, and running it
+  twice has the same effect as running it once, so replaying a stage is safe.
+
+- **Ingestion strips administrative text by default.** `preprocess_dictionary` gains a step that removes
+  instrument-administration wrappers, trailing help-message markup, HTML tags/entities and survey
+  boilerplate from `description` and `question_text`, reported as `admin_text_stripped`. It never blanks a
+  field: a cleaned value is applied only when it is a non-empty change. This is the one change here that is
+  ON by default and alters preprocessed text — pass `strip_administrative_text=False` for the previous
+  behaviour.
+
+- **Concept-identity prompts drop sentinel response codes.** The value set rendered into the
+  generate-ideal / split / assign / judge prompts now omits missing/refused/don't-know codes, so a numeric
+  field encoded only as `-9=MISSING` reads as numeric rather than as a single-option categorical. Transform
+  specification still sees the full value set, because it needs those codes. Set
+  `DDHARMON_PROMPT_HYGIENE=0` to reproduce the previous prompt text.
+
+- **The review-queue export gains four columns** — `incoherent`, `coherence_verdict`, `coherence_axis` and
+  `matrix_suspect` — so a consumer that pins the queue's column set needs updating.
+
+### Compatibility
+
+The new stages and arguments are additive. `coherence`, `distinct_kinds` and `stop_after` all default to
+`None`, and no existing argument changed name, position or meaning — `max_clusters`, the cost cap the
+bundled CLI passes, is unchanged and now has a regression test of its own. No stage was promoted to a
+public function: `harmonize_leanb` remains the single owner of stage sequencing.
+
+Two defaults do change what a run produces without any flag being set: ingestion's administrative-text
+strip and the sentinel-code drop in the concept-identity prompts, both listed under **Changed** above with
+the switch that restores the previous behaviour.
+
 ## [1.2.0]
 
 Adds **realized cost accounting** — report what a run *actually* cost from the real token usage each LLM
