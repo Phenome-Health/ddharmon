@@ -3,6 +3,103 @@
 All notable changes to ddharmon are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
+## [Unreleased]
+
+Adds what a **staged human review** needs from the core: a reviewer can regroup the concept groups the split
+produced, accept a proposed division of an over-merged group, scope which groups get assigned, and resume a
+paused run on exactly the partition they reviewed. Also changes the default clustering input (see **Changed**
+— this one alters results for existing callers) and fixes several data-loss and replay bugs.
+
+### Added
+
+- **Reviewer group overrides** (`ddharmon.harmonization.overrides`). `GroupOverrides` holds a reviewer's
+  regrouping — member moves (`"cohort:var" -> group id | None`) and `ReviewerGroup`s they formed, which may
+  pull members from several clusters. `harmonize_leanb(group_overrides=...)` applies it after the split and
+  the coherence verdicts and before assignment: moved members leave their origin, emptied groups are dropped,
+  and each changed or new group is re-retrieved on its own members. Each new or changed group that will be
+  assigned gets one fresh generate-ideal call so its ideal describes the members it now has; it is sent to
+  `group_generate` (default: `generate`) under its own `leanb:groupideal:` prompt-id namespace and the prompts
+  are returned on `LeanBResult.group_ideal_prompts`. Prompt ids are content-addressed on the resolved
+  membership, so replaying the same overrides rebuilds the same ids. A reshaped group is never offered to the
+  cross-record merge. Helpers: `resolve_group_membership`, `prepare_group_ideals`, `apply_group_overrides`.
+
+- **Scoped assignment.** `harmonize_leanb(assign_group_ids=...)` restricts the paid per-group assignment (and
+  everything after it) to the named groups. `LeanBResult.concept_groups` still lists every group, so the
+  earlier review view is unchanged. `None` (the default) assigns every group, as before.
+
+- **Split-only re-adjudication.** `readjudicate_split_only(...)` re-splits flagged or named over-merged groups
+  into child concept groups and splices them into `result.concept_groups` (each tagged `readjudicated_from`)
+  **without** assigning them — the "accept the division" action of a review that pauses before assignment.
+  It reads the groups from `concept_groups` (where they live at that pause) and can resolve each group as the
+  reviewer currently sees it via `group_overrides`. `division_overrides(...)` turns an accepted division into
+  overrides so every later leg applies it. `prepare_readjudicate` now also accepts `ConceptGroup`s, and
+  `ConceptGroup` gains `readjudicated_from`.
+
+- **Cohort-only clustering helpers.** `cluster_leanb`, `clustering_input_dicts`, `replay_leanb_inputs`,
+  `LeanBInputs` and `DEFAULT_CLUSTER_WITH_CATALOG`, so a caller can cluster or replay exactly as
+  `harmonize_leanb` does. `ClusteringSubstrate` records `clustered_with_catalog` and `outliers_recovered`;
+  `save_substrate` writes format version 3 and `load_substrate` still reads versions 1 and 2.
+
+- **Composite score builder.** Score-component suggestions from retrieval alone, with no LLM call
+  (`suggest_groups`, `suggestions_to_dict`, `GroupSuggestion`, `GroupSuggestionResult`,
+  `ComponentSuggestions`, threshold `GATE1_SUGGEST_MIN_COSINE`). Matching can bind a component to a single
+  source variable as well as to a concept group (`build_variable_index`), rolls variables up to their groups,
+  and can attribute a multi-select checklist's individual answer options to different components. Per-cohort
+  coverage is now the union over every judge-accepted member across all groups a component reached, not only
+  the single surfaced winner; set `DDHARMON_COMPOSITE_COVERAGE=winner` for the previous model.
+
+- **Forced tool calls in the bundled batch submitter.** `submit_batch` now honours a prompt record's
+  `tool_schema` / `tool_name` (issuing a forced tool call with the bare system prompt) and `retrieve_batch`
+  writes a tool call's structured input as the response. 1.3.0 added these fields but noted that the bundled
+  submitter ignored them; records without them are submitted exactly as before.
+
+- **`AnthropicClient.complete_request(...)`** sends one prompt synchronously exactly as the Batch API path
+  would — caller temperature, per-prompt `max_tokens` and model, and an optional forced tool call — and records
+  usage against the model that actually ran.
+
+- **A master switch for dictionary preparation.** `preprocess_dictionary(dd, enabled=False)` runs no rule and
+  returns the text untouched, still filling the `raw_*` snapshots and attaching a `PreprocessingReport` whose
+  new `enabled` field is `False`. **The default stays `enabled=True`**: existing callers are unaffected, which
+  a frozen golden snapshot test pins.
+
+- `Field.raw_question_text`, and a `raw_embed_text` entry in each `preprocessing_diff` row (the embedding text
+  the field would have produced before preparation), so a before/after review can show the string the
+  clustering actually consumes.
+
+### Changed
+
+- **`harmonize_leanb` clusters cohort variables only by default** (`cluster_with_catalog=False`). The CDE
+  catalog is still required in `embedded_dicts` and is used for retrieval exactly as before, but its rows no
+  longer enter UMAP+HDBSCAN, outlier recovery or chunking. No stage ever used a catalog row as a group member,
+  yet catalog rows shaped the partition; on a held-out co-clustering benchmark the cohort-only partition
+  scored the same at a fraction of the clustering time, and with a full catalog the old mode was dominated by
+  catalog rows and was not reproducible at a fixed seed. **Fresh runs therefore produce a different partition
+  than 1.3.0.** Pass `cluster_with_catalog=True` to restore the previous behaviour byte for byte. Replaying a
+  saved substrate always uses the mode the substrate recorded (catalog-in for every file saved before this
+  release), so frozen partitions replay unchanged.
+
+- `preprocessing_diff` no longer truncates `raw_description` / `cleaned_description` to 80 characters, and
+  returns `[]` when preparation was switched off.
+
+### Fixed
+
+- **Repeated variable names no longer drop rows.** The CSV parser used to keep only the last row for a
+  repeated `variable_name`. Later occurrences now get a unique `<name>__2`, `<name>__3`, … identity, keep the
+  source name on `short_label`, and a warning lists the names that repeated.
+
+- **Value lists whose labels contain commas parse correctly.** A comma now separates a code from its label
+  only when every item opens with a code-like token; otherwise each pipe-separated item is a label (or a
+  `value=meaning` pair, split at its top-level `=`). Previously labels such as "Autoimmune condition (e.g.,
+  lupus, vasculitis)" were cut at the first comma. Cohort encodings that already parsed are unchanged.
+
+- **Outlier recovery is applied to a partition at most once.** Replaying a substrate saved from a recovered
+  run used to re-cluster its leftover outliers and could add a cluster the original run never had; the
+  substrate now records that recovery ran.
+
+- The embedding dimension is read through either sentence-transformers name
+  (`get_embedding_dimension` in 6.x, `get_sentence_embedding_dimension` before), avoiding the 6.x
+  deprecation path.
+
 ## [1.3.0]
 
 Adds the **coherence judge** as a public capability, moves its verdicts ahead of assignment, and adds a

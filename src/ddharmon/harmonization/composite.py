@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
@@ -65,15 +66,77 @@ import numpy as np
 from ddharmon.harmonization.models import GenCDE, LeanBRecord, TransformKind, TransformSpec
 from ddharmon.harmonization.parse import extract_json, salvage_objects
 from ddharmon.harmonization.score_sources import ScoreSource
-from ddharmon.matching.lexical import BM25, hybrid_topk
+from ddharmon.matching.lexical import BM25, hybrid_topk, reciprocal_rank_fusion
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TOP_K = 8  # candidate concepts shown to the judge per component
 _MAX_COMPONENTS = 80  # FI-Combined is 68 items — the largest published composite we target
 _MAX_IDEAL_CHARS = 240  # how much of a concept's generated-ideal text feeds retrieval
+_MAX_QUESTION_CHARS = 200  # how much of a variable's question/description composes its concept label
+_MAX_ANSWER_LABELS = 8  # capped answer-option labels folded into a variable's retrieval text
+_MAX_MEMBERS_PER_GROUP = 4  # cap on members of ONE group reaching the judge — enough for cross-cohort
+# coverage (the aggregate + the indented member display) while a swarm of near-duplicates stays bounded
+_RRF_POOL = 1000  # truncate each ranking before RRF fusion (matches lexical.hybrid_topk's default)
 _EXTRACT_MAX_TOKENS = 8192
-_MATCH_MAX_TOKENS = 8192
+# The one judge pass rates candidates for EVERY component at once, so its response scales with component
+# count x candidates-per-component. Answer-option granularity adds per-option candidates, which
+# lengthens the response; a 49-item index with option units overran the old 8192 cap and truncated mid-list
+# (late components silently went undecided). Raised to give the whole list headroom.
+_MATCH_MAX_TOKENS = 16384
+
+# Answer-option granularity: a MULTI-SELECT checklist variable ("Vascular/heart problems
+# diagnosed by doctor" → heart attack | angina | stroke | high blood pressure) measures several DIFFERENT
+# components at once — one per option. Such a variable is exploded into per-option coverage units so the
+# judge can bind a SPECIFIC option to a component, and coverage names the option that supports it. The
+# option unit's id is ``"<cohort:var>#opt=<label>"``; it rolls up to the SAME group as its parent variable.
+_OPTION_ID_SEP = "#opt="  # marks an option coverage unit; strip to recover its parent variable id
+_MIN_CHECKLIST_OPTIONS = 3  # a variable needs at least this many distinct non-sentinel options to be exploded
+# Generic (not cohort-hardcoded) multi-select signal, matched as a substring of the source's data_type: a
+# variable whose participant can pick SEVERAL options is a checklist of distinct measurands, whereas a
+# single-select (radio) categorical is one ordinal/Likert concept and must NOT be fanned out.
+_MULTISELECT_DATATYPE_MARKERS = ("multiple", "checkbox", "multi", "select all", "check all")
+
+# Answer-option labels that carry no topical signal — dropped from a variable's retrieval text so a
+# "None"/"Prefer not to answer" option never becomes the reason a component matches. Generic, not tuned
+# to any cohort. Negative NUMERIC codes (UKBB's -1/-3/-7 sentinels) are dropped separately, by code.
+_SENTINEL_ANSWER_LABELS = frozenset(
+    {
+        "none",
+        "none of the above",
+        "prefer not to answer",
+        "do not know",
+        "don't know",
+        "dont know",
+        "not applicable",
+        "n/a",
+        "na",
+        "unknown",
+        "not answered",
+        "missing",
+        "no answer",
+    }
+)
+
+# Union coverage: a component counts as PRESENT in a cohort when at least one judge-accepted member
+# in that cohort scores at/above this floor — coverage is a per-cohort union over accepted members across
+# ALL the groups the component reached, decoupled from the single surfaced winner group. Set conservatively:
+# the judge already OMITS candidates it does not think measure a component, so a rated member is an
+# affirmative "this measures it" with a confidence; the floor drops the weakest of those (partial / one-side
+# / low-certainty) so recall is never bought with coverage the judge was unsure of. Tunable in one place.
+_COVERAGE_CONFIDENCE_FLOOR = 0.5
+
+# Coverage-model ablation hook (idiomatic per the leanb "each mod individually switchable" convention). The
+# default UNION model credits a cohort only when a judge-accepted member IN that cohort measures the
+# component. Set ``DDHARMON_COMPOSITE_COVERAGE=winner`` to fall back to the earlier winner-only model (the surfaced
+# winner GROUP's cohorts) for A/B measurement — NOT for production.
+_COVERAGE_MODEL_ENV = "DDHARMON_COMPOSITE_COVERAGE"
+
+
+def _union_coverage_enabled() -> bool:
+    """Whether member-level UNION coverage is on (default). ``DDHARMON_COMPOSITE_COVERAGE=winner`` disables it."""
+    return os.environ.get(_COVERAGE_MODEL_ENV, "union").strip().lower() != "winner"
+
 
 # ``complete(prompt, *, system, max_tokens) -> str`` — matches AnthropicClient.complete / LiteLLMClient.
 CompleteFn = Callable[..., str]
@@ -223,6 +286,16 @@ class ConceptEntry:
     units: str = ""
     data_type: str = ""
     ideal_cde: str = ""
+    is_variable: bool = False  # True when this entry IS one source variable, not a harmonized concept group
+    # Capped, human-readable answer-option labels for a VARIABLE ("Mouth ulcers; Painful gums; …"). For a
+    # multi-select variable whose question stem is generic ("Do you have any of the following?"), the answer
+    # meanings are the strongest topical signal in the row, so retrieval must see them. Empty for a
+    # concept-group entry (a group has no single answer set).
+    answer_text: str = ""
+    # Answer-option granularity: set when THIS entry is a single answer OPTION of a multi-select
+    # checklist variable (``concept_id`` = ``"<parent var>#opt=<label>"``). It is the coverage unit that binds
+    # a checklist to ONE component (the option that measures it); it rolls up to the parent variable's group.
+    option_label: str = ""
 
     @property
     def column(self) -> str:
@@ -230,9 +303,17 @@ class ConceptEntry:
 
     @property
     def retrieval_text(self) -> str:
-        """The text retrieval scores against: the concept label, its CDE name, and a slice of its ideal."""
-        parts = [self.concept, self.cde_id or "", self.ideal_cde[:_MAX_IDEAL_CHARS]]
+        """The text retrieval scores against: the concept label, its CDE name, a slice of its ideal, and —
+        for a variable — its answer-option labels (the strongest signal when the question stem is generic)."""
+        parts = [self.concept, self.cde_id or "", self.ideal_cde[:_MAX_IDEAL_CHARS], self.answer_text]
         return " ".join(p for p in parts if p)
+
+    @property
+    def label(self) -> str:
+        """Display name for a surfaced GROUP: its concept, else its generated ideal, else empty. The UI's
+        ``groupLabel`` refines this against the full group (adding the reviewer name / "Unnamed group"),
+        but a non-UI consumer of the spec still gets a usable name — never a raw internal id."""
+        return (self.concept or "").strip() or (self.ideal_cde or "").strip()
 
 
 class MatchReason(StrEnum):
@@ -273,6 +354,20 @@ class ComponentMatch:
     pinned: bool = False  # set by a reviewer override rather than the judge
     shortlist: list[str] = field(default_factory=list)
     reason: MatchReason = MatchReason.NO_DECISION
+    is_variable: bool = False  # the chosen entry was a single source variable, not a concept group
+    # Variable-only matching (v2 score builder): the surfaced entity is a concept GROUP, reached by rolling
+    # up the source VARIABLES the judge rated. `matched_members` are the (variable_id, confidence) pairs that
+    # rolled into the surfaced group — shown indented under it; `confidence` above is then the GROUP aggregate
+    # (mean of these), not any single variable's. `group_candidates` are every group the component's rated
+    # variables rolled up into, (group_id, aggregate, n_matched, n_total) best-first — the deduped Swap list,
+    # each carrying "X of Y group members matched".
+    matched_members: list[tuple[str, float]] = field(default_factory=list)
+    group_candidates: list[tuple[str, float, int, int]] = field(default_factory=list)
+    # Union coverage: `cohorts` above is the per-cohort UNION over judge-accepted members (at/above
+    # the confidence floor) across ALL reached groups — NOT the surfaced winner group's cohorts. This maps
+    # each covered cohort to the (variable_id, confidence) members that support it there, best-first, so a UI
+    # can name the supporting variable/option per cohort. Empty in the legacy group-concept path.
+    coverage_members: dict[str, list[tuple[str, float]]] = field(default_factory=dict)
 
     @property
     def matched(self) -> bool:
@@ -352,12 +447,15 @@ class CompositeResult:
 # --- the closed world -------------------------------------------------------------------------
 
 
-def build_concept_index(records: Sequence[LeanBRecord]) -> list[ConceptEntry]:
+def build_concept_index(records: Sequence[LeanBRecord], *, include_unlabeled: bool = False) -> list[ConceptEntry]:
     """Index a run's records as the ONLY concepts a composite may be built from.
 
     Unlike :func:`~ddharmon.harmonization.analysis_ideas.build_concept_digest`, this keeps **single-cohort**
     concepts: a component present in one cohort still makes the score computable *there*, and hiding that
-    would misreport feasibility. Records with no concept label and no CDE are skipped (nothing to match).
+    would misreport feasibility. Records with no concept label and no CDE are skipped (nothing to match) —
+    UNLESS ``include_unlabeled`` is set, which keeps every group that has an id (used by
+    :func:`build_group_lookup`, where an unnamed/over-merged group is still a valid roll-up target that the
+    UI labels from its ``idealCde``).
     """
     index: list[ConceptEntry] = []
     seen: set[str] = set()
@@ -366,7 +464,7 @@ def build_concept_index(records: Sequence[LeanBRecord]) -> list[ConceptEntry]:
         concept_id = (r.group_id or r.cluster_id or "").strip()
         if not concept_id or concept_id in seen:
             continue
-        if not concept and not r.cde_id:
+        if not concept and not r.cde_id and not include_unlabeled:
             continue
         gencde = r.gencde
         index.append(
@@ -385,6 +483,183 @@ def build_concept_index(records: Sequence[LeanBRecord]) -> list[ConceptEntry]:
         )
         seen.add(concept_id)
     return index
+
+
+def _answer_labels(fd: Mapping[str, Any]) -> list[str]:
+    """Up to :data:`_MAX_ANSWER_LABELS` human-readable answer-option labels for a variable.
+
+    Prefers a structured ``responseOptions`` list (``{code/value, label/text}``); falls back to parsing the
+    flat ``valueEncoding`` string, which appears in two shapes across cohorts — ``"1=Mouth ulcers|2=Painful
+    gums"`` (UKBB/CLSA, ``code=label``) and ``"DentalCare_Yes, Yes | DentalCare_No, No"`` (AoU, ``code,
+    label``). Options are separated by ``|``, ``;`` or a newline. Sentinel options carry no topical signal
+    and are dropped: negative NUMERIC codes (UKBB's -1/-3/-7) by code, and generic labels ("None", "Prefer
+    not to answer", …) by :data:`_SENTINEL_ANSWER_LABELS`.
+    """
+    labels: list[str] = []
+
+    def _add(code: str, label: str) -> bool:
+        label = label.strip()
+        code = code.strip()
+        if not label:
+            return False
+        if code.startswith("-") and code[1:].isdigit():  # UKBB negative sentinel code
+            return False
+        if label.casefold() in _SENTINEL_ANSWER_LABELS:
+            return False
+        labels.append(label)
+        return len(labels) >= _MAX_ANSWER_LABELS
+
+    options = fd.get("responseOptions")
+    if isinstance(options, Sequence) and not isinstance(options, (str, bytes)):
+        for opt in options:
+            if not isinstance(opt, Mapping):
+                continue
+            code = str(opt.get("value") or opt.get("code") or "")
+            label = str(opt.get("label") or opt.get("text") or "")
+            if _add(code, label):
+                break
+
+    if not labels:
+        encoding = str(fd.get("valueEncoding") or "")
+        if encoding:
+            for token in re.split(r"[|;\n]", encoding):
+                if not token.strip():
+                    continue
+                if "=" in token:
+                    code, _, label = token.partition("=")
+                elif "," in token:
+                    code, _, label = token.partition(",")
+                else:
+                    code, label = "", token
+                if _add(code, label):
+                    break
+
+    return labels
+
+
+def _base_variable_id(concept_id: str) -> str:
+    """The parent VARIABLE id of a coverage unit — strips an ``#opt=<label>`` option suffix.
+
+    A plain variable id (no suffix) is returned unchanged, so every group-resolution site can call this
+    uniformly and an option coverage unit rolls up to exactly its parent variable's group.
+    """
+    return concept_id.split(_OPTION_ID_SEP, 1)[0]
+
+
+def _is_multiselect_checklist(fd: Mapping[str, Any], n_options: int) -> bool:
+    """Whether a variable is a multi-select checklist worth exploding into per-option coverage units.
+
+    Generic, discovered-not-hardcoded: the participant can pick SEVERAL options (data_type carries a
+    multi-select marker like "multiple"/"checkbox") AND the row offers enough distinct non-sentinel options
+    to be a checklist of different measurands rather than one ordinal/Likert concept. A single-select (radio)
+    categorical — "Overall health rating": Excellent/Good/Fair/Poor — is one concept and is never exploded.
+    """
+    if n_options < _MIN_CHECKLIST_OPTIONS:
+        return False
+    data_type = str(fd.get("dataType") or "").casefold()
+    return any(marker in data_type for marker in _MULTISELECT_DATATYPE_MARKERS)
+
+
+def build_variable_index(
+    field_index: Mapping[str, Mapping[str, Any]],
+    *,
+    checklist_members: set[str] | None = None,
+) -> list[ConceptEntry]:
+    """Index EACH source variable as a single-member concept — the variable-level matching corpus.
+
+    A component often ties to one specific VARIABLE (e.g. ``UKBB:Miserableness`` — "Do you ever feel 'just
+    miserable' for no reason?") that no harmonized concept group is named for, because clustering fused or
+    mis-named it. Treating every variable as a degenerate single-member :class:`ConceptEntry` lets the SAME
+    retrieval + one-pass judge match a component to a variable directly, ALONGSIDE the group concepts —
+    strictly more comprehensive, backward compatible (only added when a ``field_index`` is supplied).
+
+    ``concept_id`` is the ``"cohort:var"`` key (so :attr:`ConceptEntry.column` is that variable — the column
+    the exported notebook already produces).
+
+    Retrieval text is composed from more of the row than the old ``questionText or text or name``:
+    the specific ``name`` AND the question/description stem TOGETHER (a generic stem like "Do you have any
+    of the following?" no longer shadows a specific name like "Mouth/teeth dental problems"), plus a capped
+    list of answer-option labels held in :attr:`ConceptEntry.answer_text` — the strongest topical signal on a
+    multi-select variable, and previously indexed nowhere. Defensive by design: many entries carry only a
+    subset of {name, question, options}, so the label is composed from whatever is present.
+    """
+    index: list[ConceptEntry] = []
+    for key, fd in field_index.items():
+        if not isinstance(fd, Mapping):
+            continue
+        cohort = key.split(":", 1)[0] if ":" in key else ""
+        name = str(fd.get("name") or "").strip()
+        question = str(fd.get("questionText") or fd.get("text") or fd.get("description") or "").strip()
+        if question and len(question) > _MAX_QUESTION_CHARS:
+            question = question[:_MAX_QUESTION_CHARS].rstrip()
+        # Compose the concept label: name + question when both are present and distinct; otherwise whichever
+        # exists. This label feeds BOTH retrieval (retrieval_text) and the judge candidate line.
+        if name and question and name.casefold() != question.casefold():
+            concept = f"{name} — {question}"
+        else:
+            concept = name or question
+        if not concept:
+            continue
+        answers = _answer_labels(fd)
+        index.append(
+            ConceptEntry(
+                concept_id=key,
+                concept=concept,
+                cohorts=[cohort] if cohort else [],
+                members=[key],
+                verdict="variable",
+                data_type=str(fd.get("dataType") or ""),
+                is_variable=True,
+                answer_text="; ".join(answers),
+            )
+        )
+        # A multi-select checklist ALSO enters the corpus as one coverage unit PER option, so the
+        # judge can bind a specific option ("Heart attack") to a specific component (Myocardial infarction).
+        # Each option unit retrieves on its own label, carries that label into coverage, and rolls up to the
+        # parent variable's group (via _base_variable_id). Precision is the judge's: an option binds only when
+        # the judge accepts it above the coverage floor — it is never fanned to every vaguely-related component.
+        # When ``checklist_members`` is given, only checklists whose base variable is a run-group member are
+        # exploded — a non-member checklist's options can never surface after roll-up, so exploding them would
+        # only flood retrieval and lengthen the judge pass for no coverage gain.
+        explode = _is_multiselect_checklist(fd, len(answers)) and (
+            checklist_members is None or key in checklist_members
+        )
+        if explode:
+            for label in answers:
+                index.append(
+                    ConceptEntry(
+                        concept_id=f"{key}{_OPTION_ID_SEP}{label}",
+                        concept=f"{name or question} — {label}" if (name or question) else label,
+                        cohorts=[cohort] if cohort else [],
+                        members=[key],
+                        verdict="variable",
+                        data_type=str(fd.get("dataType") or ""),
+                        is_variable=True,
+                        answer_text=label,
+                        option_label=label,
+                    )
+                )
+    return index
+
+
+def build_group_lookup(
+    records: Sequence[LeanBRecord],
+) -> tuple[dict[str, str], dict[str, ConceptEntry]]:
+    """The reverse of clustering: variable id → its group id, and group id → its :class:`ConceptEntry`.
+
+    Variable-only matching scores VARIABLES, then rolls each matched variable up to the concept GROUP that
+    owns it. Every group with members is a valid roll-up target — including unnamed/over-merged ones (the
+    fracture group's ``concept`` is empty; the UI labels it from ``idealCde``) — so this uses
+    ``include_unlabeled=True`` rather than :func:`build_concept_index`'s default skip. A variable in more
+    than one group is bound to the first (records are disjoint by construction; this is a guard, not a case).
+    """
+    groups = build_concept_index(records, include_unlabeled=True)
+    groups_by_id = {g.concept_id: g for g in groups}
+    var_to_group: dict[str, str] = {}
+    for g in groups:
+        for v in g.members:
+            var_to_group.setdefault(v, g.concept_id)
+    return var_to_group, groups_by_id
 
 
 def _target_unit(record: LeanBRecord) -> str:
@@ -619,12 +894,48 @@ def extract_score_definition(
 # --- stage 2: match components to the run's concepts ------------------------------------------
 
 
+def _group_diverse_picks(
+    order: list[int],
+    scores: np.ndarray,
+    index: Sequence[ConceptEntry],
+    var_to_group: Mapping[str, str],
+    top_k: int,
+) -> list[int]:
+    """Spend the candidate budget on DISTINCT concept GROUPS, not on ``top_k`` near-duplicate variables.
+
+    Walk the fused ranking ``order`` (best first); bucket each candidate variable under the concept group it
+    rolls up to, keeping the first ``top_k`` groups to appear and up to :data:`_MAX_MEMBERS_PER_GROUP` of
+    each group's members (so a group's cross-cohort members are still all rated, while a swarm of one
+    concept's near-duplicates cannot crowd every other concept out of the shortlist). A variable that rolls
+    up to NO group is skipped: it can never surface after roll-up, so it must not waste a slot.
+    """
+    per_group: dict[str, list[int]] = {}
+    group_order: list[str] = []
+    for j in order:
+        if scores[j] <= 0:  # ranking is descending; nothing positive remains
+            break
+        gid = var_to_group.get(_base_variable_id(index[j].concept_id))
+        if gid is None:
+            continue
+        bucket = per_group.get(gid)
+        if bucket is None:
+            if len(group_order) >= top_k:
+                continue  # budget spent on distinct groups — ignore further NEW groups
+            bucket = []
+            per_group[gid] = bucket
+            group_order.append(gid)
+        if len(bucket) < _MAX_MEMBERS_PER_GROUP:
+            bucket.append(j)
+    return [j for gid in group_order for j in per_group[gid]]
+
+
 def shortlist_concepts(
     components: Sequence[ScoreComponent],
     index: Sequence[ConceptEntry],
     *,
     embed: EmbedFn | None = None,
     top_k: int = _DEFAULT_TOP_K,
+    var_to_group: Mapping[str, str] | None = None,
 ) -> dict[str, list[ConceptEntry]]:
     """Retrieve the candidate concepts for each component — the closed world the judge may choose from.
 
@@ -634,6 +945,11 @@ def shortlist_concepts(
     index-order ranking into RRF and outrank real lexical hits — so the builder still runs correctly without
     the ``embeddings`` extra. In that mode a concept with no lexical overlap at all is left out rather than
     padding the shortlist with noise the judge would have to reject.
+
+    ``var_to_group`` switches on GROUP-DIVERSE selection (variable-only matching): ``top_k`` then counts
+    distinct concept GROUPS rather than raw variables, so a swarm of near-duplicate variables of one concept
+    (29 "…drug(s) you are taking for your diabetes" rows) spends a single slot instead of crowding every
+    other concept out of the shortlist. Absent, the classic top-``k``-variables selection runs unchanged.
     """
     if not index or not components:
         return {c.name: [] for c in components}
@@ -651,12 +967,187 @@ def shortlist_concepts(
     out: dict[str, list[ConceptEntry]] = {}
     for i, component in enumerate(components):
         lexical = bm25.scores(queries[i])
-        if dense is None:
+        if var_to_group is not None:
+            # Group-diverse: rank the whole candidate space, then keep top_k DISTINCT groups' members.
+            if dense is None:
+                scores = lexical
+            else:
+                n = lexical.shape[0]
+                dense_order = np.argsort(-dense[i])[:_RRF_POOL].tolist()
+                lexical_order = np.argsort(-lexical)[:_RRF_POOL].tolist()
+                scores = reciprocal_rank_fusion([dense_order, lexical_order], n)
+            order = np.argsort(-scores).tolist()
+            picked = _group_diverse_picks(order, scores, index, var_to_group, top_k)
+        elif dense is None:
             picked = [j for j in np.argsort(-lexical)[:top_k].tolist() if lexical[j] > 0]
         else:
             picked = hybrid_topk(dense[i], lexical, top_k)
         out[component.name] = [index[j] for j in picked]
     return out
+
+
+# --- Gate 1 suggestions: the free, retrieval-only half of the match ------------------------------------
+
+#: The cut-off a Gate 1 suggestion must clear: the dense cosine (BioLORD, L2-normalised) between a declared
+#: component's query and its group's best-matching member. ABSOLUTE by construction, so one value means the
+#: same thing for every component — the RRF fusion the shortlist ranks by is rank-based and is NOT thresholded.
+#:
+#: CALIBRATED ($0, deterministic sweep). Silver labels: the 43 groups the PAID judge selected (group
+#: confidence >= 0.80) on a frailty-index run over three public cohort dictionaries (All of Us + CLSA + UK
+#: Biobank; 1317 groups, 11015 variables + checklist options indexed), the 49
+#: components queried by NAME ONLY, as a Gate 1 declaration states them. Rule, fixed before the sweep was read:
+#: the highest cut-off reaching the best recall of judge-selected groups among cut-offs that suggest at most one
+#: group the judge did not select per group it did (extra <= 43). At 0.62: 75 groups suggested, 35 of the 43
+#: agree, 40 extra (36 of them groups the judge's own shortlist never showed it), 8 missed; 40 of 49 components
+#: get >= 1 suggestion. TUNED ON THE FRAILTY INDEX — FI numbers for this threshold are DEV-optimistic.
+GATE1_SUGGEST_MIN_COSINE = 0.62
+
+_NO_DENSE_REASON = (
+    "No suggestions: the dense encoder is unavailable, and a suggestion's cut-off is held against the dense "
+    "cosine of a group's best member. Lexical (BM25) and fused (RRF) retrieval scores are rank-based and not "
+    "comparable across components, so no threshold over them is offered in its place."
+)
+
+
+@dataclass
+class GroupSuggestion:
+    """One concept group a declared component's free search reached, scored by its best-matching member."""
+
+    group_id: str
+    score: float  # dense cosine between the component query and ``best_member`` (rounded to 4 places)
+    best_member: str  # the parent VARIABLE id (``"cohort:var"``) — never an option-suffixed coverage-unit id
+    best_option: str = ""  # the checklist answer option that scored best, when the best unit is an option
+
+
+@dataclass
+class ComponentSuggestions:
+    """A declared component and the groups its search reached, best-first."""
+
+    component: str
+    groups: list[GroupSuggestion] = field(default_factory=list)
+
+
+@dataclass
+class GroupSuggestionResult:
+    """Return of :func:`suggest_groups`. ``scored`` is False — and every component empty — with no encoder."""
+
+    components: list[ComponentSuggestions]
+    scored: bool
+    threshold: float = GATE1_SUGGEST_MIN_COSINE
+    reason: str = ""
+    n_variables_indexed: int = 0
+
+
+def _unit_rows(matrix: np.ndarray) -> np.ndarray:
+    """L2-normalise rows, so a dot product is a cosine whatever the embedder returned."""
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    return matrix / np.where(norms == 0, 1.0, norms)
+
+
+def suggest_groups(
+    components: Sequence[ScoreComponent],
+    field_index: Mapping[str, Mapping[str, Any]],
+    group_members: Mapping[str, Sequence[str]],
+    *,
+    embed: EmbedFn | None = None,
+    top_k: int = _DEFAULT_TOP_K,
+    threshold: float = GATE1_SUGGEST_MIN_COSINE,
+) -> GroupSuggestionResult:
+    """Suggest the concept groups each declared component may measure — retrieval only, no model call, $0.
+
+    The free half of :func:`match_components`, for a screen that has groups but no assigned records (Gate 1):
+    the run's VARIABLES are indexed with :func:`build_variable_index` (multi-select checklists exploded into
+    option units, as the paid match does), and :func:`shortlist_concepts` picks each component's top ``top_k``
+    DISTINCT groups via ``var_to_group``. Each picked group is then scored by the dense cosine between the
+    component's query (``"<name>. <definition>"``) and the group's best-matching member — an absolute score,
+    comparable across components, which the caller holds against ``threshold``. This returns every picked group
+    with its score; it does not filter, so a caller can show or sweep the cut-off.
+
+    ``group_members`` is the membership the reviewer currently sees (moves and New groups applied); the index is
+    cut to those members, so a variable in no group neither surfaces nor shapes retrieval. With no ``embed``
+    there is no comparable score: every component comes back empty, ``scored`` is False, and ``reason`` says so.
+    Deterministic for a deterministic ``embed``.
+    """
+    var_to_group: dict[str, str] = {}
+    for gid, members in group_members.items():
+        for m in members or []:
+            var_to_group.setdefault(str(m), str(gid))
+
+    empty = [ComponentSuggestions(component=c.name) for c in components]
+    if embed is None:
+        return GroupSuggestionResult(components=empty, scored=False, threshold=threshold, reason=_NO_DENSE_REASON)
+
+    scoped = {k: v for k, v in field_index.items() if k in var_to_group}
+    index = build_variable_index(scoped, checklist_members=set(var_to_group))
+    if not index or not components:
+        return GroupSuggestionResult(components=empty, scored=True, threshold=threshold, n_variables_indexed=len(index))
+
+    # The shortlist embeds the corpus and then the queries; remember both so the cosines below reuse them.
+    seen: dict[tuple[str, ...], np.ndarray] = {}
+
+    def remembered(texts: list[str]) -> np.ndarray:
+        key = tuple(texts)
+        if key not in seen:
+            seen[key] = np.asarray(embed(texts), dtype=np.float32)
+        return seen[key]
+
+    shortlists = shortlist_concepts(components, index, embed=remembered, top_k=top_k, var_to_group=var_to_group)
+    texts = [e.retrieval_text for e in index]
+    queries = [f"{c.name}. {c.definition}".strip() for c in components]
+    cosine = _unit_rows(remembered(queries)) @ _unit_rows(remembered(texts)).T
+
+    units_of: dict[str, list[int]] = {}
+    for j, entry in enumerate(index):
+        gid = var_to_group.get(_base_variable_id(entry.concept_id))
+        if gid is not None:
+            units_of.setdefault(gid, []).append(j)
+
+    out: list[ComponentSuggestions] = []
+    for i, component in enumerate(components):
+        picked: list[str] = []
+        for entry in shortlists.get(component.name, []):
+            gid = var_to_group.get(_base_variable_id(entry.concept_id))
+            if gid is not None and gid not in picked:
+                picked.append(gid)
+        ranked: list[tuple[float, int, GroupSuggestion]] = []
+        for position, gid in enumerate(picked):
+            rows = units_of[gid]
+            best = rows[int(np.argmax(cosine[i, rows]))]
+            unit = index[best]
+            value = round(float(cosine[i, best]), 4)
+            suggestion = GroupSuggestion(
+                group_id=gid,
+                score=value,
+                best_member=_base_variable_id(unit.concept_id),
+                best_option=unit.option_label,
+            )
+            ranked.append((value, position, suggestion))
+        ranked.sort(key=lambda s: (-s[0], s[1]))
+        out.append(ComponentSuggestions(component=component.name, groups=[s[2] for s in ranked]))
+    return GroupSuggestionResult(components=out, scored=True, threshold=threshold, n_variables_indexed=len(index))
+
+
+def suggestions_to_dict(result: GroupSuggestionResult) -> dict[str, Any]:
+    """Serialize :func:`suggest_groups`' result to JSON-ready camelCase — the contract a UI layer consumes.
+
+    ``scoreKind`` names what ``score`` and ``threshold`` measure, so a consumer never mistakes this free
+    search's cosine for the paid judge's confidence (both are numbers in [0, 1]; they are not the same claim).
+    """
+
+    def _group(g: GroupSuggestion) -> dict[str, Any]:
+        payload: dict[str, Any] = {"groupId": g.group_id, "score": g.score, "bestMember": g.best_member}
+        if g.best_option:
+            payload["bestOption"] = g.best_option
+        return payload
+
+    return {
+        "scored": result.scored,
+        "scoreKind": "dense_cosine",
+        "threshold": result.threshold,
+        "reason": result.reason,
+        "nVariablesIndexed": result.n_variables_indexed,
+        "components": [{"component": c.component, "groups": [_group(g) for g in c.groups]} for c in result.components],
+    }
 
 
 def _component_key(position: int) -> str:
@@ -699,6 +1190,7 @@ def _match_prompt(
         lines.extend(
             [
                 f"          [{c.concept_id}] {c.concept}"
+                + (f"  · answers: {c.answer_text[:160]}" if c.answer_text else "")
                 + (f"  · cohorts: {', '.join(c.cohorts)}" if c.cohorts else "")
                 + (f"  · units: {c.units}" if c.units else "")
                 for c in candidates
@@ -708,22 +1200,24 @@ def _match_prompt(
         blocks.append("\n".join(lines))
 
     system = (
-        "You decide, for each COMPONENT of a composite score, whether one of the CANDIDATE CONCEPTS from a "
-        "harmonization run actually measures it.\n\n"
+        "You decide, for each COMPONENT of a composite score, WHICH of the CANDIDATE CONCEPTS from a "
+        "harmonization run measure it — zero, one, or several.\n\n"
         "STRICT RULES:\n"
         "- Identify each component by its componentKey (C1, C2, …), copied exactly. Do not paraphrase it and "
         "do not substitute the component's name.\n"
         "- Choose a conceptId ONLY from that component's own candidate list, copied exactly. Never invent an "
         "id, never reuse an id from another component's list.\n"
-        '- If no candidate measures the component, return "conceptId": null. A missing component is a useful, '
-        "honest result; a wrong match silently corrupts the score. Prefer null when unsure.\n"
+        "- List EVERY candidate that measures the component — there are often several, because one real "
+        "concept is split across cohort variables. Give each its own entry with its own confidence. OMIT "
+        "candidates that do not measure it; if none do, return no entry for that component (its absence is the "
+        'honest "not found" — a wrong match silently corrupts the score, so omit when unsure).\n'
         "- Match on WHAT IS MEASURED, not on shared words. A diagnosis of hypertension is not a blood-pressure "
         "measurement; family history of a condition is not the condition; difficulty walking is not gait speed.\n"
         "- A candidate measuring only part of the component (one side, one timepoint) is still a match — say so "
         "in the rationale and lower the confidence.\n"
-        "- confidence is 0.0–1.0: your certainty that this concept measures this component.\n\n"
+        "- confidence is 0.0–1.0: your certainty that this candidate measures this component.\n\n"
         "Respond with ONLY valid JSON (no markdown fences) matching this schema:\n"
-        '{"matches": [{"componentKey": string, "conceptId": string|null, "confidence": number, '
+        '{"matches": [{"componentKey": string, "conceptId": string, "confidence": number, '
         '"rationale": string}]}'
     )
     user = (
@@ -732,7 +1226,8 @@ def _match_prompt(
         + (f"\nCombination rule: {definition.combination_rule}" if definition.combination_rule else "")
         + "\n\nComponents and their candidate concepts from this run:\n\n"
         + "\n\n".join(blocks)
-        + "\n\nReturn exactly one entry per component, identified by its componentKey."
+        + "\n\nReturn one entry per candidate that measures a component — several per component is fine — "
+        + "each identified by its componentKey."
     )
     return system, user, allowed
 
@@ -748,6 +1243,105 @@ def _parse_matches(raw: str) -> list[dict[str, Any]]:
     return [i for i in items if isinstance(i, dict)]
 
 
+def _best_decision(decisions: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """The single strongest decision for a component — the highest-confidence one that named a concept,
+    else the first. Preserves the one-pick group-concept path when the judge returns one entry, and picks
+    sensibly if it returns several."""
+    matched = [d for d in decisions if d.get("concept_id")]
+    if matched:
+        return dict(max(matched, key=lambda d: float(d.get("confidence", 0.0))))
+    return dict(decisions[0]) if decisions else {}
+
+
+def _rollup_to_groups(
+    rated: Sequence[tuple[str, float]],
+    var_to_group: Mapping[str, str],
+    groups_by_id: Mapping[str, ConceptEntry],
+) -> tuple[ConceptEntry | None, float, list[tuple[str, float]], list[tuple[str, float]]]:
+    """Roll a component's judge-rated VARIABLES up to their concept GROUPS (variable-only matching).
+
+    Returns ``(surfaced_group, aggregate, matched_members, group_candidates)``:
+    - each rated ``(variable_id, confidence)`` binds to its parent group; ungrouped outliers are dropped
+      (groups-only surfacing);
+    - a group's aggregate is the mean of its rated members' confidences — an over-merged group where only
+      one of many members is on-topic scores well below that member;
+    - the surfaced group is the highest-aggregate group (tie → the group holding the single best member);
+    - ``matched_members`` are the surfaced group's rated members, best-first;
+    - ``group_candidates`` are ``(group_id, aggregate)`` for every group the component reached, best-first —
+      the deduped Swap list.
+    """
+    per_group: dict[str, list[tuple[str, float]]] = {}
+    for var_id, conf in rated:
+        gid = var_to_group.get(_base_variable_id(var_id))
+        if gid is None or gid not in groups_by_id:
+            continue
+        per_group.setdefault(gid, []).append((var_id, conf))
+    if not per_group:
+        return None, 0.0, [], []
+
+    def _agg(members: list[tuple[str, float]]) -> float:
+        return sum(c for _, c in members) / len(members)
+
+    scored = [(gid, _agg(ms), sorted(ms, key=lambda m: -m[1])) for gid, ms in per_group.items()]
+    scored.sort(key=lambda s: (-s[1], -(s[2][0][1] if s[2] else 0.0)))
+    best_gid, best_agg, best_members = scored[0]
+    candidates = [(gid, round(agg, 4)) for gid, agg, _ in scored]
+    return groups_by_id[best_gid], round(best_agg, 4), best_members, candidates
+
+
+def _cohort_of(variable_id: str) -> str:
+    """The cohort a ``"cohort:var"`` member id belongs to (empty when unprefixed)."""
+    return variable_id.split(":", 1)[0] if ":" in variable_id else ""
+
+
+def _coverage_from_rated(
+    rated: Sequence[tuple[str, float]],
+    var_to_group: Mapping[str, str],
+    groups_by_id: Mapping[str, ConceptEntry],
+    floor: float = _COVERAGE_CONFIDENCE_FLOOR,
+) -> tuple[list[str], dict[str, list[tuple[str, float]]], list[tuple[str, float, int, int]]]:
+    """Member-level UNION coverage for one component — decoupled from the surfaced winner.
+
+    Returns ``(cohorts, cohort_members, group_candidates)``:
+    - ``cohorts`` — every cohort with at least one judge-accepted member AT/ABOVE ``floor`` that rolls up to
+      some group, sorted. A single on-topic member in an over-merged (low group-mean) group still credits its
+      cohort — coverage is member-level, not group-mean. Ungrouped outliers never contribute.
+    - ``cohort_members`` — that cohort → its supporting ``(variable_id, confidence)`` members, best-first.
+    - ``group_candidates`` — EVERY group the component reached, ``(group_id, aggregate, n_matched, n_total)``
+      best-first: the aggregate is the mean of that group's rated members (same as :func:`_rollup_to_groups`),
+      ``n_matched`` is how many of the group's members the judge rated and ``n_total`` its member count — the
+      "X of Y group members matched" a review list shows. Aggregate/X-of-Y use ALL rated members (the
+      swap list mirrors what the judge saw); only the union `cohorts`/`cohort_members` apply the floor.
+    """
+    per_group: dict[str, list[tuple[str, float]]] = {}
+    for var_id, conf in rated:
+        gid = var_to_group.get(_base_variable_id(var_id))
+        if gid is None or gid not in groups_by_id:
+            continue
+        per_group.setdefault(gid, []).append((var_id, conf))
+
+    cohort_members: dict[str, list[tuple[str, float]]] = {}
+    for members in per_group.values():
+        for var_id, conf in members:
+            if conf < floor:
+                continue
+            cohort = _cohort_of(var_id)
+            if not cohort:
+                continue
+            cohort_members.setdefault(cohort, []).append((var_id, conf))
+    for cohort in cohort_members:
+        cohort_members[cohort].sort(key=lambda m: -m[1])
+
+    stats: list[tuple[str, float, int, int]] = []
+    for gid, members in per_group.items():
+        aggregate = round(sum(c for _, c in members) / len(members), 4)
+        n_total = len(groups_by_id[gid].members)
+        stats.append((gid, aggregate, len(members), n_total))
+    stats.sort(key=lambda s: (-s[1], -s[2]))
+
+    return sorted(cohort_members), cohort_members, stats
+
+
 def match_components(
     definition: ScoreDefinition,
     index: Sequence[ConceptEntry],
@@ -756,6 +1350,7 @@ def match_components(
     embed: EmbedFn | None = None,
     top_k: int = _DEFAULT_TOP_K,
     overrides: Mapping[str, str | None] | None = None,
+    group_lookup: tuple[Mapping[str, str], Mapping[str, ConceptEntry]] | None = None,
 ) -> list[ComponentMatch]:
     """Map each component onto a concept from the run — retrieval bounds the choices, one LLM pass decides.
 
@@ -763,28 +1358,39 @@ def match_components(
     concept in the index, not just a retrieved one) and ``{component_name: None}`` drops it. Pinned
     components are excluded from the judge pass entirely, so a fully-pinned re-derive costs **no** LLM call.
 
+    ``group_lookup`` switches on VARIABLE-ONLY matching (v2 score builder): ``index`` is the run's
+    variables (built by :func:`build_variable_index`), the judge rates each relevant variable, and the
+    rated variables are rolled up to their concept GROUPS via ``(var→group, group→entry)``. A match then
+    surfaces the GROUP (its aggregate confidence + the member variables that reached it), never a bare
+    variable. Absent, the legacy group-concept path runs unchanged. Pins in this mode name a GROUP id.
+
     Grounding guard: a returned id that was not in that component's shortlist is discarded and the component
     is reported missing.
     """
     by_id = {e.concept_id: e for e in index}
+    var_to_group, groups_by_id = group_lookup if group_lookup else ({}, {})
     pins = dict(overrides or {})
 
     def _match_for(component: ScoreComponent, entry: ConceptEntry | None, **kwargs: Any) -> ComponentMatch:
         return ComponentMatch(
             component=component.name,
             concept_id=entry.concept_id if entry else None,
-            concept=entry.concept if entry else "",
+            concept=entry.label if entry else "",
             column=entry.column if entry else "",
             cohorts=list(entry.cohorts) if entry else [],
             source_variables=list(entry.members) if entry else [],
             required=component.required,
+            is_variable=bool(entry.is_variable) if entry else False,
             **kwargs,
         )
 
     pending = [c for c in definition.components if c.name not in pins]
-    shortlists = shortlist_concepts(pending, index, embed=embed, top_k=top_k) if pending else {}
+    # In variable-only mode the shortlist is chosen over DISTINCT groups: pass the var→group map so
+    # near-duplicate variables of one concept spend a single candidate slot. Absent in the legacy path.
+    group_map = var_to_group if group_lookup else None
+    shortlists = shortlist_concepts(pending, index, embed=embed, top_k=top_k, var_to_group=group_map) if pending else {}
 
-    decisions: dict[str, dict[str, Any]] = {}
+    decisions: dict[str, list[dict[str, Any]]] = {}
     if pending:
         # One judge pass over every pending component at once: the shortlists are already the closed world,
         # and a single call keeps cost flat in the number of components (FI-Combined has 68).
@@ -846,12 +1452,14 @@ def match_components(
                 concept_id = None  # hallucinated or cross-component id -> honest gap
                 reason = MatchReason.ID_REJECTED
                 rejected_ids += 1
-            decisions[key] = {
-                "concept_id": concept_id,
-                "confidence": _confidence(item.get("confidence")),
-                "rationale": str(item.get("rationale", "") or "").strip(),
-                "reason": reason,
-            }
+            decisions.setdefault(key, []).append(
+                {
+                    "concept_id": concept_id,
+                    "confidence": _confidence(item.get("confidence")),
+                    "rationale": str(item.get("rationale", "") or "").strip(),
+                    "reason": reason,
+                }
+            )
         if rejected_ids:
             # A nonzero count here alongside zero matches is the signature of a grounding/join problem
             # rather than an honest gap — the judge answered, and we threw its answers away.
@@ -866,7 +1474,10 @@ def match_components(
     for component in definition.components:
         if component.name in pins:
             pinned_id = pins[component.name]
-            entry = by_id.get(str(pinned_id)) if pinned_id else None
+            # A pin names a GROUP id in variable-only mode, a concept/variable id in the legacy path.
+            entry = (
+                (groups_by_id.get(str(pinned_id)) if group_lookup else by_id.get(str(pinned_id))) if pinned_id else None
+            )
             matches.append(
                 _match_for(
                     component,
@@ -879,7 +1490,49 @@ def match_components(
             )
             continue
         shortlist = [c.concept_id for c in shortlists.get(component.name, [])]
-        decision = decisions.get(pending_key.get(component.name, ""), {})
+        decision_list = decisions.get(pending_key.get(component.name, ""), [])
+
+        if group_lookup is not None:
+            # Variable-only: roll the judge's rated variables up to their groups; surface the top group.
+            rated = [
+                (str(d["concept_id"]), float(d.get("confidence", 0.0))) for d in decision_list if d.get("concept_id")
+            ]
+            # Surface the winner GROUP (concept/column/confidence), but measure COVERAGE as a member-level
+            # per-cohort UNION across ALL reached groups: the winner answers "what is the
+            # canonical concept?", the union answers "which cohorts have it?" — two questions the old single
+            # winner conflated. `candidates` from the rollup (2-tuples) is discarded in favour of the union's
+            # X-of-Y candidate stats.
+            entry, aggregate, members, _ = _rollup_to_groups(rated, var_to_group, groups_by_id)
+            union_cohorts, cohort_members, candidate_stats = _coverage_from_rated(rated, var_to_group, groups_by_id)
+            if entry is not None:
+                reason = MatchReason.MATCHED
+            elif not shortlist:
+                reason = MatchReason.NO_CANDIDATES
+            elif not decision_list:
+                reason = MatchReason.NO_DECISION
+            else:
+                # The judge rated candidates, but every one was an ungrouped outlier (or none matched) —
+                # an honest gap, not a retrieval failure.
+                reason = MatchReason.JUDGE_DECLINED
+            best = _best_decision(decision_list)
+            match = _match_for(
+                component,
+                entry,
+                confidence=aggregate,
+                rationale=str(best.get("rationale", "")),
+                shortlist=shortlist,
+                reason=reason,
+                matched_members=members,
+                group_candidates=candidate_stats,
+            )
+            if entry is not None and _union_coverage_enabled():
+                match.cohorts = union_cohorts  # decouple coverage from the winner group's cohorts
+                match.coverage_members = cohort_members
+            matches.append(match)
+            continue
+
+        # Legacy group-concept path: one best pick per component.
+        decision = _best_decision(decision_list)
         entry = by_id.get(str(decision.get("concept_id"))) if decision.get("concept_id") else None
         if entry:
             reason = MatchReason.MATCHED
@@ -888,7 +1541,7 @@ def match_components(
             # a judge that "declined" a list it was never shown is the exact conflation this field exists
             # to end. True even when the judge dutifully returned a null entry for it.
             reason = MatchReason.NO_CANDIDATES
-        elif not decision:
+        elif not decision_list:
             # The judge returned nothing for this component. Distinct from a decline: with the keyed join
             # this should be rare, and a run where EVERY component lands here is a parse/join failure.
             reason = MatchReason.NO_DECISION
@@ -1201,6 +1854,7 @@ def derive_composite(
     top_k: int = _DEFAULT_TOP_K,
     overrides: Mapping[str, str | None] | None = None,
     max_components: int = _MAX_COMPONENTS,
+    field_index: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> CompositeResult:
     """Derive a composite-variable spec for ``source`` from a run's harmonized concepts.
 
@@ -1226,12 +1880,36 @@ def derive_composite(
         if isinstance(source, ScoreDefinition)
         else extract_score_definition(source, counted, max_components=max_components)
     )
-    index = build_concept_index(records)
-    matches = match_components(definition, index, counted, embed=embed, top_k=top_k, overrides=overrides)
-    run_cohorts = sorted({c for e in index for c in e.cohorts})
+    # Variable-only matching (v2, opt-in via `field_index`): the closed world is the run's VARIABLES, not
+    # its group concepts — variable text is ground truth, whereas a group's concept label is an LLM summary
+    # that is empty or wrong for an over-merged cluster. The judge rates variables; matched variables roll
+    # up to their concept GROUPS, which are what a match surfaces (a group's score is the aggregate of its
+    # on-topic members). Without a `field_index` the legacy group-concept path runs unchanged.
+    if field_index:
+        group_lookup = build_group_lookup(records)
+        # Explode a multi-select checklist into per-option coverage units only when its base variable is a
+        # run-group member: options of an unclustered checklist can never surface after roll-up.
+        index = build_variable_index(field_index, checklist_members=set(group_lookup[0]))
+        matches = match_components(
+            definition, index, counted, embed=embed, top_k=top_k, overrides=overrides, group_lookup=group_lookup
+        )
+        run_cohorts = sorted({c for e in group_lookup[1].values() for c in e.cohorts})
+    else:
+        index = build_concept_index(records)
+        matches = match_components(definition, index, counted, embed=embed, top_k=top_k, overrides=overrides)
+        run_cohorts = sorted({c for e in index for c in e.cohorts})
     feasibility = assess_feasibility(definition, matches, cohorts=run_cohorts)
     spec = build_composite_spec(definition, matches, feasibility)
     return CompositeResult(spec=spec, n_concepts_indexed=len(index), calls_made=calls)
+
+
+def _member_payload(variable_id: str, confidence: float) -> dict[str, Any]:
+    """One member/coverage entry for the UI contract. A checklist OPTION unit (id ``…#opt=<label>``) carries
+    its parent ``variableId`` and the ``optionLabel`` that binds it, so the panel can name the option."""
+    if _OPTION_ID_SEP in variable_id:
+        base, _, label = variable_id.partition(_OPTION_ID_SEP)
+        return {"variableId": base, "confidence": confidence, "optionLabel": label}
+    return {"variableId": variable_id, "confidence": confidence}
 
 
 def spec_to_dict(spec: CompositeSpec) -> dict[str, Any]:
@@ -1290,6 +1968,27 @@ def spec_to_dict(spec: CompositeSpec) -> dict[str, Any]:
                 # component the same way — "we found nothing to offer" and "the judge saw good options and
                 # said no" are different answers to the reviewer, with different next actions.
                 "reason": str(m.reason),
+                # True when the match/candidate is a single source variable (variable-level matching)
+                # rather than a harmonized concept group.
+                "isVariable": m.is_variable,
+                # Variable-only matching: the surfaced concept above is a GROUP; these are the member
+                # variables (id + confidence) that rolled up into it — shown indented under the group —
+                # and the deduped Swap list of every group the component's rated variables reached
+                # (groupId + aggregate confidence + "X of Y group members matched", best-first). Empty in
+                # the legacy group-concept path.
+                "matchedMembers": [_member_payload(vid, conf) for vid, conf in m.matched_members],
+                "groupCandidates": [
+                    {"groupId": gid, "confidence": conf, "nMatched": n_matched, "nTotal": n_total}
+                    for gid, conf, n_matched, n_total in m.group_candidates
+                ],
+                # Union coverage: `cohorts` is the per-cohort union over accepted members across all
+                # reached groups (not the winner group's cohorts); this maps each covered cohort to the
+                # supporting member variables so a UI can name the supporting variable/option per cohort. A
+                # member that is a checklist OPTION carries its ``optionLabel``.
+                "coverageMembers": {
+                    cohort: [_member_payload(vid, conf) for vid, conf in members]
+                    for cohort, members in m.coverage_members.items()
+                },
             }
             for m in spec.matches
         ],

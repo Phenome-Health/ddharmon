@@ -184,6 +184,17 @@ class GenericCSVParser:
 
         logger.info("Parsed %d fields from %d CSV rows", len(fields), len(df))
 
+        # Step 3b: Never drop a row to a variable_name collision. `DataDictionary.fields` is keyed by
+        # variable_name and the pipeline's field identity is (cohort, variable_name), so two rows sharing a
+        # name would last-wins collapse — silent data loss. But repeated names are OFTEN semantically
+        # DIFFERENT rows (two `vis_aid` rows: "Uses Magnifiers" vs "Uses White cane"), so disambiguate
+        # rather than drop: the FIRST occurrence keeps the source name, later ones get a unique "__N"
+        # identity, and the source name is preserved on `short_label` for display. This makes internal
+        # disambiguation the DEFAULT (a free, local, Setup-time operation) instead of the manual escape
+        # hatch (emit a unique field_id and pass variable_name='field_id'). The real description /
+        # question_text stay untouched — the mint is identity-only.
+        self._disambiguate_variable_names(fields)
+
         # Step 4: Apply hierarchy detection (opt-out)
         if detect_hierarchy:
             fields = _detect_hierarchy(fields, delimiter=hierarchy_delimiter)
@@ -199,6 +210,39 @@ class GenericCSVParser:
             source_path=path,
             cohort_name=cohort_name,
         )
+
+    @staticmethod
+    def _disambiguate_variable_names(fields: list[Field]) -> dict[str, int]:
+        """Give every field a UNIQUE ``variable_name`` in place, so nothing is dropped when the dictionary is
+        keyed by it. The first occurrence of a name keeps it; a later one gets a ``"__N"`` suffix and keeps
+        the source name on ``short_label`` for display. Returns ``{source_name: total_occurrences}`` for the
+        names that appeared more than once — a caller / the Setup UI can surface "N variable names appear more
+        than once; they were kept as distinct variables (check they're really different)".
+        """
+        used: set[str] = set()
+        counts: dict[str, int] = {}
+        for f in fields:
+            original = f.variable_name
+            counts[original] = counts.get(original, 0) + 1
+            if original in used:
+                if f.short_label is None:
+                    f.short_label = original  # preserve what the source called it, for display
+                n = 2
+                candidate = f"{original}__{n}"
+                while candidate in used:
+                    n += 1
+                    candidate = f"{original}__{n}"
+                f.variable_name = candidate
+            used.add(f.variable_name)
+        duplicates = {name: c for name, c in counts.items() if c > 1}
+        if duplicates:
+            logger.warning(
+                "Disambiguated %d repeated variable name(s) so no row was dropped (kept as distinct "
+                "variables — check they are really different): %s",
+                len(duplicates),
+                duplicates,
+            )
+        return duplicates
 
     @staticmethod
     def _build_role_lookup(column_map: dict[str, FieldRole]) -> dict[FieldRole, str | list[str]]:

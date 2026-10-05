@@ -12,9 +12,9 @@ import pytest
 
 from ddharmon.clustering.topic_engine import collect_inputs
 from ddharmon.harmonization.anchor import CDE_COHORT
-from ddharmon.harmonization.leanb import LeanBResult, prepare_readjudicate, readjudicate
+from ddharmon.harmonization.leanb import LeanBResult, prepare_readjudicate, readjudicate, readjudicate_split_only
 from ddharmon.harmonization.leanb_prompts import SYS_READJUDICATE
-from ddharmon.harmonization.models import LeanBRecord
+from ddharmon.harmonization.models import ConceptGroup, LeanBRecord
 
 
 @pytest.fixture
@@ -163,3 +163,73 @@ def test_readjudicate_single_group_replaces_parent_unchanged(world):
     assert len(result.records) == 1  # one child replaces the parent
     assert result.records[0].readjudicated_from == "c1#g0"
     assert result.records[0].n_members == 6  # all members retained
+
+
+# ── readjudicate_split_only (Option A: Gate-1 accept produces CHILD CONCEPT-GROUPS, unassigned) ──
+#
+# The workbench "accept the division" at Gate 1 is a GROUPING change, not an assignment. It must re-split
+# the flagged over-merged group into child *concept-groups* that replace the parent in result.concept_groups
+# (each tagged readjudicated_from = the parent group_id), WITHOUT running classify — the children are assigned
+# later at the normal per-group assign stage (Gate 2). So this path takes `split` but NO `classify`, produces
+# ConceptGroups (not LeanBRecords), and leaves the parent's record removed but no child records added.
+
+
+def _parent_group(group_id="c1#g0", cluster_id="c1", n=6):
+    return ConceptGroup(
+        cluster_id=cluster_id,
+        group_id=group_id,
+        concept="mixed A+B",
+        n_members=n,
+        member_variable_names=[f"C:v{i}" for i in range(n)],
+        incoherent=True,
+        coherence_verdict="split",
+    )
+
+
+def test_readjudicate_split_only_replaces_parent_group_with_children(world):
+    embedded, embeddings, field_refs = world
+    flagged = _flagged(field_refs)  # record for c1#g0
+    keeper_rec = LeanBRecord(cluster_id="c2", verdict="adopt", route="assigned", group_id="c2#g0", n_members=3)
+    parent_group = _parent_group()
+    keeper_group = ConceptGroup(cluster_id="c2", group_id="c2#g0", concept="keep", n_members=3)
+    result = LeanBResult(records=[flagged, keeper_rec], concept_groups=[parent_group, keeper_group])
+
+    # SPLIT-ONLY: no classify argument at all.
+    readjudicate_split_only(result, embedded, embeddings, field_refs, split=_mock_split_into_two, group_ids=["c1#g0"])
+
+    gids = [g.group_id for g in result.concept_groups]
+    assert "c1#g0" not in gids  # the flagged parent GROUP was replaced
+    assert "c2#g0" in gids  # the untouched group is kept
+    children = [g for g in result.concept_groups if g.readjudicated_from == "c1#g0"]
+    assert len(children) == 2  # re-split into two coherent child groups
+    assert len({c.group_id for c in children}) == 2  # unique ids
+    assert all(c.cluster_id == "c1#g0" for c in children)  # namespaced under the parent group
+    assert {c.concept for c in children} == {"A", "B"}  # concept labels came from the split stage
+
+
+def test_readjudicate_split_only_does_not_assign_children(world):
+    embedded, embeddings, field_refs = world
+    flagged = _flagged(field_refs)
+    parent_group = _parent_group()
+    result = LeanBResult(records=[flagged], concept_groups=[parent_group])
+
+    readjudicate_split_only(result, embedded, embeddings, field_refs, split=_mock_split_into_two, group_ids=["c1#g0"])
+
+    # The parent record is gone and NO child records were added — the children are unassigned ConceptGroups.
+    assert result.records == []
+    # The children exist only as groups (no verdict/route until Gate 2 assign).
+    assert len(result.concept_groups) == 2
+    assert all(getattr(g, "readjudicated_from", "") == "c1#g0" for g in result.concept_groups)
+
+
+def test_readjudicate_split_only_noop_when_nothing_selected(world):
+    embedded, embeddings, field_refs = world
+    clean = LeanBRecord(cluster_id="c1", verdict="adopt", route="assigned", group_id="c1#g0", incoherent=False)
+    group = ConceptGroup(cluster_id="c1", group_id="c1#g0", concept="clean", n_members=3)
+    result = LeanBResult(records=[clean], concept_groups=[group])
+
+    # explicit empty-intersection selection -> untouched
+    readjudicate_split_only(result, embedded, embeddings, field_refs, split=_mock_split_into_two, group_ids=["nope"])
+
+    assert [g.group_id for g in result.concept_groups] == ["c1#g0"]
+    assert len(result.records) == 1

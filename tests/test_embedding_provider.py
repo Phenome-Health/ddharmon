@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from ddharmon.embedding.provider import EmbeddingProvider
+from ddharmon.embedding.provider import EmbeddingProvider, _embedding_dimension
 
 
 class MockProvider(EmbeddingProvider):
@@ -107,3 +107,54 @@ class TestSentenceTransformerProvider:
         """Custom model embeds to correct dimension."""
         result = minilm_provider.embed(["test"])
         assert result.shape == (1, 384)
+
+
+class TestEmbeddingDimensionAcrossTheRename:
+    """`_embedding_dimension` must survive the sentence-transformers 5.x -> 6.x rename.
+
+    sentence-transformers 6.0 renamed `get_sentence_embedding_dimension` to
+    `get_embedding_dimension` and warns on the old name, so the old name will eventually stop
+    working. Real installs are covered on both sides of the rename with test doubles rather than a
+    version pin — the `pyproject.toml` floor is `>=3.0.0`, which spans both APIs.
+    """
+
+    def test_prefers_the_new_name(self) -> None:
+        class New:
+            def get_embedding_dimension(self) -> int:
+                return 768
+
+        assert _embedding_dimension(New()) == 768
+
+    def test_falls_back_to_the_pre_6_0_name(self) -> None:
+        class Old:
+            def get_sentence_embedding_dimension(self) -> int:
+                return 384
+
+        assert _embedding_dimension(Old()) == 384
+
+    def test_new_name_wins_when_both_exist(self) -> None:
+        """6.x keeps the old name as a warning shim, so both are present — take the un-deprecated one."""
+
+        class Both:
+            def get_embedding_dimension(self) -> int:
+                return 768
+
+            def get_sentence_embedding_dimension(self) -> int:  # pragma: no cover - must not be called
+                raise AssertionError("the deprecated getter must not be preferred")
+
+        assert _embedding_dimension(Both()) == 768
+
+    def test_raises_when_neither_name_exists(self) -> None:
+        """A future rename must fail loudly, not silently produce a wrong width."""
+        with pytest.raises(AttributeError, match="neither get_embedding_dimension"):
+            _embedding_dimension(object())
+
+    def test_raises_rather_than_caching_a_none_width(self) -> None:
+        """The width is written into the embedding cache schema, so None must not propagate."""
+
+        class NoFixedWidth:
+            def get_embedding_dimension(self) -> None:
+                return None
+
+        with pytest.raises(ValueError, match="no fixed output width"):
+            _embedding_dimension(NoFixedWidth())

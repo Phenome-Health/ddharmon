@@ -859,6 +859,180 @@ class TestRecoverOutlierClusters:
         out_clusters, out_sub = recover_outlier_clusters(clusters, sub, emb, refs)
         assert out_clusters is clusters and out_sub is sub  # no rows map -> no-op
 
+    def test_a_recovered_substrate_is_never_recovered_again(self):
+        """Recovery is applied to a partition at most once: re-applying it would re-cluster the LEFTOVERS."""
+        refs = self._refs(10)
+        emb = np.zeros((10, 8), dtype=np.float32)
+        sub = ClusteringSubstrate(
+            clusters=[[("A", f"var_{i}") for i in range(7)]],
+            min_cluster_size=15,
+            n_fields=10,
+            outlier=[("A", "var_7"), ("A", "var_8"), ("A", "var_9")],  # the leftovers a first recovery left
+            outliers_recovered=True,
+        )
+        clusters = clusters_from_substrate(sub, refs)
+        out_clusters, out_sub = recover_outlier_clusters(clusters, sub, emb, refs, min_cluster_size=8)
+        assert out_clusters is clusters and out_sub is sub  # the small-n rule would have lumped all three
+
+    def test_a_successful_recovery_marks_the_substrate_recovered(self):
+        refs = self._refs(10)
+        emb = np.zeros((10, 8), dtype=np.float32)
+        sub = ClusteringSubstrate(
+            clusters=[[("A", f"var_{i}") for i in range(7)]],
+            min_cluster_size=15,
+            n_fields=10,
+            outlier=[("A", "var_7"), ("A", "var_8"), ("A", "var_9")],
+        )
+        assert sub.outliers_recovered is False  # a hand-built / freshly-clustered partition has not had it
+        _clusters, out_sub = recover_outlier_clusters(clusters_from_substrate(sub, refs), sub, emb, refs)
+        assert out_sub.outliers_recovered is True
+
+
+# ── a frozen substrate replays the partition it recorded, recovery included, never re-applied ──
+#
+# The failure this guards: a staged run's Gate 1 -> Gate 2 leg loaded the Gate-1 substrate (already
+# post-recovery: 60 clusters + 11 leftover outliers) and RE-RAN M10 on it. `recluster_residual`'s small-n
+# rule lumps any residual of <= 15 rows into one group, so the 11 leftovers became a brand-new cluster
+# that Gate 1 never showed, and the leg paid a generate + split call for it.
+
+
+def _drifting_recoverer(real):
+    """A stand-in for ``recluster_residual`` with the one property this guards: it is NOT idempotent.
+
+    A residual of more than two rows gets the shape of the UMAP pass (most rows recovered as a cluster, a
+    remainder left as noise); two or fewer go to the REAL function, whose small-n rule lumps them into one
+    group. So re-applying recovery to its own output recovers the remainder as a new cluster, exactly as the
+    live run's second leg did. UMAP-free, so the test is deterministic and fast.
+    """
+    from ddharmon.clustering.topic_engine import extract_topic_clusters
+
+    def fake(embeddings, field_refs, residual_indices, *, min_cluster_size=8, **_kw):
+        idx = list(residual_indices)
+        if len(idx) <= 2:
+            return real(embeddings, field_refs, idx, min_cluster_size=min_cluster_size)
+        refs = [field_refs[i] for i in idx]
+        cohorts = list(dict.fromkeys(r.dictionary_name for r in refs))
+        return extract_topic_clusters([0] * (len(idx) - 2) + [-1, -1], refs, cohorts)
+
+    return fake
+
+
+@pytest.fixture
+def f2_world(world, monkeypatch):
+    """``world`` with a stubbed FRESH clustering (one cluster + four outliers) and the drifting recoverer."""
+    import ddharmon.clustering.topic_engine as te
+    from ddharmon.models.cluster import TopicModelResult
+
+    embedded, _embeddings, _field_refs, by_key = world
+    age = [by_key[("CohortA", "age")], by_key[("CohortB", "age_yrs")]]
+    outliers = [
+        by_key[("CohortA", "smoke")],
+        by_key[("CohortB", "smoke_b")],
+        by_key[("CohortA", "home_residence_zip")],
+        by_key[("CohortA", "employer_workplace_zip")],
+    ]
+
+    def fake_topic_model(embedded_dicts, **_kw):
+        docs, embeddings, field_refs, cohorts = collect_inputs(embedded_dicts)
+        return TopicModelResult(
+            model=None,
+            docs=docs,
+            embeddings=embeddings,
+            field_refs=field_refs,
+            clusters=[_cluster(0, age)],
+            outlier_cluster=_cluster(-1, outliers),
+            all_cohort_names=cohorts,
+        )
+
+    monkeypatch.setattr(te, "topic_model_dictionaries", fake_topic_model)
+    monkeypatch.setattr(te, "recluster_residual", _drifting_recoverer(te.recluster_residual))
+    return embedded, by_key
+
+
+def _ideal_ids(result) -> list[str]:
+    return sorted(p.id for p in result.ideal_prompts)
+
+
+def test_a_saved_recovered_substrate_replays_the_identical_partition(f2_world, tmp_path):
+    """The regression: fresh leg (cluster + recover once) -> save -> reload twice -> the SAME partition.
+
+    Without the fix the first reload re-runs recovery on the two leftover outliers and adds a cluster the
+    fresh leg never produced: a new content-addressed prompt id, i.e. a new paid generate + split call.
+    """
+    from ddharmon.harmonization.substrate import load_substrate, save_substrate
+
+    embedded, _by_key = f2_world
+    fresh = harmonize_leanb(embedded, generate=None)  # substrate=None -> the fresh clustering path
+    assert len(fresh.ideal_prompts) == 2, "the fresh leg should be the age cluster + one recovered cluster"
+    path = save_substrate(fresh.substrate, tmp_path / "substrate.json")
+
+    for leg in (2, 3):
+        replayed = harmonize_leanb(embedded, substrate=load_substrate(path), generate=None)
+        assert _ideal_ids(replayed) == _ideal_ids(fresh), f"leg {leg} replayed a different partition"
+        assert replayed.substrate.substrate_id == fresh.substrate.substrate_id
+    assert load_substrate(path).outliers_recovered is True
+
+
+def test_a_legacy_substrate_file_is_replayed_as_saved(world, tmp_path):
+    """Back-compat: a substrate written before the flag existed is treated as ALREADY recovered.
+
+    Every such file the product wrote is post-recovery (M10 is on by default and the saved
+    substrate is the one harmonize_leanb returns AFTER recovery), so its partition is what the run showed.
+    Here the REAL recoverer would lump the two leftover outliers into a new cluster if it were re-applied.
+    """
+    from ddharmon.harmonization.substrate import load_substrate
+
+    embedded, _embeddings, field_refs, _by_key = world
+    clusters = [[("CohortA", "age"), ("CohortB", "age_yrs")], [("CohortA", "smoke"), ("CohortB", "smoke_b")]]
+    legacy = {
+        "version": 1,
+        "min_cluster_size": 15,
+        "n_fields": len(field_refs),
+        "clusters": [[list(k) for k in cl] for cl in clusters],
+        "outlier": [["CohortA", "home_residence_zip"], ["CohortA", "employer_workplace_zip"]],
+    }
+    path = tmp_path / "legacy_substrate.json"
+    path.write_text(json.dumps(legacy))
+
+    result = harmonize_leanb(embedded, substrate=load_substrate(path), generate=None)
+    assert len(result.ideal_prompts) == 2, "recovery was re-applied to a legacy (post-recovery) substrate"
+    assert result.substrate.outlier == [("CohortA", "home_residence_zip"), ("CohortA", "employer_workplace_zip")]
+
+
+def test_a_pre_recovery_substrate_is_recovered_exactly_once(f2_world):
+    """A substrate that has NOT had recovery (a frozen base partition: the M10 ablation workflow) still gets
+    it when asked, once; the returned substrate records that, and ``recover_outliers=False`` records nothing."""
+    embedded, by_key = f2_world
+    base = build_substrate(
+        [_cluster(0, [by_key[("CohortA", "age")], by_key[("CohortB", "age_yrs")]])],
+        min_cluster_size=15,
+        outlier=_cluster(-1, [by_key[("CohortA", "smoke")], by_key[("CohortB", "smoke_b")]]),
+    )
+    assert base.outliers_recovered is False
+    off = harmonize_leanb(embedded, substrate=base, generate=None, recover_outliers=False)
+    assert len(off.ideal_prompts) == 1 and off.substrate.outliers_recovered is False
+    on = harmonize_leanb(embedded, substrate=base, generate=None)
+    assert len(on.ideal_prompts) == 2 and on.substrate.outliers_recovered is True
+    again = harmonize_leanb(embedded, substrate=on.substrate, generate=None)
+    assert _ideal_ids(again) == _ideal_ids(on)
+
+
+def test_a_recovery_that_found_nothing_still_counts_as_applied(world, monkeypatch):
+    """UMAP is not bit-reproducible, so a recovery that found no cluster this time might find one on a replay.
+    The attempt is what is recorded, so a replay never makes a second one."""
+    import ddharmon.clustering.topic_engine as te
+
+    embedded, _embeddings, _field_refs, by_key = world
+    monkeypatch.setattr(te, "recluster_residual", lambda *a, **k: ([], None))
+    base = build_substrate(
+        [_cluster(0, [by_key[("CohortA", "age")], by_key[("CohortB", "age_yrs")]])],
+        min_cluster_size=15,
+        outlier=_cluster(-1, [by_key[("CohortA", "smoke")], by_key[("CohortB", "smoke_b")]]),
+    )
+    result = harmonize_leanb(embedded, substrate=base, generate=None)
+    assert len(result.ideal_prompts) == 1
+    assert result.substrate.outliers_recovered is True
+
 
 # ── productionization: the M-stack is ON by default (held-out full-5 validated 2026-07-04) ──
 
@@ -1135,6 +1309,70 @@ def test_stop_after_gencde_returns_a_resumable_partial(judgeable_world):
     assert result.specgen_prompts == []  # no spec output yet
     assert all(r.transforms == [] for r in result.records)
     assert result.concept_groups  # the Gate 1 rows travel with the partial
+
+
+# ── Gate-1 group scope: restrict the paid assign to the groups the reviewer kept ──
+
+
+def test_assign_group_ids_is_feature_detectable():
+    """Additive, keyword-only, default None — the resume leg scopes the paid assign to Gate-1's kept groups.
+
+    The UI adapter guards on ``inspect.signature`` the same way it does for ``stop_after``, so an older
+    pinned core simply ignores the scope rather than erroring; the default reproduces today's behaviour.
+    """
+    import inspect
+
+    params = inspect.signature(harmonize_leanb).parameters
+    assert "assign_group_ids" in params
+    assert params["assign_group_ids"].default is None  # additive: None = assign every group (today)
+    assert params["assign_group_ids"].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+def test_assign_group_ids_restricts_the_paid_assign_to_in_scope_groups(judgeable_world):
+    """Gate-1 scope is honored by the assign — only in-scope groups reach classify/gencde (the cost bug).
+
+    The split carves cluster 0 into a 7-member 'current smoking' group and a 1-member 'smoking outlier'
+    group. Scoping the assign to the big group alone means the outlier is never classified: no record for
+    it, and — the point of the fix — the reviewer is not charged to assign a group they excluded at Gate 1.
+    The concept groups (the Gate-1 view) still carry BOTH: scope restricts the PAID assign, not the display.
+    """
+    embedded, sub = judgeable_world
+
+    # Gate 1 boundary (classify=None) — the full post-split partition, no assign paid, to read group ids.
+    order0: list[str] = []
+    s0 = _staged_stages(order0)
+    gate1 = harmonize_leanb(embedded, substrate=sub, generate=s0["generate"], split=s0["split"], classify=None)
+    gids = {g.group_id for g in gate1.concept_groups}
+    assert len(gids) == 2, gids
+    big = next(g.group_id for g in gate1.concept_groups if g.n_members > 1)
+    outlier = next(g.group_id for g in gate1.concept_groups if g.n_members == 1)
+
+    # Full run, but scope the paid assign to the big group only. Spy on classify to prove the out-of-scope
+    # group's prompt is never handed to the (paid) assign stage.
+    order: list[str] = []
+    stages = _staged_stages(order)
+    seen_by_classify: list[str] = []
+    real_classify = stages["classify"]
+
+    def classify_spy(prompts):
+        seen_by_classify.extend(p.context["group_id"] for p in prompts)
+        return real_classify(prompts)
+
+    stages["classify"] = classify_spy
+    result = harmonize_leanb(embedded, substrate=sub, assign_group_ids={big}, **stages)
+
+    assert seen_by_classify == [big], seen_by_classify  # the outlier was never assigned -> never charged
+    assert {r.group_id for r in result.records} == {big}
+    assert outlier not in {r.group_id for r in result.records}
+    assert {g.group_id for g in result.concept_groups} == gids  # the Gate-1 view still shows both
+
+
+def test_assign_group_ids_none_assigns_every_group(judgeable_world):
+    """The default (None) is the pre-scope behaviour: every post-split group is assigned."""
+    embedded, sub = judgeable_world
+    order: list[str] = []
+    result = harmonize_leanb(embedded, substrate=sub, assign_group_ids=None, **_staged_stages(order))
+    assert len({r.group_id for r in result.records}) == 2  # both the big group and the outlier
 
 
 def test_every_early_return_carries_the_substrate(judgeable_world):
