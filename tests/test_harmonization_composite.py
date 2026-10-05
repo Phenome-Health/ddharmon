@@ -29,7 +29,15 @@ from ddharmon.harmonization import (
     records_from_payload,
     spec_to_dict,
 )
-from ddharmon.harmonization.composite import ComponentCoding, MatchReason, _cut_point, shortlist_concepts
+from ddharmon.harmonization.composite import (
+    ComponentCoding,
+    ConceptEntry,
+    MatchReason,
+    _cut_point,
+    _rollup_to_groups,
+    build_group_lookup,
+    shortlist_concepts,
+)
 from ddharmon.harmonization.models import GenCDE, LeanBRecord, TransformSpec
 from ddharmon.harmonization.parse import salvage_objects
 from ddharmon.harmonization.score_sources import ScoreSource, from_text
@@ -432,7 +440,10 @@ def test_match_prompt_tells_the_judge_to_prefer_a_gap_over_a_guess(run_records):
     complete = _fake_complete(_match_json({"Haemoglobin": "c6#g0"}))
     match_components(definition, index, complete, embed=None)
     system = complete.calls[0]["system"]
-    assert "Prefer null when unsure" in system
+    # The multi-rate schema replaced "return conceptId null" with "omit non-matches"; the gap-over-guess
+    # discipline is now carried by "omit when unsure" + "a wrong match silently corrupts the score".
+    assert "omit when unsure" in system
+    assert "silently corrupts the score" in system
     assert "WHAT IS MEASURED, not on shared words" in system
 
 
@@ -980,3 +991,182 @@ def test_reason_travels_out_through_spec_to_dict(run_records):
     reasons = {m["component"]: m["reason"] for m in spec_to_dict(spec)["matches"]}
     assert reasons["Weak grip strength"] == "matched"
     assert reasons["Slow gait speed"] == "no_decision"
+
+
+# --- variable-only matching (v2 score builder): roll variables up to their groups -------------
+
+
+def _grec(group_id, concept, members, cohorts, *, ideal=""):
+    """A LeanBRecord for one concept GROUP with explicit member variable ids."""
+    return LeanBRecord(
+        cluster_id=group_id.split("#")[0],
+        verdict="adopt",
+        route="assigned",
+        group_id=group_id,
+        concept=concept,
+        ideal_cde=ideal,
+        cohorts=cohorts,
+        cross_cohort=len(cohorts) >= 2,
+        n_members=len(members),
+        member_variable_names=list(members),
+    )
+
+
+def _multi_match_json(by_key):
+    """Judge output rating several candidate VARIABLES per component (the multi-rate schema)."""
+    matches = []
+    for key, items in by_key.items():
+        for vid, conf in items:
+            matches.append({"componentKey": key, "conceptId": vid, "confidence": conf, "rationale": "measures it"})
+    return json.dumps({"matches": matches})
+
+
+def _var_two_component_def():
+    return ScoreDefinition(
+        name="mini",
+        kind=CompositeKind.DEFICIT_PROPORTION,
+        components=[
+            ScoreComponent(name="Hearing difficulty", definition="self reported hearing loss or difficulty"),
+            ScoreComponent(name="Fracture", definition="fracture broken bones"),
+        ],
+    )
+
+
+@pytest.fixture
+def var_records():
+    return [
+        _grec("g_hear#g0", "Current hearing loss group", ["UKBB:h1", "UKBB:h2"], ["UKBB"]),
+        _grec("g_frac#g0", "", ["UKBB:f1", "CLSA:f2", "CLSA:f3"], ["UKBB", "CLSA"], ideal="Bone fracture history"),
+    ]
+
+
+@pytest.fixture
+def var_field_index():
+    return {
+        "UKBB:h1": {"questionText": "Hearing difficulty problems self report"},
+        "UKBB:h2": {"questionText": "Hearing loss currently"},
+        "UKBB:f1": {"questionText": "Fracture broken bones last 5 years"},
+        "CLSA:f2": {"questionText": "Fracture site arm broken"},
+        "CLSA:f3": {"questionText": "Fracture osteoporosis unrelated"},
+    }
+
+
+def test_build_group_lookup_maps_vars_and_keeps_unlabeled_groups():
+    var_to_group, groups_by_id = build_group_lookup(
+        [
+            _grec("g_hear#g0", "Current hearing loss", ["UKBB:h1", "UKBB:h2"], ["UKBB"]),
+            _grec("g_frac#g0", "", ["UKBB:f1", "CLSA:f2"], ["UKBB", "CLSA"], ideal="Bone fracture history"),
+        ]
+    )
+    assert var_to_group["UKBB:h1"] == "g_hear#g0"
+    assert var_to_group["CLSA:f2"] == "g_frac#g0"
+    # the unlabeled (empty concept) group is KEPT so its members can still roll up ...
+    assert "g_frac#g0" in groups_by_id
+    # ... and its display name falls back to idealCde, never a raw id
+    assert groups_by_id["g_frac#g0"].label == "Bone fracture history"
+
+
+def test_rollup_to_groups_aggregates_ranks_and_drops_outliers():
+    ge_hear = ConceptEntry(concept_id="g_hear", concept="Hearing", cohorts=["UKBB"], members=["UKBB:h1", "UKBB:h2"])
+    ge_frac = ConceptEntry(
+        concept_id="g_frac",
+        concept="",
+        ideal_cde="Bone fracture history",
+        cohorts=["UKBB", "CLSA"],
+        members=["UKBB:f1", "CLSA:x", "CLSA:y"],
+    )
+    groups_by_id = {"g_hear": ge_hear, "g_frac": ge_frac}
+    var_to_group = {
+        "UKBB:h1": "g_hear",
+        "UKBB:h2": "g_hear",
+        "UKBB:f1": "g_frac",
+        "CLSA:x": "g_frac",
+        "UKBB:orphan": "g_gone",  # group id absent from groups_by_id -> outlier
+    }
+    rated = [
+        ("UKBB:h1", 0.92),
+        ("UKBB:h2", 0.88),
+        ("UKBB:f1", 0.99),
+        ("CLSA:x", 0.30),
+        ("UKBB:orphan", 0.99),
+        ("AoU:unknown", 0.99),  # both drop out (no resolvable group)
+    ]
+    surfaced, agg, members, cands = _rollup_to_groups(rated, var_to_group, groups_by_id)
+    assert surfaced.concept_id == "g_hear"  # aggregate 0.90 > fracture 0.645
+    assert agg == pytest.approx(0.90)
+    assert members == [("UKBB:h1", 0.92), ("UKBB:h2", 0.88)]
+    assert cands == [("g_hear", 0.9), ("g_frac", 0.645)]
+
+
+def test_rollup_over_merged_group_scores_below_its_best_member():
+    ge = ConceptEntry(
+        concept_id="g",
+        concept="",
+        ideal_cde="Bone fracture history",
+        cohorts=["UKBB"],
+        members=[f"v{i}" for i in range(4)],
+    )
+    groups_by_id = {"g": ge}
+    var_to_group = {f"v{i}": "g" for i in range(4)}
+    surfaced, agg, members, _ = _rollup_to_groups(
+        [("v0", 0.99), ("v1", 0.40), ("v2", 0.35)], var_to_group, groups_by_id
+    )
+    assert surfaced.concept_id == "g"
+    assert agg == pytest.approx((0.99 + 0.40 + 0.35) / 3)
+    assert agg < members[0][1]  # the over-merge signal: group aggregate below its best member
+
+
+def test_derive_variable_only_surfaces_groups_with_aggregate(var_records, var_field_index):
+    complete = _fake_complete(
+        _multi_match_json({"C1": [("UKBB:h1", 0.92), ("UKBB:h2", 0.88)], "C2": [("UKBB:f1", 0.99), ("CLSA:f2", 0.30)]})
+    )
+    result = derive_composite(
+        _var_two_component_def(), var_records, complete, embed=None, top_k=10, field_index=var_field_index
+    )
+    matches = {m.component: m for m in result.spec.matches}
+
+    hear = matches["Hearing difficulty"]
+    assert hear.concept_id == "g_hear#g0"  # surfaces the GROUP, not a bare variable
+    assert hear.is_variable is False
+    assert hear.confidence == pytest.approx(0.90)  # aggregate of its two rated members
+    assert hear.matched_members == [("UKBB:h1", 0.92), ("UKBB:h2", 0.88)]
+
+    frac = matches["Fracture"]
+    assert frac.concept_id == "g_frac#g0"
+    assert frac.concept == "Bone fracture history"  # idealCde label for the empty-concept group
+    assert frac.confidence == pytest.approx((0.99 + 0.30) / 2)
+    assert frac.confidence < 0.99  # below its best member -> over-merge signal
+    assert result.calls_made == 1  # one judge pass; extraction skipped
+
+
+def test_derive_variable_only_hides_ungrouped_outlier(var_records, var_field_index):
+    # The judge also rates a retrieved variable that belongs to NO group's member list (an outlier). It
+    # must be dropped, never surfaced as a bare variable.
+    var_field_index = {**var_field_index, "AoU:loose": {"questionText": "Hearing difficulty loose outlier"}}
+    complete = _fake_complete(
+        _multi_match_json({"C1": [("AoU:loose", 0.97), ("UKBB:h1", 0.80)], "C2": [("UKBB:f1", 0.99)]})
+    )
+    result = derive_composite(
+        _var_two_component_def(), var_records, complete, embed=None, top_k=10, field_index=var_field_index
+    )
+    hear = {m.component: m for m in result.spec.matches}["Hearing difficulty"]
+    assert hear.concept_id == "g_hear#g0"  # the grouped var wins; the outlier is hidden
+    assert hear.matched_members == [("UKBB:h1", 0.80)]  # only the grouped member
+    assert all(v != "AoU:loose" for v, _ in hear.matched_members)
+
+
+def test_spec_to_dict_emits_members_and_group_candidates(var_records, var_field_index):
+    complete = _fake_complete(
+        _multi_match_json({"C1": [("UKBB:h1", 0.92), ("UKBB:h2", 0.88)], "C2": [("UKBB:f1", 0.99), ("CLSA:f2", 0.30)]})
+    )
+    result = derive_composite(
+        _var_two_component_def(), var_records, complete, embed=None, top_k=10, field_index=var_field_index
+    )
+    blob = spec_to_dict(result.spec)
+    frac = next(m for m in blob["matches"] if m["component"] == "Fracture")
+    assert frac["matchedMembers"] == [
+        {"variableId": "UKBB:f1", "confidence": 0.99},
+        {"variableId": "CLSA:f2", "confidence": 0.30},
+    ]
+    assert frac["groupCandidates"][0]["groupId"] == "g_frac#g0"
+    assert frac["isVariable"] is False

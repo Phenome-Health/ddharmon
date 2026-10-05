@@ -12,6 +12,32 @@ import numpy as np
 from numpy.typing import NDArray
 
 
+def _embedding_dimension(model: object) -> int:
+    """Read a SentenceTransformer's output width across the 5.x -> 6.x rename.
+
+    sentence-transformers 6.0 renamed `get_sentence_embedding_dimension` to
+    `get_embedding_dimension` and emits a `FutureWarning` on the old name, so the old name will stop
+    working at some point. Both are probed rather than pinning a version, because this sits on the default
+    encoder path (BioLORD-2023) and the floor in `pyproject.toml` is `sentence-transformers>=3.0.0` —
+    every version in that range answers to one name or the other.
+
+    A hard failure here is better than a guess: the dimension is written into the embedding cache's
+    schema, so a wrong value silently corrupts a cache rather than raising.
+    """
+    for attr in ("get_embedding_dimension", "get_sentence_embedding_dimension"):
+        getter = getattr(model, attr, None)
+        if getter is None:
+            continue
+        dimension = getter()
+        if dimension is None:  # a real return value the 5.x API allows
+            raise ValueError(f"{attr}() returned None — the model exposes no fixed output width")
+        return int(dimension)
+    raise AttributeError(
+        "SentenceTransformer exposes neither get_embedding_dimension nor "
+        "get_sentence_embedding_dimension — cannot determine the embedding width"
+    )
+
+
 class EmbeddingProvider(ABC):
     """Abstract base class for embedding providers.
 
@@ -79,7 +105,7 @@ class SentenceTransformerProvider(EmbeddingProvider):
 
         self._model_name = model_name
         self._model = SentenceTransformer(model_name)
-        self._dimension: int = self._model.get_sentence_embedding_dimension()  # type: ignore[assignment]
+        self._dimension: int = _embedding_dimension(self._model)
         print(f"Embedding model loaded: {model_name} ({self._dimension}d)")
 
     @property

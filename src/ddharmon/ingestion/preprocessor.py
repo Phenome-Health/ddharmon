@@ -5,10 +5,16 @@ cohort-specific boilerplate, common prefixes, and redundant text. All rules are
 cohort-agnostic — they discover patterns from the data rather than hardcoding
 per-cohort knowledge.
 
+**Preparation can be switched off.** ``preprocess_dictionary(dd, enabled=False)`` runs no rule and returns
+the dictionary with its text untouched (the raw_* snapshots and a report saying the rules did not run are
+still attached), for a caller that must not rewrite an uploaded dictionary's text unasked. The default,
+``enabled=True``, runs the rules exactly as before.
+
 Usage:
     dd = load_dictionary("data.csv", variable_name="var", description="desc")
-    dd = preprocess_dictionary(dd)  # cleaned text now primary; raw preserved
-    print(dd.preprocessing_report)  # summary of what changed
+    dd = preprocess_dictionary(dd)                 # DEFAULT: run the rules; raw preserved
+    dd = preprocess_dictionary(dd, enabled=False)  # no text is changed
+    print(dd.preprocessing_report)  # summary of what changed (or that nothing did)
     preprocessing_diff(dd)          # per-field before/after for changed fields
     embedded = embed_dictionary(dd)
 """
@@ -19,7 +25,7 @@ import json
 import logging
 import re
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import ftfy
@@ -39,6 +45,10 @@ class PreprocessingReport:
 
     dictionary_name: str
     total_fields: int
+    #: Whether the rules actually RAN. False when the caller passed ``enabled=False`` — the report then
+    #: records that preparation was offered and declined, which is a different statement from "it ran and
+    #: found nothing", and consumers (and `preprocessing_diff`) must be able to tell those apart.
+    enabled: bool = True
     unicode_fixed: int = 0
     admin_text_stripped: int = 0  # fields whose description/question_text had administrative wrappers removed
     placeholders_replaced: int = 0
@@ -53,6 +63,12 @@ class PreprocessingReport:
     descriptions_changed: int = 0  # total fields where description differs from raw
 
     def __str__(self) -> str:
+        if not self.enabled:
+            return (
+                f"Preparation NOT RUN for {self.dictionary_name} ({self.total_fields} fields): "
+                "preprocess_dictionary(enabled=False). No text was changed. "
+                "Pass enabled=True (the default) to run the cleaning rules."
+            )
         lines = [f"Preprocessing {self.dictionary_name} ({self.total_fields} fields):"]
         lines.append(f"  Unicode fixes:      {self.unicode_fixed} fields")
         lines.append(f"  Admin text stripped: {self.admin_text_stripped} fields")
@@ -77,6 +93,31 @@ class PreprocessingReport:
         return "\n".join(lines)
 
 
+def _raw_embed_text(f: Field) -> str:
+    """The embedding text this field WOULD have produced before preprocessing touched it.
+
+    Composed by calling the real :meth:`Field.to_embedding_text` on a copy with the raw strings restored
+    and name-embedding re-enabled — never by re-deriving the format. The format is core's to change, and a
+    plausible-looking wrong string on the one screen that explains grouping is worse than showing nothing
+    (see the ``embedText`` note in the product's UI contract).
+
+    ``_embed_variable_name`` is forced back to True because suppressing it IS a preprocessing decision, so
+    the "before" is the unsuppressed composition.
+    """
+    try:
+        before = replace(
+            f,
+            variable_name=f.raw_variable_name or f.variable_name,
+            description=f.raw_description or f.description,
+            question_text=f.raw_question_text if f.raw_question_text is not None else f.question_text,
+            _embed_variable_name=True,
+        )
+        return before.to_embedding_text()
+    except Exception:  # noqa: BLE001 - a composition failure must not fail the whole report
+        logger.warning("could not compose the raw embedding text for %s", f.variable_name)
+        return ""
+
+
 def preprocessing_diff(dd: DataDictionary) -> list[dict[str, str | bool]]:
     """Return per-field before/after for all fields where preprocessing changed something.
 
@@ -84,7 +125,18 @@ def preprocessing_diff(dd: DataDictionary) -> list[dict[str, str | bool]]:
     cleaned_variable_name, cleaned_description, embed_variable_name. The *_changed
     and *_suppressed entries are booleans; the rest are strings.
     Only includes fields where at least one value differs from raw.
+
+    Returns ``[]`` when preparation did not run (``enabled=False``) — that is the correct report, not a
+    broken one. The short-circuit is load-bearing rather than an optimisation: ``embed_name_suppressed``
+    is inferred from ``Field._embed_variable_name``, which the LOADER also sets (``embed_variable_name=
+    False`` for opaque-code dictionaries, as the CDEMapper and AI-READI benchmark gold both do). Without
+    it, every field of such a dictionary would be reported as "preparation suppressed the name" when
+    preparation never ran at all.
     """
+    report = getattr(dd, "preprocessing_report", None)
+    if report is not None and not report.enabled:
+        return []
+
     diffs: list[dict[str, str | bool]] = []
     for f in dd.fields.values():
         name_changed = f.raw_variable_name is not None and f.raw_variable_name != f.variable_name
@@ -96,8 +148,13 @@ def preprocessing_diff(dd: DataDictionary) -> list[dict[str, str | bool]]:
                 {
                     "variable_name": f.variable_name,
                     "raw_variable_name": f.raw_variable_name or f.variable_name,
-                    "raw_description": (f.raw_description or f.description)[:80],
-                    "cleaned_description": f.description[:80],
+                    # NOT TRUNCATED. These used to carry a hard ``[:80]``, which cut descriptions mid-word
+                    # and made the whole string unreachable by any caller. This function reports WHAT
+                    # CHANGED; how much of it to show is the display layer's decision, and it cannot make
+                    # that decision on data it never receives.
+                    "raw_description": f.raw_description or f.description,
+                    "cleaned_description": f.description,
+                    "raw_embed_text": _raw_embed_text(f),
                     "name_changed": name_changed,
                     "desc_changed": desc_changed,
                     "embed_name_suppressed": embed_suppressed,
@@ -109,6 +166,7 @@ def preprocessing_diff(dd: DataDictionary) -> list[dict[str, str | bool]]:
 def preprocess_dictionary(
     dd: DataDictionary,
     *,
+    enabled: bool = True,
     stopwords: list[str] | None = None,
     stopwords_file: Path | str | None = None,
     prefix_min_length: int = 8,
@@ -123,8 +181,21 @@ def preprocess_dictionary(
 ) -> DataDictionary:
     """Preprocess a DataDictionary in-place, cleaning field text for embedding.
 
+    **Preparation can be switched off.** With ``enabled=True`` — the default — the rules below run exactly
+    as they always have (a frozen golden snapshot in ``tests/test_preprocessor_opt_in.py`` asserts that the
+    output is byte-identical). With ``enabled=False`` no rule runs, no text changes, and the dictionary is
+    returned as it arrived.
+
     Saves original values to raw_variable_name / raw_description before mutating.
     Cleaned text becomes the primary value used by all downstream code.
+
+    **What the raw_* fields hold when preparation is SKIPPED.** They are still populated, with the
+    unchanged values, so ``raw_variable_name == variable_name`` and ``raw_description == description``
+    (and ``raw_question_text == question_text``, including ``None`` when the field has no question).
+    They are NOT left at ``None``. This is deliberate: they used to be filled only as a side effect of
+    mutation, and a caller that reads them does not know or care whether the rules ran — one that builds a
+    lookup key out of ``raw_variable_name`` would otherwise key every field on the literal string
+    ``"cohort:None"``. "Raw" means *the text before preparation*, which on the skipped path is simply the text.
 
     Steps (in order):
         1. Unicode normalization (ftfy) — fix mojibake, curly quotes, encoding artifacts
@@ -148,6 +219,9 @@ def preprocess_dictionary(
 
     Args:
         dd: DataDictionary to preprocess (modified in place and returned).
+        enabled: Master switch. True (default) runs the rules. False short-circuits before any rule runs
+            and returns the dictionary with its text untouched. The per-rule flags below are only consulted
+            when this is True — they are not a way to switch preparation back on one rule at a time.
         stopwords: Optional list of substrings to remove from variable names.
             Applied after prefix stripping. Case-insensitive matching.
         stopwords_file: Path to a JSON stopwords config file. If None, looks for
@@ -176,10 +250,34 @@ def preprocess_dictionary(
     if not fields:
         return dd
 
-    # Snapshot raw values before any mutation
+    if not enabled:
+        # Preparation was switched off. Snapshot the raw_* fields to their (unchanged) values anyway —
+        # see the docstring: downstream readers must not meet a None where a string used to be — attach a
+        # report that says the rules did not run, and return the dictionary untouched.
+        for f in fields:
+            f.raw_variable_name = f.variable_name
+            f.raw_description = f.description
+            f.raw_question_text = f.question_text
+        dd.preprocessing_report = PreprocessingReport(  # type: ignore[attr-defined]
+            dictionary_name=dd.name, total_fields=len(fields), enabled=False
+        )
+        # Logged at INFO, and loudly: on a large survey dictionary this stage rewrites a large share of the
+        # variables, so a silent no-op here is an hour of someone debugging why their text looks untouched.
+        logger.info(
+            "preprocess_dictionary(%s): preparation SKIPPED — %d fields returned with their text "
+            "unchanged (enabled=False). Pass enabled=True to run the cleaning rules.",
+            dd.name,
+            len(fields),
+        )
+        return dd
+
+    # Snapshot raw values before any mutation. The question is snapshotted alongside the description
+    # because `to_embedding_text` PREFERS it, so it is the primary text for question-bearing fields and
+    # the before/after embedding pair is unrecoverable without it.
     for f in fields:
         f.raw_variable_name = f.variable_name
         f.raw_description = f.description
+        f.raw_question_text = f.question_text
 
     report = PreprocessingReport(dictionary_name=dd.name, total_fields=len(fields))
 

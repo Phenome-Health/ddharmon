@@ -1,10 +1,18 @@
-"""Tests for ddharmon ingestion preprocessor."""
+"""Tests for ddharmon ingestion preprocessor — the RULES.
+
+Every call here passes ``enabled=True`` explicitly, so these tests keep exercising the rules whatever the
+master switch's default is. The switch itself (``enabled=False`` changes nothing), and the golden snapshot
+proving ``enabled=True`` is byte-identical to the rules' output before the switch existed, live in
+``tests/test_preprocessor_opt_in.py``.
+"""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+import pytest
 
 if TYPE_CHECKING:
     from ddharmon.models.data_dictionary import DataDictionary, Field
@@ -232,7 +240,7 @@ class TestDropDescriptionEchoingOptions:
                 ),
             },
         )
-        preprocess_dictionary(dd)
+        preprocess_dictionary(dd, enabled=True)
         assert dd.fields["Number in household"].description == ""
         assert dd.preprocessing_report.option_echo_cleared == 1
 
@@ -250,7 +258,7 @@ class TestDropDescriptionEchoingOptions:
                 ),
             },
         )
-        preprocess_dictionary(dd, drop_description_echoing_option=False)
+        preprocess_dictionary(dd, enabled=True, drop_description_echoing_option=False)
         assert dd.preprocessing_report.option_echo_cleared == 0
         assert dd.fields["v"].description == '"Do not know"'
 
@@ -329,7 +337,7 @@ class TestStripAdministrativeText:
                 ),
             },
         )
-        preprocess_dictionary(dd)
+        preprocess_dictionary(dd, enabled=True)
         assert dd.fields["smoke_now"].description == "Do you smoke tobacco now?"
         assert dd.preprocessing_report.admin_text_stripped == 1
 
@@ -339,7 +347,7 @@ class TestStripAdministrativeText:
 
         raw = 'ACE touchscreen question "Do you smoke tobacco now?" <table>help</table>'
         dd = DataDictionary(name="UKBB", fields={"s": Field(variable_name="s", description=raw)})
-        preprocess_dictionary(dd, strip_administrative_text=False)
+        preprocess_dictionary(dd, enabled=True, strip_administrative_text=False)
         assert dd.preprocessing_report.admin_text_stripped == 0
         assert dd.fields["s"].description == raw
 
@@ -506,7 +514,7 @@ class TestPreprocessDictionary:
                 ("assessment_health_height", "Standing height"),
             ]
         )
-        preprocess_dictionary(dd)
+        preprocess_dictionary(dd, enabled=True)
 
         for f in dd.fields.values():
             assert f.raw_variable_name is not None
@@ -524,7 +532,7 @@ class TestPreprocessDictionary:
                 ("assessment_health_height", "Standing height"),
             ]
         )
-        preprocess_dictionary(dd)
+        preprocess_dictionary(dd, enabled=True)
 
         names = set(dd.fields.keys())
         assert "bmi" in names
@@ -541,7 +549,7 @@ class TestPreprocessDictionary:
                 ("assessment_health_height", "Standing height"),
             ]
         )
-        preprocess_dictionary(dd)
+        preprocess_dictionary(dd, enabled=True)
 
         # Dictionary keys should match current variable_name, not raw
         for key, field in dd.fields.items():
@@ -556,7 +564,7 @@ class TestPreprocessDictionary:
                 ("questionnaire_drinking_freq", "Drinking frequency"),
             ]
         )
-        preprocess_dictionary(dd, stopwords=["questionnaire"], strip_common_prefixes=False)
+        preprocess_dictionary(dd, enabled=True, stopwords=["questionnaire"], strip_common_prefixes=False)
 
         names = set(dd.fields.keys())
         assert all("questionnaire" not in n for n in names)
@@ -573,7 +581,7 @@ class TestPreprocessDictionary:
                 ("boilerplate_bmi", "BMI"),
             ]
         )
-        preprocess_dictionary(dd, stopwords_file=sw_file, strip_common_prefixes=False)
+        preprocess_dictionary(dd, enabled=True, stopwords_file=sw_file, strip_common_prefixes=False)
 
         names = set(dd.fields.keys())
         assert all("boilerplate" not in n for n in names)
@@ -583,7 +591,7 @@ class TestPreprocessDictionary:
         from ddharmon.models.data_dictionary import DataDictionary
 
         dd = DataDictionary(name="empty", fields={})
-        result = preprocess_dictionary(dd)
+        result = preprocess_dictionary(dd, enabled=True)
         assert result.field_count == 0
 
     def test_no_mutation_without_patterns(self) -> None:
@@ -596,7 +604,7 @@ class TestPreprocessDictionary:
                 ("height", "Standing height"),
             ]
         )
-        preprocess_dictionary(dd)
+        preprocess_dictionary(dd, enabled=True)
 
         # No common prefix, no stopwords — names should be unchanged
         assert "age" in dd.fields
@@ -606,7 +614,7 @@ class TestPreprocessDictionary:
         from ddharmon.ingestion.preprocessor import preprocess_dictionary
 
         dd = self._make_dd([("age", "Age")])
-        result = preprocess_dictionary(dd)
+        result = preprocess_dictionary(dd, enabled=True)
         assert result is dd
 
     def test_content_hash_changes_after_preprocessing(self) -> None:
@@ -630,7 +638,7 @@ class TestPreprocessDictionary:
         old_field = Field(variable_name="assessment_health_bmi", description="Body  mass   index")
         old_hash = old_field.content_hash()
 
-        preprocess_dictionary(dd)
+        preprocess_dictionary(dd, enabled=True)
 
         # After preprocessing, the field (prefix stripped to "bmi") has collapsed
         # whitespace in its description -> different embedded text -> different hash.
@@ -651,6 +659,7 @@ class TestPreprocessDictionary:
         )
         preprocess_dictionary(
             dd,
+            enabled=True,
             normalize_unicode=False,
             strip_common_prefixes=False,
             dedup_name_in_description=False,
@@ -659,3 +668,173 @@ class TestPreprocessDictionary:
         # Raw should still be saved, but names unchanged
         for f in dd.fields.values():
             assert f.raw_variable_name == f.variable_name
+
+
+class TestPreprocessingDiffIsNotTruncated:
+    """`preprocessing_diff` reports DATA; truncation is a display decision, not a data one.
+
+    A before/after review once showed examples cut mid-word — "…at recruitment, but in som". The cause was
+    not the display layer but a hard ``[:80]`` here, so no consumer could ever show the whole string however
+    it chose to render it. A function whose job is to report what
+    changed must not decide how much of the change the caller is allowed to see.
+    """
+
+    def _dd(self, fields):
+        from ddharmon.models.data_dictionary import DataDictionary
+
+        return DataDictionary(name="trunc", fields={f.variable_name: f for f in fields})
+
+    def test_a_long_description_survives_the_diff_whole(self) -> None:
+        from ddharmon.ingestion.preprocessor import preprocess_dictionary, preprocessing_diff
+        from ddharmon.models.data_dictionary import Field
+
+        # Comfortably past the old 80-char cap, and with the payload at the END so a truncation is
+        # detectable rather than merely suspected.
+        tail = "THE_TAIL_THAT_MUST_SURVIVE"
+        long_desc = (
+            "Sex of participant. <p>Acquired from central registry at recruitment, "
+            + ("but in some cases self-reported at the baseline visit and reconciled later. " * 3)
+            + tail
+        )
+        dd = self._dd([Field(variable_name="SEX_B", description=long_desc)])
+        preprocess_dictionary(dd, enabled=True)
+
+        rows = preprocessing_diff(dd)
+        assert rows, "the markup strip should have changed this field, so it must appear in the diff"
+        row = rows[0]
+
+        raw = str(row["raw_description"])
+        cleaned = str(row["cleaned_description"])
+        # The BEFORE is the raw string in full — including its tail.
+        assert raw == long_desc
+        assert tail in raw
+        # And the AFTER is the field's actual cleaned description, not a prefix of it.
+        assert cleaned == dd.fields["SEX_B"].description
+        assert tail in cleaned
+        # Belt and braces: nothing here is exactly 80 characters, which is what a surviving cap looks like.
+        assert len(raw) > 80 and len(cleaned) > 80
+
+
+class TestPreprocessingDiffCarriesTheEmbeddingText:
+    """The diff must show the string the GROUPING STAGE consumes, before and after.
+
+    For the rules whose whole effect is on the embedding text, a before/after review that shows only the
+    DESCRIPTION — which for "suppressed a variable name that echoed its
+    description" is byte-identical on both sides ("Year ended full time education" / "Year ended full time
+    education"). Such a screen truthfully reports the wrong pair of strings.
+
+    `raw_embed_text` is composed by calling the REAL ``Field.to_embedding_text()`` on a field with its raw
+    values restored — never by re-deriving the format, because a plausible-looking wrong string on the one
+    screen that explains grouping is worse than showing nothing.
+    """
+
+    def _dd(self, fields):
+        from ddharmon.models.data_dictionary import DataDictionary
+
+        return DataDictionary(name="embed", fields={f.variable_name: f for f in fields})
+
+    def test_name_suppression_alone_leaves_the_embedding_text_UNCHANGED(  # noqa: N802 - caps are the point
+        self,
+    ) -> None:
+        """The correction to my own first assumption, kept as the record.
+
+        I expected name suppression to change the embedding text. It does not, when a primary text is
+        present: ``to_embedding_text`` returns the description ALONE and never prepends the name, so
+        dropping the name from a field that has a description changes nothing. The screen's existing note
+        — "neither string changed" — was already correct.
+
+        This is worth asserting rather than deleting, because it is the reason the embedding pair is the
+        honest thing to render: it shows identical strings here, which is TRUE, where the description pair
+        showed identical strings while implying something had changed.
+        """
+        from ddharmon.ingestion.preprocessor import preprocess_dictionary, preprocessing_diff
+        from ddharmon.models.data_dictionary import Field
+
+        dd = self._dd(
+            [Field(variable_name="Year ended full time education", description="Year ended full time education")]
+        )
+        preprocess_dictionary(dd, enabled=True)
+        rows = preprocessing_diff(dd)
+        assert rows, "name suppression must put the field in the diff"
+        row = rows[0]
+
+        assert bool(row["embed_name_suppressed"]) is True
+        f = dd.fields["Year ended full time education"]
+        # Description identical on both sides...
+        assert row["raw_description"] == row["cleaned_description"]
+        # ...and so is the embedding text, because the name was never in it.
+        assert str(row["raw_embed_text"]) == f.to_embedding_text()
+
+    # The capitals are the author's emphasis and carry the point of the test — kept, rule silenced.
+    def test_suppression_DOES_change_the_embedding_text_once_the_primary_text_is_gone(  # noqa: N802
+        self,
+    ) -> None:
+        """Where the suppression actually bites: a field left with no primary text.
+
+        With the description cleared (it merely echoed a response option) the name is the only candidate
+        left, so ``_embed_variable_name`` decides between embedding the name and embedding NOTHING. That is
+        the difference between landing in a name-artifact cluster and landing nowhere — and it is invisible
+        in a description-only before/after.
+        """
+        from ddharmon.ingestion.preprocessor import preprocess_dictionary, preprocessing_diff
+        from ddharmon.models.data_dictionary import Field
+
+        dd = self._dd([Field(variable_name="FUL_STDUP_TRM", description="Do not know")])
+        preprocess_dictionary(dd, enabled=True)
+        f = dd.fields["FUL_STDUP_TRM"]
+        rows = preprocessing_diff(dd)
+        if not rows or not f.raw_description:
+            pytest.skip("this corpus shape did not trigger the option-echo clear")
+        row = rows[0]
+
+        raw_embed = str(row["raw_embed_text"])
+        after_embed = f.to_embedding_text()
+        # The BEFORE composed something (the raw description, or the name as fallback); the pair is the
+        # only place a reviewer can see which.
+        assert raw_embed != "" or after_embed != ""
+        if not (f.description or "").strip() and not (f.question_text or "").strip():
+            # Primary text really is gone, so the pair must differ: name-or-nothing.
+            assert raw_embed != after_embed
+
+    def test_the_before_embedding_text_is_composed_by_core_not_re_derived(self) -> None:
+        from dataclasses import replace
+
+        from ddharmon.ingestion.preprocessor import preprocess_dictionary, preprocessing_diff
+        from ddharmon.models.data_dictionary import Field
+
+        dd = self._dd(
+            [
+                Field(
+                    variable_name="SEX_B",
+                    description="Sex of participant. <p>Acquired from central registry.</p>",
+                    question_text="What\u00a0is your sex?",
+                )
+            ]
+        )
+        preprocess_dictionary(dd, enabled=True)
+        row = preprocessing_diff(dd)[0]
+        f = dd.fields["SEX_B"]
+
+        # Independently reconstruct the expected BEFORE by the same route the implementation must use:
+        # restore the raw strings onto a copy and ask core to compose it.
+        expected = replace(
+            f,
+            variable_name=f.raw_variable_name or f.variable_name,
+            description=f.raw_description or f.description,
+            question_text=f.raw_question_text if f.raw_question_text is not None else f.question_text,
+            _embed_variable_name=True,
+        ).to_embedding_text()
+        assert str(row["raw_embed_text"]) == expected
+
+    def test_raw_question_text_is_preserved_when_preprocessing_rewrites_it(self) -> None:
+        from ddharmon.ingestion.preprocessor import preprocess_dictionary
+        from ddharmon.models.data_dictionary import Field
+
+        # A non-breaking space in the question is rewritten by the whitespace/unicode rules. Without the
+        # raw value preserved, the before-embedding-text for a question-bearing field is unrecoverable —
+        # and `to_embedding_text` prefers question_text over description, so that is the common case.
+        dd = self._dd([Field(variable_name="q1", description="Question", question_text="What\u00a0is your age?")])
+        preprocess_dictionary(dd, enabled=True)
+        f = dd.fields["q1"]
+        assert f.raw_question_text == "What\u00a0is your age?"
+        assert f.question_text != f.raw_question_text

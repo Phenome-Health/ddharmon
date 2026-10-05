@@ -111,6 +111,31 @@ class TestGenericCSVParser:
         dd = parser.load(simple_csv, column_map=SIMPLE_MAP)
         assert set(dd.fields.keys()) == {"age", "sex", "bmi"}
 
+    def test_duplicate_variable_names_never_drop_a_row(self, parser: GenericCSVParser, tmp_path: Path) -> None:
+        """Repeated variable_names are OFTEN semantically DIFFERENT rows (same name, different description),
+        so the parser must keep BOTH rather than last-wins collapse them (silent data loss). The first
+        occurrence keeps the source name; a repeat gets a unique "__N" identity and preserves the source
+        name on short_label for display."""
+        csv_content = (
+            "variable_name,description\n"
+            "vis_aid,Uses Magnifiers\n"
+            "vis_aid,Uses White cane\n"
+            "age,Age of participant\n"
+        )
+        p = tmp_path / "dupes.csv"
+        p.write_text(csv_content)
+        dd = parser.load(p, column_map=MINIMAL_MAP)
+
+        # No row dropped: field_count equals the input row count, and both vis_aid rows survive.
+        assert dd.field_count == 3
+        assert set(dd.fields) == {"vis_aid", "vis_aid__2", "age"}
+        # First occurrence keeps the source name; the repeat is disambiguated but remembers the original.
+        assert dd.fields["vis_aid"].description == "Uses Magnifiers"
+        assert dd.fields["vis_aid__2"].description == "Uses White cane"
+        assert dd.fields["vis_aid__2"].short_label == "vis_aid"
+        # The real text is intact on both — the disambiguation is identity-only, not a text edit.
+        assert dd.fields["vis_aid"].variable_name == "vis_aid"
+
     def test_twinsuk_snomed_extraction(self, parser: GenericCSVParser, twinsuk_csv: Path) -> None:
         """SNOMED codes extracted from pipe-delimited format into standard_codes."""
         dd = parser.load(twinsuk_csv, cohort_name="TwinsUK", column_map=TWINSUK_MAP)

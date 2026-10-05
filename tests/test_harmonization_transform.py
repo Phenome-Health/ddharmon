@@ -155,6 +155,23 @@ class TestAssembleSpecgen:
         rec = self._run(hf, {"code_map": {"1": "1", "2": "2"}, "confidence": 0.9}, cde_encoding="1=Yes|2=No")
         assert rec.transforms[0].kind == TransformKind.IDENTITY
 
+    def test_keeps_catalog_codes_whose_labels_carry_commas(self, hf):
+        # The real "Health Conditions - Disease Disorders" catalog list. A comma inside "(e.g., …)"
+        # used to split the item, so its true code was never in the target set and a correct recode onto it was
+        # dropped as "invented"; the one `value=meaning` item arrived raw and was dropped the same way.
+        from tests.test_response_parser import HEALTH_CONDITIONS_PV
+
+        autoimmune = "Autoimmune condition (e.g., rheumatoid arthritis, systemic lupus erythematosus, vasculitis)"
+        rec = self._run(
+            hf,
+            {"code_map": {"1": autoimmune, "2": "Thrombotic disorders"}, "confidence": 0.9},
+            source_encoding="1=Lupus|2=Blood clots",
+            cde_encoding=HEALTH_CONDITIONS_PV,
+        )
+        t = rec.transforms[0]
+        assert t.code_map == {"1": autoimmune, "2": "Thrombotic disorders"}
+        assert t.coverage == 1.0 and t.unmapped_source_codes == []
+
     def test_drops_hallucinated_target(self, hf):
         rec = self._run(hf, {"code_map": {"1": "5", "2": "0"}, "confidence": 0.9})
         t = rec.transforms[0]
