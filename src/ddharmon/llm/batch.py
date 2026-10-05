@@ -151,8 +151,6 @@ def submit_batch(
             if not line:
                 continue
             record = json.loads(line)
-            schema = record.get("schema") or _DEFAULT_PAIRWISE_SCHEMA
-            system = record["system_prompt"] + _SCHEMA_PREAMBLE + schema
             req_model = model or record.get("model_tag") or _FALLBACK_MODEL
             # Per-record max_tokens so a long-output pass (e.g. harmonize spec
             # authoring) can request more headroom than short coherence calls,
@@ -161,18 +159,32 @@ def submit_batch(
             models_used.add(req_model)
             custom_id = _safe_custom_id(record["id"], used_ids)
             id_map[custom_id] = record["id"]
-            requests.append(
-                {
-                    "custom_id": custom_id,
-                    "params": {
-                        "model": req_model,
-                        "max_tokens": req_max_tokens,
-                        "temperature": temperature,
-                        "system": system,
-                        "messages": [{"role": "user", "content": record["user_prompt"]}],
-                    },
-                }
-            )
+            params: dict = {
+                "model": req_model,
+                "max_tokens": req_max_tokens,
+                "temperature": temperature,
+                "messages": [{"role": "user", "content": record["user_prompt"]}],
+            }
+            tool_schema = record.get("tool_schema")
+            if tool_schema:
+                # FORCED tool call — the output is structurally constrained to ``tool_schema`` (no soft text
+                # schema appended, so the model cannot drop the wrapper). The system prompt carries the task;
+                # the tool enforces the output shape. Backward-compatible: only records that opt in by
+                # setting ``tool_schema`` take this path; all others keep the text-preamble path below.
+                tool_name = record.get("tool_name") or "emit"
+                params["system"] = record["system_prompt"]
+                params["tools"] = [
+                    {
+                        "name": tool_name,
+                        "description": "Return the result as structured input conforming to the schema.",
+                        "input_schema": tool_schema,
+                    }
+                ]
+                params["tool_choice"] = {"type": "tool", "name": tool_name}
+            else:
+                schema = record.get("schema") or _DEFAULT_PAIRWISE_SCHEMA
+                params["system"] = record["system_prompt"] + _SCHEMA_PREAMBLE + schema
+            requests.append({"custom_id": custom_id, "params": params})
 
     logger.info("Submitting %d requests to Batch API (models=%s)", len(requests), sorted(models_used))
 
@@ -267,7 +279,7 @@ def retrieve_batch(
         return 0
 
     # Batch is done — stream results
-    from anthropic.types import TextBlock
+    from anthropic.types import TextBlock, ToolUseBlock
 
     written = 0
     errors = 0
@@ -275,16 +287,23 @@ def retrieve_batch(
         for result in client.messages.batches.results(batch_id):
             original_id = id_map.get(result.custom_id, result.custom_id)
             if result.result.type == "succeeded":
-                # message.content is a union of block types; only TextBlock carries .text
+                # message.content is a union of block types. A forced tool call (opt-in tool_schema path)
+                # returns a ToolUseBlock whose .input is already a structured dict — no JSON parsing, no
+                # wrapper-drop. Otherwise fall back to the TextBlock + tolerant-JSON path.
                 message = result.result.message
-                block = message.content[0]
-                text = block.text if isinstance(block, TextBlock) else ""
-                try:
-                    parsed = _parse_response_text(text)
+                tool_block = next((b for b in message.content if isinstance(b, ToolUseBlock)), None)
+                if tool_block is not None:
+                    parsed = dict(tool_block.input) if isinstance(tool_block.input, dict) else tool_block.input
                     record = {"id": original_id, "response": parsed}
-                except (json.JSONDecodeError, Exception) as e:
-                    logger.warning("Failed to parse response for %s: %s", original_id, e)
-                    record = {"id": original_id, "response": text}
+                else:
+                    block = message.content[0]
+                    text = block.text if isinstance(block, TextBlock) else ""
+                    try:
+                        parsed = _parse_response_text(text)
+                        record = {"id": original_id, "response": parsed}
+                    except (json.JSONDecodeError, Exception) as e:
+                        logger.warning("Failed to parse response for %s: %s", original_id, e)
+                        record = {"id": original_id, "response": text}
                 # Preserve realized token usage + the model that ran so cost accounting can price the batch
                 # stage (batch bills at 50% — applied in cost.price_usage). Extra keys are ignored by existing
                 # readers, so this stays backward-compatible with response files written before usage capture.

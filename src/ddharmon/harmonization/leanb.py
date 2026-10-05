@@ -31,10 +31,10 @@ import logging
 import os
 import re
 from collections import defaultdict
-from collections.abc import Callable, Sequence
-from dataclasses import asdict, dataclass, field
+from collections.abc import Callable, Collection, Sequence
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -77,6 +77,9 @@ from ddharmon.models.cluster import FieldCluster, FieldReference
 from ddharmon.models.data_dictionary import Field
 from ddharmon.text_hygiene import CDE_TEXT_BOILERPLATE, is_sentinel_label, strip_sentinel_encodings
 
+if TYPE_CHECKING:
+    from ddharmon.harmonization.overrides import GroupOverrides
+
 logger = logging.getLogger(__name__)
 
 # Prompt-hygiene ablation hook: the SHIPPED default is ON (drop missing/refused/DK sentinels from the
@@ -97,6 +100,10 @@ DEFAULT_RETRIEVAL_FLOOR = 0.30
 # an exact-equivalence claim needs genuine support. Validated on the held-out full-5 (2026-07-04): demoted 44
 # weak adopts (all sensibly weak — study-ID, borderline BP), a precision move. Set None to disable.
 DEFAULT_ADOPT_FLOOR = 0.55
+# Cohort-only clustering: the CDE catalog is RETRIEVAL-only — its rows do not enter UMAP+HDBSCAN, M10 outlier
+# recovery or M2 chunking. Rationale: `harmonize_leanb(cluster_with_catalog=...)`. True restores the earlier
+# catalog-in clustering byte for byte; a replay always uses the substrate's recorded mode.
+DEFAULT_CLUSTER_WITH_CATALOG = False
 MAX_SHOW = 45  # members shown to the split LLM in one call (~the reliable-enumeration limit; M2 Phase 2a
 # raised this from 22 — the old cap truncated 68% of clusters before the LLM ever saw them. Clusters larger
 # than this are chunked by `chunk_oversized` so every unit is shown in full; tunable in the 2b A/B run.
@@ -310,6 +317,7 @@ class LeanBResult:
     coherence_prompts: list[PromptRecord] = field(default_factory=list)  # step-2 coherence judge — Batch export
     kinds_prompts: list[PromptRecord] = field(default_factory=list)  # R2 distinct-KINDS discriminator — Batch export
     refine_prompts: list[PromptRecord] = field(default_factory=list)  # refine -> derived CDE — Batch export
+    group_ideal_prompts: list[PromptRecord] = field(default_factory=list)  # New/changed groups' ideals (overrides)
     substrate: ClusteringSubstrate | None = None  # the frozen clustering partition (save it to replay cheaply)
 
     def buckets(self) -> dict[str, list[LeanBRecord]]:
@@ -573,43 +581,89 @@ def prepare_group_assign(
             grp_members = _group_members(group.get("member_ids", []), by_id, members, fallback=len(groups) == 1)
             if not grp_members:
                 continue
-            rows = [mem["row"] for mem in grp_members if (mem["dictionary_name"], mem["variable_name"]) in row_of]
-            member_texts = [mem["text"] for mem in grp_members]  # retrieval
-            prompt_lines = [mem["prompt_text"] for mem in grp_members]  # value-aware prompt
-            cands, top1 = _retrieve(rows, member_texts, embeddings, backbone, top_k)
-            concept = str(group.get("concept", ""))
-            cohorts = sorted({mem["dictionary_name"] for mem in grp_members})
-            var_names = [f"{mem['dictionary_name']}:{mem['variable_name']}" for mem in grp_members]
-            grp_ctx = {
-                "cluster_id": ctx["cluster_id"],
-                "group_idx": gi,
-                "group_id": f"{ctx['cluster_id']}#g{gi}",
-                "concept": concept,
-                "ideal_cde": ctx.get("ideal_cde", ""),
-                "candidates": cands,
-                "top1_cos": round(top1, 4),
-                "member_variable_names": var_names,
-                "cohorts": cohorts,
-                "cross_cohort": len(cohorts) >= 2,
-                "n_members": len(grp_members),
-                "split_raw": group.get("raw", {}),
-            }
             records.append(
-                PromptRecord(
-                    id=f"leanb:groupassign:{ctx['cluster_id']}:{gi}",
+                group_assign_prompt(
+                    f"leanb:groupassign:{ctx['cluster_id']}:{gi}",
+                    grp_members,
+                    {
+                        "cluster_id": ctx["cluster_id"],
+                        "group_idx": gi,
+                        "group_id": f"{ctx['cluster_id']}#g{gi}",
+                        "concept": str(group.get("concept", "")),
+                        "ideal_cde": ctx.get("ideal_cde", ""),
+                        "split_raw": group.get("raw", {}),
+                    },
+                    embeddings=embeddings,
+                    backbone=backbone,
+                    row_of=row_of,
+                    top_k=top_k,
                     system_prompt=sys_prompt,
-                    user_prompt=build_group_assign_user_prompt(
-                        concept or ctx.get("ideal_cde", ""),
-                        prompt_lines[:_SAMPLE_MEMBERS],
-                        [c["text"] for c in cands],
-                    ),
-                    schema=ASSIGN_SCHEMA,
                     model_tag=model_tag,
-                    context=grp_ctx,
                 )
             )
     logger.info("prepare_group_assign: %d split prompts -> %d per-group prompts", len(split_records), len(records))
     return records
+
+
+#: The group-identity keys :func:`group_assign_prompt` places itself; any OTHER key of ``identity`` is carried
+#: onto the prompt's context verbatim (the reviewer-override path marks its groups that way).
+_GROUP_IDENTITY_KEYS = frozenset({"cluster_id", "group_idx", "group_id", "concept", "ideal_cde", "split_raw"})
+
+
+def group_assign_prompt(
+    prompt_id: str,
+    grp_members: list[dict],
+    identity: dict,
+    *,
+    embeddings: NDArray[np.float32],
+    backbone: CdeBackbone,
+    row_of: dict[tuple[str, str], int],
+    top_k: int,
+    system_prompt: str,
+    model_tag: str,
+) -> PromptRecord:
+    """ONE per-group assign prompt: re-retrieve the group's own hybrid top-k and build its single-concept prompt.
+
+    ``grp_members`` are member dicts (``dictionary_name`` / ``variable_name`` / ``text`` / ``prompt_text`` /
+    ``row``); ``identity`` names the group (``cluster_id``, ``group_idx``, ``group_id``, ``concept``,
+    ``ideal_cde``, ``split_raw``) plus any extra context keys to carry. Shared by the split path
+    (:func:`prepare_group_assign`) and the reviewer-override path (:mod:`ddharmon.harmonization.overrides`), so a
+    group a reviewer reshaped is retrieved and prompted exactly like one the split produced.
+    """
+    rows = [mem["row"] for mem in grp_members if (mem["dictionary_name"], mem["variable_name"]) in row_of]
+    member_texts = [mem["text"] for mem in grp_members]  # retrieval
+    prompt_lines = [mem["prompt_text"] for mem in grp_members]  # value-aware prompt
+    cands, top1 = _retrieve(rows, member_texts, embeddings, backbone, top_k)
+    concept = str(identity.get("concept", ""))
+    cohorts = sorted({mem["dictionary_name"] for mem in grp_members})
+    var_names = [f"{mem['dictionary_name']}:{mem['variable_name']}" for mem in grp_members]
+    grp_ctx = {
+        "cluster_id": identity["cluster_id"],
+        "group_idx": identity.get("group_idx", 0),
+        "group_id": identity["group_id"],
+        "concept": concept,
+        "ideal_cde": identity.get("ideal_cde", ""),
+        "candidates": cands,
+        "top1_cos": round(top1, 4),
+        "member_variable_names": var_names,
+        "cohorts": cohorts,
+        "cross_cohort": len(cohorts) >= 2,
+        "n_members": len(grp_members),
+        "split_raw": identity.get("split_raw", {}),
+        **{k: v for k, v in identity.items() if k not in _GROUP_IDENTITY_KEYS},
+    }
+    return PromptRecord(
+        id=prompt_id,
+        system_prompt=system_prompt,
+        user_prompt=build_group_assign_user_prompt(
+            concept or identity.get("ideal_cde", ""),
+            prompt_lines[:_SAMPLE_MEMBERS],
+            [c["text"] for c in cands],
+        ),
+        schema=ASSIGN_SCHEMA,
+        model_tag=model_tag,
+        context=grp_ctx,
+    )
 
 
 def assemble_leanb(
@@ -713,6 +767,7 @@ def assemble_leanb(
                 n_members=ctx.get("n_members", 0),
                 decided_by="llm",
                 raw=payload or {},
+                readjudicated_from=str(ctx.get("readjudicated_from", "")),
             )
         )
     return LeanBResult(records=records, group_assign_prompts=group_assign_records)
@@ -1200,7 +1255,7 @@ def assemble_kinds(
 
 
 def prepare_readjudicate(
-    flagged_records: list[LeanBRecord],
+    flagged_records: Sequence[LeanBRecord | ConceptGroup],
     embedded_dicts: list[EmbeddedDictionary],
     embeddings: NDArray[np.float32],
     field_refs: list[FieldReference],
@@ -1213,7 +1268,7 @@ def prepare_readjudicate(
     enforce_schema: bool = True,
     desired_n: dict[str, int] | None = None,
 ) -> list[PromptRecord]:
-    """Build one re-split prompt per FLAGGED over-merged record, to re-partition it into coherent concepts.
+    """Build one re-split prompt per FLAGGED over-merged record (or Gate-1 concept group), to re-partition it.
 
     Reconstructs each flagged group's members (``member_variable_names`` -> embedding rows + text),
     re-retrieves cluster-level CDE candidates, and builds a split-shaped :class:`PromptRecord` whose
@@ -1367,6 +1422,253 @@ def readjudicate(
     return result
 
 
+def _with_members(group: ConceptGroup | LeanBRecord, keys: Sequence[str]) -> ConceptGroup | LeanBRecord:
+    """A copy of a group (or record) holding exactly ``keys`` as its members, its cohort fields to match."""
+    cohorts = sorted({k.partition(":")[0] for k in keys})
+    return replace(
+        group,
+        member_variable_names=list(keys),
+        n_members=len(keys),
+        cohorts=cohorts,
+        cross_cohort=len(cohorts) >= 2,
+    )
+
+
+def readjudicate_split_only(
+    result: LeanBResult,
+    embedded_dicts: list[EmbeddedDictionary],
+    embeddings: NDArray[np.float32],
+    field_refs: list[FieldReference],
+    *,
+    split: Callable[[list[PromptRecord]], dict[str, object]],
+    group_ids: list[str] | None = None,
+    desired_n: dict[str, int] | None = None,
+    cde_cohort: str = CDE_COHORT,
+    cde_dict: EmbeddedDictionary | None = None,
+    top_k: int = DEFAULT_TOP_K,
+    model_tag: str = DEFAULT_MODEL_TAG,
+    clean_cde_text: bool = True,
+    representation_refine: bool = True,
+    enforce_schema: bool = True,
+    group_overrides: GroupOverrides | None = None,
+) -> LeanBResult:
+    """Human-triggered re-adjudication, SPLIT-ONLY: re-split flagged over-merged groups into child
+    CONCEPT-GROUPS and splice them into ``result.concept_groups`` (each tagged ``readjudicated_from``),
+    WITHOUT assigning them.
+
+    This is the Gate-1 "accept the division" action. Accepting a proposed division is a GROUPING change,
+    not an assignment: it re-partitions the flagged group into distinct concepts and replaces the parent in
+    the Gate-1 ledger with its children. Assignment for the children happens later, at the normal per-group
+    assign stage (Gate 2) — so this path takes ``split`` but NO ``classify``, and produces
+    :class:`~.models.ConceptGroup`\\ s rather than :class:`~.models.LeanBRecord`\\ s (compare
+    :func:`readjudicate`, which runs classify and splices child records).
+
+    The flagged parent is removed from BOTH ``result.records`` and ``result.concept_groups``; the children are
+    appended to ``result.concept_groups`` only (they carry no record until assign runs). Each child's ids are
+    namespaced under the parent ``group_id`` (:func:`prepare_readjudicate` sets ``ctx['cluster_id'] =
+    parent_gid``), and ``readjudicated_from`` is stamped with that parent id — the provenance the Gate-1
+    "re-split from <parent>" marker renders. Like :func:`readjudicate`, this never runs automatically; a caller
+    (the workbench action / the driver) supplies the ``split`` stage callable. Building split-only keeps a
+    future post-assign walk-back possible without precluding it here.
+
+    THE GROUPS COME FROM ``result.concept_groups``. Gate 1 is the ``classify=None`` pause, where the split's
+    groups are on ``concept_groups`` and ``records`` is EMPTY — selecting from the records there would re-split
+    nothing, so the accept would silently do nothing. A record is used only for a named id that no
+    concept group carries (a caller holding a post-assign result).
+
+    ``group_overrides`` (default ``None``): the reviewer's regrouping SO FAR (moves + New groups, not yet
+    applied by any leg). Each named group is then re-split as the reviewer currently sees it — a variable they
+    moved away is not divided back into it, one they moved in is — resolved exactly as ``harmonize_leanb``
+    will resolve it (:func:`~ddharmon.harmonization.overrides.resolve_group_membership`), against
+    ``result.group_assign_prompts``, which must therefore be the split's own (pass the Gate-1 result, not one
+    that already applied these overrides). A group left with fewer than two variables is not re-split, and
+    nothing is bought for it.
+
+    The children exist on THIS result only. A later leg re-runs the split and would not reproduce them; to
+    carry an accepted division forward, express it as reviewer overrides
+    (:func:`~ddharmon.harmonization.overrides.division_overrides`), which every later leg applies.
+    """
+    wanted = None if group_ids is None else set(group_ids)
+
+    def _pick(items: Sequence[ConceptGroup] | Sequence[LeanBRecord]) -> list[ConceptGroup | LeanBRecord]:
+        return [x for x in items if (x.incoherent if wanted is None else x.group_id in wanted)]
+
+    selected = _pick(result.concept_groups)
+    have = {g.group_id for g in selected}
+    selected += [r for r in _pick(result.records) if r.group_id not in have]
+    if not selected:
+        return result
+    if group_overrides is not None and not group_overrides.is_empty():
+        if not result.group_assign_prompts:
+            raise ValueError(
+                "group_overrides are resolved against result.group_assign_prompts (the split's groups), and this "
+                "result carries none; pass the Gate-1 result the overrides were decided against"
+            )
+        from ddharmon.harmonization.overrides import resolve_group_membership
+
+        current, _touched = resolve_group_membership(
+            result.group_assign_prompts, group_overrides, field_refs, cde_cohort=cde_cohort
+        )
+        selected = [_with_members(s, current[s.group_id]) if s.group_id in current else s for s in selected]
+    readj_prompts = prepare_readjudicate(
+        selected,
+        embedded_dicts,
+        embeddings,
+        field_refs,
+        cde_cohort=cde_cohort,
+        cde_dict=cde_dict,
+        top_k=top_k,
+        model_tag=model_tag,
+        clean_cde_text=clean_cde_text,
+        enforce_schema=enforce_schema,
+        desired_n=desired_n,
+    )
+    if not readj_prompts:
+        return result
+    child_assign_prompts = prepare_group_assign(
+        readj_prompts,
+        split(readj_prompts),
+        embedded_dicts,
+        embeddings,
+        field_refs,
+        cde_cohort=cde_cohort,
+        cde_dict=cde_dict,
+        top_k=top_k,
+        model_tag=model_tag,
+        clean_cde_text=clean_cde_text,
+        representation_refine=representation_refine,
+    )
+    child_groups = concept_groups_from_prompts(child_assign_prompts)
+    for g in child_groups:
+        g.readjudicated_from = g.cluster_id  # prepare_readjudicate set ctx cluster_id = the parent group_id
+    reworked = {r.group_id for r in selected}
+    result.records = [r for r in result.records if r.group_id not in reworked]
+    result.concept_groups = [g for g in result.concept_groups if g.group_id not in reworked] + child_groups
+    logger.info(
+        "readjudicate_split_only: %d flagged group(s) -> %d re-split child groups (spliced, unassigned)",
+        len(selected),
+        len(child_groups),
+    )
+    return result
+
+
+# ── clustering inputs: what is clustered (mode-dependent) vs what is indexed (mode-independent) ────────────
+
+
+@dataclass
+class LeanBInputs:
+    """What the leanb stages run on: the partition, and the matrix every member-row lookup indexes.
+
+    ``embeddings`` / ``field_refs`` are ``collect_inputs`` over ALL the embedded dictionaries, the catalog
+    included, in BOTH modes. They are a lookup table for MEMBER rows (retrieval centroids, M2 chunking, the
+    coherence judge's sampling, merge) and never a clustering input: what gets clustered is decided by
+    :func:`clustering_input_dicts` and recorded on ``substrate``. Keeping the index mode-independent keeps every
+    row index, so every prompt, identical for a fixed partition whichever mode produced it, and keeps it aligned
+    with callers that rebuild it themselves (the review app's re-split path calls ``collect_inputs`` on the
+    run's dictionaries).
+    """
+
+    clusters: list[FieldCluster]
+    substrate: ClusteringSubstrate
+    embeddings: NDArray[np.float32]
+    field_refs: list[FieldReference]
+
+
+def clustering_input_dicts(
+    embedded_dicts: list[EmbeddedDictionary],
+    *,
+    cde_cohort: str = CDE_COHORT,
+    cluster_with_catalog: bool = DEFAULT_CLUSTER_WITH_CATALOG,
+) -> list[EmbeddedDictionary]:
+    """The embedded dictionaries whose rows ENTER clustering: all of them, or all but the CDE catalog (default).
+
+    The catalog is identified by name exactly as :func:`_find_cde_dict` identifies it and as every member list
+    filters it (``dictionary_name == cde_cohort``), so "excluded from clustering" and "filtered from members"
+    can never disagree about which rows are catalog.
+    """
+    if cluster_with_catalog:
+        return list(embedded_dicts)
+    return [ed for ed in embedded_dicts if _dict_cohort(ed) != cde_cohort]
+
+
+def cluster_leanb(
+    embedded_dicts: list[EmbeddedDictionary],
+    *,
+    cde_cohort: str = CDE_COHORT,
+    min_cluster_size: int = 15,
+    cluster_with_catalog: bool = DEFAULT_CLUSTER_WITH_CATALOG,
+) -> LeanBInputs:
+    """FRESH clustering for leanb (UMAP+HDBSCAN via ``topic_model_dictionaries``), before M10 recovery.
+
+    Clusters :func:`clustering_input_dicts` — the cohort dictionaries only by default — and returns the
+    partition as a substrate that RECORDS the mode (``clustered_with_catalog``) and the number of rows that
+    entered clustering (``n_fields``), plus the mode-independent index (see :class:`LeanBInputs`).
+    ``cluster_with_catalog=True`` is the earlier behaviour verbatim (the engine's own matrix is the index). With
+    no cohort row to cluster the partition is empty rather than an error: there is nothing to harmonize. A
+    caller that needs the partition outside ``harmonize_leanb`` (an experiment harness, say) can call this
+    directly and cluster exactly as the pipeline does.
+    """
+    from ddharmon.clustering.topic_engine import collect_inputs, topic_model_dictionaries
+
+    if cluster_with_catalog:
+        tm = topic_model_dictionaries(embedded_dicts, min_cluster_size=min_cluster_size)
+        substrate = build_substrate(
+            tm.clusters,
+            min_cluster_size=min_cluster_size,
+            outlier=tm.outlier_cluster,
+            n_fields=len(tm.field_refs),
+            clustered_with_catalog=True,
+        )
+        return LeanBInputs(tm.clusters, substrate, tm.embeddings, tm.field_refs)
+
+    to_cluster = clustering_input_dicts(embedded_dicts, cde_cohort=cde_cohort, cluster_with_catalog=False)
+    _docs, embeddings, field_refs, _cohorts = collect_inputs(embedded_dicts)
+    n_rows = sum(len(ed.get_variable_names()) for ed in to_cluster)
+    clusters: list[FieldCluster] = []
+    outlier: FieldCluster | None = None
+    if n_rows:
+        tm = topic_model_dictionaries(to_cluster, min_cluster_size=min_cluster_size)
+        clusters, outlier, n_rows = tm.clusters, tm.outlier_cluster, len(tm.field_refs)
+    else:
+        logger.info("cluster_leanb: no non-catalog rows to cluster -> empty partition")
+    substrate = build_substrate(
+        clusters, min_cluster_size=min_cluster_size, outlier=outlier, n_fields=n_rows, clustered_with_catalog=False
+    )
+    return LeanBInputs(clusters, substrate, embeddings, field_refs)
+
+
+def replay_leanb_inputs(
+    embedded_dicts: list[EmbeddedDictionary],
+    substrate: ClusteringSubstrate,
+    *,
+    cde_cohort: str = CDE_COHORT,
+) -> LeanBInputs:
+    """REPLAY a frozen partition in the mode it RECORDED (no clustering): its clusters + the index.
+
+    Catalog-in (``substrate.clustered_with_catalog``, and every substrate saved before that field existed): the
+    partition is rebuilt exactly as before the cohort-only switch, catalog rows and catalog-only clusters
+    included, so M2 chunking sees what it saw then and a parked run or frozen experiment reproduces byte for
+    byte. Cohort-only: catalog rows are dropped while rebuilding (a cohort-only partition has none; this keeps
+    a hand-written one from smuggling one into chunking). ``n_fields`` is compared with the rows this mode would
+    cluster and a difference is logged (the dictionaries differ from the ones the partition was frozen on).
+    """
+    from ddharmon.clustering.topic_engine import collect_inputs
+
+    _docs, embeddings, field_refs, _cohorts = collect_inputs(embedded_dicts)
+    clustered_refs = (
+        field_refs if substrate.clustered_with_catalog else [r for r in field_refs if r.dictionary_name != cde_cohort]
+    )
+    if substrate.n_fields and substrate.n_fields != len(clustered_refs):
+        logger.info(
+            "replay: substrate %s was frozen over %d clustered rows; these dictionaries give %d (%s mode)",
+            substrate.substrate_id,
+            substrate.n_fields,
+            len(clustered_refs),
+            "catalog-in" if substrate.clustered_with_catalog else "cohort-only",
+        )
+    return LeanBInputs(clusters_from_substrate(substrate, clustered_refs), substrate, embeddings, field_refs)
+
+
 def recover_outlier_clusters(
     clusters: list[FieldCluster],
     substrate: ClusteringSubstrate,
@@ -1374,6 +1676,7 @@ def recover_outlier_clusters(
     field_refs: list[FieldReference],
     *,
     min_cluster_size: int = 8,
+    cde_cohort: str = CDE_COHORT,
 ) -> tuple[list[FieldCluster], ClusteringSubstrate]:
     """M10 — recover the substrate's HDBSCAN outliers as extra clusters via an isolated residual re-cluster.
 
@@ -1386,24 +1689,38 @@ def recover_outlier_clusters(
     later frozen-substrate replay reproduces the recovery exactly — the residual re-cluster uses UMAP and is
     not bit-reproducible, so it must be frozen. A no-op (returns the inputs unchanged) when the substrate has
     no outliers or none map to a field row.
+
+    Applied to a partition AT MOST ONCE: a substrate whose ``outliers_recovered`` is set is returned unchanged.
+    Its ``outlier`` list is what the first recovery LEFT, and re-clustering that smaller residual finds new
+    groups in it (``recluster_residual`` lumps any residual of <= 15 rows into one), so a second pass would
+    grow a cluster the partition never had. A recovery that changed the partition returns a
+    substrate with the flag set; ``harmonize_leanb`` also sets it after an attempt that found nothing.
+
+    Runs in the substrate's RECORDED clustering mode: a catalog-in partition re-clusters its noise as it always
+    did (catalog rows included); a cohort-only one (``clustered_with_catalog=False``) never re-clusters a row of
+    ``cde_cohort`` — the residual pass is clustering too — and leaves any such row in ``outlier`` untouched. The
+    returned substrate keeps every other field of ``substrate`` (the mode included).
     """
     from ddharmon.clustering.topic_engine import recluster_residual
 
-    if not substrate.outlier:
+    if substrate.outliers_recovered or not substrate.outlier:
         return clusters, substrate
     row_of = {(r.dictionary_name, r.variable_name): i for i, r in enumerate(field_refs)}
-    rows = [row_of[k] for k in substrate.outlier if k in row_of]
+    residual = (
+        substrate.outlier if substrate.clustered_with_catalog else [k for k in substrate.outlier if k[0] != cde_cohort]
+    )
+    rows = [row_of[k] for k in residual if k in row_of]
     if not rows:
         return clusters, substrate
     recovered, _leftover = recluster_residual(embeddings, field_refs, rows, min_cluster_size=min_cluster_size)
     if not recovered:
         return clusters, substrate
     recovered_keys = {(m.dictionary_name, m.variable_name) for cl in recovered for m in cl.members}
-    new_substrate = ClusteringSubstrate(
+    new_substrate = replace(
+        substrate,
         clusters=substrate.clusters + [[(m.dictionary_name, m.variable_name) for m in cl.members] for cl in recovered],
-        min_cluster_size=substrate.min_cluster_size,
-        n_fields=substrate.n_fields,
         outlier=[k for k in substrate.outlier if k not in recovered_keys],
+        outliers_recovered=True,
     )
     logger.info(
         "recover_outlier_clusters: recovered %d clusters (%d fields) from %d outliers; %d still noise",
@@ -1448,6 +1765,10 @@ def harmonize_leanb(
     residual_min_cluster_size: int = 8,
     max_clusters: int | None = None,
     stop_after: str | None = None,
+    assign_group_ids: Collection[str] | None = None,
+    group_overrides: GroupOverrides | None = None,
+    group_generate: Callable[[list[PromptRecord]], dict[str, object]] | None = None,
+    cluster_with_catalog: bool = DEFAULT_CLUSTER_WITH_CATALOG,
 ) -> LeanBResult:
     """Run the full pipeline: cluster -> retrieve -> generate-ideal -> split -> per-group assign -> route.
 
@@ -1467,6 +1788,32 @@ def harmonize_leanb(
     the non-reproducible UMAP+HDBSCAN clustering and reload that exact partition (deterministic embeddings
     + field refs via ``collect_inputs``). The clustering otherwise runs fresh; either way the substrate the
     run used is returned on ``LeanBResult.substrate`` (save it to replay later — see :mod:`.substrate`).
+
+    ``cluster_with_catalog`` (default ``False``, :data:`DEFAULT_CLUSTER_WITH_CATALOG`): whether the CDE
+    catalog's own rows enter FRESH clustering. The default is COHORT-ONLY: only the non-catalog dictionaries
+    are clustered — by the main UMAP+HDBSCAN pass, by M10 outlier recovery and by M2 chunking alike — and the
+    catalog (still required in ``embedded_dicts``) reaches retrieval exactly as before. Every candidate list is
+    built from the catalog's OWN vectors (dense cosine to the members' centroid) and its own BM25 index, over
+    the cluster's NON-catalog member rows, so for a fixed partition the candidates, prompts and records are
+    identical in both modes. Clustering the catalog was inherited from the sub-cluster-anchored design (anchor
+    each cluster to its most central in-cluster CDE); in this pipeline no stage uses a catalog row as a member —
+    every member list filters them out — yet they shaped the partition, counted toward M2's chunk cap and were
+    re-clustered by M10. Evidence for the switch:
+
+    - a pre-registered co-clustering A/B on the held-out PhenX benchmark found the same micro-F1 either way;
+      the catalog only bought a finer cut, at 424 s vs 15 s per clustering;
+    - with a full NIH CDE catalog, 99.5% of the clustered rows were catalog rows, single cohort variables
+      formed clusters with catalog rows, the partition was not reproducible at a fixed seed and one clustering
+      pass took ~38 min; cohort-only gave the same partition for a curated subset of the catalog and for the
+      full catalog;
+    - the held-out multi-cohort evaluation that validated the default quality mods below already ran on a
+      cohort-only partition.
+
+    ``True`` restores catalog-in clustering byte for byte. A REPLAY ignores this argument: it runs in the mode
+    its ``substrate`` RECORDED (:attr:`~ddharmon.harmonization.substrate.ClusteringSubstrate.clustered_with_catalog`,
+    catalog-in for every substrate saved before the field existed), so a paused review run or a frozen experiment
+    reproduces exactly. The returned substrate records the mode and ``n_fields`` = the rows that entered
+    clustering.
 
     The M2/M3/M4/M5/M10 quality mods below are ON by default — they were validated together on a held-out
     5-cohort A/B (fields reaching a record
@@ -1508,7 +1855,11 @@ def harmonize_leanb(
     families global clustering dropped as noise, appending them as extra clusters that flow through the
     normal pipeline. The recovered partition is folded into the returned substrate (the residual re-cluster
     uses UMAP, not bit-reproducible, so it must be frozen for an exact replay). No-op when there are no
-    outliers; set ``False`` to disable.
+    outliers; set ``False`` to disable. Recovery runs on FRESH clustering, and on a passed ``substrate`` only
+    if that partition has not had it yet (``substrate.outliers_recovered`` is ``False``, e.g. a base
+    partition frozen for an M10 ablation). A substrate saved from a recovered run replays exactly as saved:
+    re-applying recovery would re-cluster its leftover outliers into a cluster the run never showed. The
+    returned substrate records that recovery was applied, even when it found nothing.
 
     ``max_clusters`` (default ``None`` = no cap) is the CLI's cost cap: keep only the largest
     ``max_clusters`` split units so a bounded run harmonizes the highest-coverage concepts first.
@@ -1534,39 +1885,83 @@ def harmonize_leanb(
     carry their verdicts), and the pause after the last paid stage needs no boundary at all because the
     pipeline has simply finished. ``generate=None`` now serves a $0 preview run rather than a review pause.
 
+    ``group_overrides`` (default ``None`` = the split's groups as-is): a REVIEWER's regrouping — moves
+    (``"cohort:var" -> group id | None``) and New groups (:class:`~ddharmon.harmonization.overrides.GroupOverrides`)
+    — APPLIED after the split replay and the judge's verdict pass, before assign: moved members leave their
+    origin, New groups form (they may span clusters), emptied groups drop, and each changed or New group is
+    re-retrieved on its own members ($0). Each New group with members, and each existing group whose membership
+    changed (the ideal anchors the novel decision, so it must describe the final members),
+    buys ONE generate-ideal call when it is in ``assign_group_ids`` (an unassigned group buys none; an unchanged
+    group keeps its ideal for free), sent to ``group_generate`` (default: ``generate``) under its own
+    ``leanb:groupideal:`` id namespace, so a caller that replays a frozen partition can keep ``generate`` closed
+    to new prompts. Deterministic: the same overrides
+    rebuild the same prompts and ids (content-addressed on each reshaped group's members). ``concept_groups``
+    stays the split's view, the judge is not re-asked, ``assign_group_ids`` must name a New group for it to be
+    assigned, and a reshaped group is never offered to the model ``merge`` (the reviewer decided its shape). See
+    :mod:`ddharmon.harmonization.overrides`.
+
     The returned partial result is a RESUME INPUT, not a preview: like every early return it carries
     ``substrate``, so a resumed run replays the identical clustering partition instead of re-clustering
     non-deterministically and stranding the decisions the reviewer already made against the old one.
     """
-    from ddharmon.clustering.topic_engine import collect_inputs, topic_model_dictionaries
-
     if stop_after is not None and stop_after not in STOP_AFTER_BOUNDARIES:
         raise ValueError(
             f"stop_after={stop_after!r} is not a recognised stage boundary. "
             f"Accepted: {', '.join(repr(b) for b in STOP_AFTER_BOUNDARIES)}, or None to run to completion."
         )
+    # The catalog is mandatory (retrieval reads it); find it BEFORE the slow clustering, not after it.
+    cde_dict = _find_cde_dict(embedded_dicts, cde_cohort)
 
+    # Clustering: fresh in `cluster_with_catalog`'s mode (cohort-only by default), or a replay of the frozen
+    # partition in the mode IT recorded (cache hits downstream). Either way `embeddings`/`field_refs` index
+    # every embedded dictionary, catalog included — member-row lookups only, never a clustering input.
     if substrate is None:
-        tm = topic_model_dictionaries(embedded_dicts, min_cluster_size=min_cluster_size)
-        clusters, embeddings, field_refs = tm.clusters, tm.embeddings, tm.field_refs
-        substrate = build_substrate(
-            clusters, min_cluster_size=min_cluster_size, outlier=tm.outlier_cluster, n_fields=len(field_refs)
+        inputs = cluster_leanb(
+            embedded_dicts,
+            cde_cohort=cde_cohort,
+            min_cluster_size=min_cluster_size,
+            cluster_with_catalog=cluster_with_catalog,
         )
-    else:  # replay: reload the frozen partition instead of re-clustering (cache hits downstream)
-        _docs, embeddings, field_refs, _cohorts = collect_inputs(embedded_dicts)
-        clusters = clusters_from_substrate(substrate, field_refs)
+    else:
+        if substrate.clustered_with_catalog != cluster_with_catalog:
+            logger.info(
+                "harmonize_leanb: replaying substrate %s in its RECORDED mode (%s); cluster_with_catalog=%s "
+                "applies to fresh clustering only",
+                substrate.substrate_id,
+                "catalog-in" if substrate.clustered_with_catalog else "cohort-only",
+                cluster_with_catalog,
+            )
+        inputs = replay_leanb_inputs(embedded_dicts, substrate, cde_cohort=cde_cohort)
+    clusters, substrate, embeddings, field_refs = (
+        inputs.clusters,
+        inputs.substrate,
+        inputs.embeddings,
+        inputs.field_refs,
+    )
 
-    # M10 (opt-in): recover the substrate's HDBSCAN outliers as extra clusters (sub-threshold families that
+    # M10 (default on): recover the substrate's HDBSCAN outliers as extra clusters (sub-threshold families that
     # global clustering dropped). Runs before chunking so recovered giants are chunked too; folds the recovered
     # partition into `substrate` so a later replay reproduces it (the residual re-cluster is non-reproducible).
-    if recover_outliers:
+    # At most ONCE per partition: a replayed substrate that already had it is used as-is (see the docstring).
+    # The attempt itself is recorded, not just a success: UMAP could find a cluster on a replay that it did not
+    # find the first time, and that would be the same drift by another route. In the substrate's recorded mode:
+    # a cohort-only partition never re-clusters a catalog row.
+    if recover_outliers and not substrate.outliers_recovered:
         clusters, substrate = recover_outlier_clusters(
-            clusters, substrate, embeddings, field_refs, min_cluster_size=residual_min_cluster_size
+            clusters,
+            substrate,
+            embeddings,
+            field_refs,
+            min_cluster_size=residual_min_cluster_size,
+            cde_cohort=cde_cohort,
         )
+        if not substrate.outliers_recovered:
+            substrate = replace(substrate, outliers_recovered=True)
 
     # M2 (opt-in): chunk oversized clusters into coherence-aware sub-units <= chunk_cap so the split LLM sees
     # every member (the substrate keeps the ORIGINAL partition — chunking is a deterministic, cache-safe
     # function of the frozen members + cached embeddings, applied after substrate capture). Off by default.
+    # Chunking only ever bisects the clusters' own members, so a cohort-only partition chunks no catalog row.
     if chunk_cap:
         from ddharmon.harmonization.chunk import chunk_oversized
 
@@ -1574,7 +1969,6 @@ def harmonize_leanb(
             clusters, embeddings, field_refs, cap=chunk_cap, skip_enumerated=chunk_skip_enumerated
         )
 
-    cde_dict = _find_cde_dict(embedded_dicts, cde_cohort)
     ideal_prompts = prepare_leanb(
         clusters,
         embedded_dicts,
@@ -1634,20 +2028,70 @@ def harmonize_leanb(
     if coherence is not None and coherence_prompts:
         assemble_coherence_verdicts(coherence_prompts, coherence(coherence_prompts), concept_groups)
 
+    # Reviewer overrides (Gate-1 moves + New groups): applied AFTER the judge's verdict pass, so the judge and
+    # the Gate-1 view above are exactly what the reviewer decided against, and BEFORE assign, so the paid
+    # assign sees the grouping as the reviewer left it. The only spend here is one ideal per New or changed
+    # group that will be assigned: its novel decision is then anchored on the members it now has.
+    group_ideal_prompts: list[PromptRecord] = []
+    reshaped: set[str] = set()
+    if group_overrides is not None and not group_overrides.is_empty():
+        from ddharmon.harmonization.overrides import apply_group_overrides, prepare_group_ideals
+
+        group_ideal_prompts = prepare_group_ideals(
+            group_assign_prompts,
+            group_overrides,
+            embedded_dicts,
+            field_refs,
+            cde_cohort=cde_cohort,
+            model_tag=model_tag,
+            measurand_split=measurand_split,
+            only_group_ids=assign_group_ids,
+        )
+        ideal_runner = group_generate or generate
+        group_ideals = ideal_runner(group_ideal_prompts) if group_ideal_prompts else {}
+        group_assign_prompts, reshaped = apply_group_overrides(
+            group_assign_prompts,
+            group_overrides,
+            group_ideal_prompts,
+            group_ideals,
+            embedded_dicts,
+            embeddings,
+            field_refs,
+            cde_cohort=cde_cohort,
+            cde_dict=cde_dict,
+            top_k=top_k,
+            model_tag=model_tag,
+            clean_cde_text=clean_cde_text,
+            representation_refine=representation_refine,
+        )
+
     if classify is None:
         return LeanBResult(
             group_assign_prompts=group_assign_prompts,
             concept_groups=concept_groups,
             coherence_prompts=coherence_prompts,
+            group_ideal_prompts=group_ideal_prompts,
             substrate=substrate,
         )
 
+    # Gate-1 scope: restrict the PAID per-group assign to the groups the reviewer kept in scope. The
+    # `concept_groups` above (the Gate-1 view, and the coherence verdicts stamped on it) stay FULL — scope
+    # narrows what gets assigned, not what the earlier gate showed — so only classify/merge/gencde/specgen
+    # see the subset and a reviewer is never charged to assign a group they scoped out. `None` (the default)
+    # assigns every group, reproducing the pre-scope behaviour. Group identity is the frozen partition's
+    # content-addressed `<cluster>#gN`; a scope id absent from this leg's groups simply matches nothing.
+    assign_prompts = group_assign_prompts
+    if assign_group_ids is not None:
+        in_scope = set(assign_group_ids)
+        assign_prompts = [p for p in group_assign_prompts if p.context.get("group_id", "") in in_scope]
+
     result = assemble_leanb(
-        group_assign_prompts, classify(group_assign_prompts), retrieval_floor=retrieval_floor, adopt_floor=adopt_floor
+        assign_prompts, classify(assign_prompts), retrieval_floor=retrieval_floor, adopt_floor=adopt_floor
     )
     result.substrate = substrate
     result.concept_groups = concept_groups
     result.coherence_prompts = coherence_prompts
+    result.group_ideal_prompts = group_ideal_prompts
     # Carry the pre-assign verdicts onto the records the assign stage just built. Without this the
     # verdicts stay stranded on the groups and every record reads as UNJUDGED — the "not judged rendered
     # as coherent" failure the judge's contract forbids. Matched on group id (cluster id as fallback), so
@@ -1659,7 +2103,10 @@ def harmonize_leanb(
     # (deterministic candidate gen) for the Batch/driver path; the merge only applies when `merge` is set.
     from ddharmon.harmonization.merge import assemble_merge, prepare_merge
 
-    result.merge_prompts = prepare_merge(result.records, embedded_dicts, embeddings, field_refs, model_tag=model_tag)
+    # A group the reviewer reshaped is not a merge candidate: folding it into another record would undo their
+    # decision and carry its members off under a different group id.
+    mergeable = [r for r in result.records if r.group_id not in reshaped] if reshaped else result.records
+    result.merge_prompts = prepare_merge(mergeable, embedded_dicts, embeddings, field_refs, model_tag=model_tag)
     if merge is not None and result.merge_prompts:
         result.records = assemble_merge(result.records, result.merge_prompts, merge(result.merge_prompts))
 
@@ -1893,11 +2340,15 @@ def _parse_ranking(raw: object, n: int) -> list[int]:
     return out
 
 
+def _dict_cohort(ed: EmbeddedDictionary) -> str | None:
+    """The cohort name an embedded dictionary's rows carry (``cohort_name``, else ``name``) — as ``collect_inputs``."""
+    dd = getattr(ed, "dictionary", None)
+    return getattr(dd, "cohort_name", None) or getattr(dd, "name", None)
+
+
 def _find_cde_dict(embedded_dicts: list[EmbeddedDictionary], cde_cohort: str) -> EmbeddedDictionary:
     for ed in embedded_dicts:
-        dd = getattr(ed, "dictionary", None)
-        name = getattr(dd, "cohort_name", None) or getattr(dd, "name", None)
-        if name == cde_cohort:
+        if _dict_cohort(ed) == cde_cohort:
             return ed
     raise ValueError(f"no embedded dictionary named {cde_cohort!r} among {len(embedded_dicts)} dicts")
 
