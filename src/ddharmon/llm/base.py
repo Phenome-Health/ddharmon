@@ -23,7 +23,7 @@ class BaseLLMClient(ABC):
     @property
     @abstractmethod
     def model_name(self) -> str:
-        """Model identifier (e.g., 'claude-sonnet-4-5-20250514', 'gpt-4o')."""
+        """Provider model identifier (e.g., ``ddharmon.llm.models.DEFAULT_MODEL``, 'gpt-4o')."""
         ...
 
     @abstractmethod

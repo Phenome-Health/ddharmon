@@ -72,6 +72,7 @@ from ddharmon.harmonization.substrate import (
     cluster_content_id,
     clusters_from_substrate,
 )
+from ddharmon.llm.models import DEFAULT_MODEL
 from ddharmon.matching import BM25, hybrid_topk, tokenize
 from ddharmon.models.cluster import FieldCluster, FieldReference
 from ddharmon.models.data_dictionary import Field
@@ -88,7 +89,7 @@ logger = logging.getLogger(__name__)
 # never sets it. Read once at import; the calibration/subset harness reads the same var for admin-text.
 _PROMPT_HYGIENE = os.environ.get("DDHARMON_PROMPT_HYGIENE", "1") != "0"
 
-DEFAULT_MODEL_TAG = "claude-sonnet-4-6"
+DEFAULT_MODEL_TAG = DEFAULT_MODEL
 DEFAULT_TOP_K = 20  # wide pool for the assignment engine
 COVERAGE_GAP_TAU = 0.70  # diagnostic only (NOT a decision gate)
 # Retrieval floor (#1): downgrade an adopt/refine -> novel when the CHOSEN candidate's dense cosine is below

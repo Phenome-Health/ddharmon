@@ -140,9 +140,10 @@ class TestAnthropicClient:
 
         with patch.dict("sys.modules", {"anthropic": mock_anthropic_mod}):
             from ddharmon.llm.anthropic_client import AnthropicClient
+            from ddharmon.llm.models import DEFAULT_MODEL
 
             client = AnthropicClient()
-            assert client.model_name == "claude-sonnet-4-5"
+            assert client.model_name == DEFAULT_MODEL
             assert client.provider_name == "anthropic"
 
     def test_has_rerank_candidates_method(self) -> None:

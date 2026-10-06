@@ -39,12 +39,13 @@ from ddharmon.harmonization.prompts import (
     representative_members,
     system_prompt_for_mode,
 )
+from ddharmon.llm.models import DEFAULT_MODEL
 from ddharmon.models.cluster import FieldCluster, FieldReference
 from ddharmon.models.data_dictionary import Field
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL_TAG = "claude-sonnet-4-6"
+DEFAULT_MODEL_TAG = DEFAULT_MODEL
 
 
 @dataclass

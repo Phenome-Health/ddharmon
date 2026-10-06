@@ -6,6 +6,7 @@ import json
 import logging
 
 from ddharmon.llm.base import BaseLLMClient
+from ddharmon.llm.models import DEFAULT_MODEL
 from ddharmon.llm.prompts import RERANKER_SYSTEM_PROMPT, RerankerResponse, build_reranker_prompt
 
 logger = logging.getLogger(__name__)
@@ -59,10 +60,10 @@ class AnthropicClient(BaseLLMClient):
     """
 
     def __init__(
-        # Default per project decision 03-01 ("default to Claude Sonnet 4.5 for Anthropic"). The prior pin
-        # (claude-sonnet-4-20250514, Sonnet 4) retired 2026-06-15 and now 404s on a bare AnthropicClient().
         self,
-        model_name: str = "claude-sonnet-4-5",
+        # The default lives in ddharmon.llm.models — one place to bump (a stale pin 404s once its model
+        # retires; see that module for the history).
+        model_name: str = DEFAULT_MODEL,
         max_tokens: int = 2048,
         *,
         api_key: str | None = None,

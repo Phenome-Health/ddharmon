@@ -100,6 +100,25 @@ paused run on exactly the partition they reviewed. Also changes the default clus
   (`get_embedding_dimension` in 6.x, `get_sentence_embedding_dimension` before), avoiding the 6.x
   deprecation path.
 
+## [1.3.1]
+
+Patch release: the default model moves off Claude Sonnet 4.5 before that model is retired on 2026-11-30.
+
+### Changed
+
+- **Default model moved to `claude-sonnet-4-6`** ahead of Sonnet 4.5's 2026-11-30 retirement. `AnthropicClient()`
+  and `get_client("anthropic")` defaulted to `claude-sonnet-4-5`, so every call relying on that default would
+  have failed with a 404 once the model was retired. Callers that pass `model_name` explicitly are unaffected.
+  The harmonization stages, the Batch API fallback and the CLI's `--model` already defaulted to Sonnet 4.6, so
+  a pipeline run produces the same output as on 1.3.0.
+
+### Added
+
+- **One `DEFAULT_MODEL` constant and a `ddharmon.llm.models` registry.** Every library default now reads
+  `ddharmon.llm.models.DEFAULT_MODEL`, so a future model change is a one-line edit, made only after the new
+  model has been re-run against the benchmarks. The module also exposes `ModelInfo` (`id`, `label`, `provider`,
+  `validated`), `MODELS` (the default first, and the only entry marked validated) and `model_info(model_id)`.
+
 ## [1.3.0]
 
 Adds the **coherence judge** as a public capability, moves its verdicts ahead of assignment, and adds a

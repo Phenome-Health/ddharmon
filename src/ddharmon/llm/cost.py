@@ -27,7 +27,7 @@ BATCH_DISCOUNT = 0.5
 # used only when the optional ``litellm`` package isn't installed (so realized cost still prices accurately
 # without a heavy dependency). LiteLLM's maintained map is PREFERRED whenever available: it auto-tracks price
 # changes across every provider. Keys are matched as case-insensitive substrings (longest match wins), so a
-# dated model id like ``claude-sonnet-4-20250514`` still resolves. Update if a provider changes these rates.
+# dated model id (family + version + date suffix) still resolves. Update if a provider changes these rates.
 _FALLBACK_RATES_PER_M: dict[str, tuple[float, float]] = {
     "claude-haiku": (1.0, 5.0),
     "claude-sonnet": (3.0, 15.0),

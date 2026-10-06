@@ -28,6 +28,7 @@ from typing import Any
 import click
 
 from ddharmon import __version__
+from ddharmon.llm.models import DEFAULT_MODEL
 
 # Column-mapping keys accepted by load_dictionary (used for auto-detect + config validation).
 _LOAD_COLUMN_KEYS = frozenset(
@@ -48,7 +49,7 @@ _LOAD_COLUMN_KEYS = frozenset(
     }
 )
 
-_DEFAULT_MODEL = "claude-sonnet-4-6"
+_DEFAULT_MODEL = DEFAULT_MODEL
 
 
 # ── input resolution ────────────────────────────────────────────────

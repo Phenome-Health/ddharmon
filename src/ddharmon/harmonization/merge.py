@@ -36,6 +36,7 @@ from ddharmon.harmonization.models import LeanBRecord
 from ddharmon.harmonization.parse import extract_json
 from ddharmon.harmonization.pipeline import PromptRecord
 from ddharmon.harmonization.positional import signature
+from ddharmon.llm.models import DEFAULT_MODEL
 from ddharmon.models.data_dictionary import Field
 
 logger = logging.getLogger(__name__)
@@ -195,7 +196,7 @@ def prepare_merge(
     field_refs,
     *,
     tau: float = DEFAULT_MERGE_TAU,
-    model_tag: str = "claude-sonnet-4-6",
+    model_tag: str = DEFAULT_MODEL,
 ) -> list[PromptRecord]:
     """Build one adjudication prompt per candidate merge pair (representative members of both records)."""
     row_of = {(r.dictionary_name, r.variable_name): i for i, r in enumerate(field_refs)}

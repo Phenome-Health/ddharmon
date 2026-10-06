@@ -16,6 +16,8 @@ import logging
 import re
 from pathlib import Path
 
+from ddharmon.llm.models import DEFAULT_MODEL
+
 logger = logging.getLogger(__name__)
 
 # Anthropic Batch API constrains custom_id to ^[a-zA-Z0-9_-]{1,64}$. Our record
@@ -58,8 +60,8 @@ _DEFAULT_PAIRWISE_SCHEMA = """{
 _SCHEMA_PREAMBLE = "\n\nRespond with ONLY valid JSON matching this schema (no markdown fences):\n"
 
 # Used only when a record carries no ``model_tag`` and no explicit ``model`` is
-# passed (e.g. legacy pairwise-reranker exports). Current Sonnet.
-_FALLBACK_MODEL = "claude-sonnet-4-6"
+# passed (e.g. legacy pairwise-reranker exports). The library default model.
+_FALLBACK_MODEL = DEFAULT_MODEL
 
 
 def _attach_batch_usage(record: dict, message: object) -> None:

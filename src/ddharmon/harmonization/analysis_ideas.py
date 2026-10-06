@@ -16,7 +16,7 @@ Library use::
     from ddharmon.llm.anthropic_client import AnthropicClient
 
     result = harmonize_leanb(embedded, generate=…, split=…, classify=…)   # a LeanBResult
-    client = AnthropicClient(model_name="claude-sonnet-4-6")
+    client = AnthropicClient()  # model defaults to ddharmon.llm.models.DEFAULT_MODEL
     ideas = generate_analysis_ideas(result.records, client.complete).ideas
 """
 
