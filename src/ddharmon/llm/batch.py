@@ -17,6 +17,7 @@ import re
 from pathlib import Path
 
 from ddharmon.llm.models import DEFAULT_MODEL
+from ddharmon.llm.params import message_params, message_text, refusal_of, tool_input
 
 logger = logging.getLogger(__name__)
 
@@ -161,31 +162,26 @@ def submit_batch(
             models_used.add(req_model)
             custom_id = _safe_custom_id(record["id"], used_ids)
             id_map[custom_id] = record["id"]
-            params: dict = {
-                "model": req_model,
-                "max_tokens": req_max_tokens,
-                "temperature": temperature,
-                "messages": [{"role": "user", "content": record["user_prompt"]}],
-            }
             tool_schema = record.get("tool_schema")
             if tool_schema:
-                # FORCED tool call — the output is structurally constrained to ``tool_schema`` (no soft text
-                # schema appended, so the model cannot drop the wrapper). The system prompt carries the task;
-                # the tool enforces the output shape. Backward-compatible: only records that opt in by
-                # setting ``tool_schema`` take this path; all others keep the text-preamble path below.
-                tool_name = record.get("tool_name") or "emit"
-                params["system"] = record["system_prompt"]
-                params["tools"] = [
-                    {
-                        "name": tool_name,
-                        "description": "Return the result as structured input conforming to the schema.",
-                        "input_schema": tool_schema,
-                    }
-                ]
-                params["tool_choice"] = {"type": "tool", "name": tool_name}
+                # The schema-constrained path: a FORCED tool call where the model accepts one, structured outputs
+                # where it does not (Sonnet 5.5) — no soft text schema appended either way, so the model cannot
+                # drop the wrapper. The system prompt carries the task; the schema enforces the output shape.
+                system = record["system_prompt"]
             else:
                 schema = record.get("schema") or _DEFAULT_PAIRWISE_SCHEMA
-                params["system"] = record["system_prompt"] + _SCHEMA_PREAMBLE + schema
+                system = record["system_prompt"] + _SCHEMA_PREAMBLE + schema
+            # One request per model, shared with the synchronous path (ddharmon.llm.params): temperature only where
+            # the model accepts it, and the model's thinking/effort rules.
+            params = message_params(
+                model=req_model,
+                system=system,
+                user_prompt=record["user_prompt"],
+                max_tokens=req_max_tokens,
+                temperature=temperature,
+                tool_schema=tool_schema,
+                tool_name=record.get("tool_name"),
+            )
             requests.append({"custom_id": custom_id, "params": params})
 
     logger.info("Submitting %d requests to Batch API (models=%s)", len(requests), sorted(models_used))
@@ -281,28 +277,36 @@ def retrieve_batch(
         return 0
 
     # Batch is done — stream results
-    from anthropic.types import TextBlock, ToolUseBlock
-
     written = 0
     errors = 0
+    unanswered = 0
     with open(output_path, "w") as f:
         for result in client.messages.batches.results(batch_id):
             original_id = id_map.get(result.custom_id, result.custom_id)
             if result.result.type == "succeeded":
-                # message.content is a union of block types. A forced tool call (opt-in tool_schema path)
-                # returns a ToolUseBlock whose .input is already a structured dict — no JSON parsing, no
-                # wrapper-drop. Otherwise fall back to the TextBlock + tolerant-JSON path.
+                # Read by block TYPE, never position: a 5.5 model's answer starts with a `thinking` block. A forced
+                # tool call returns its input as a structured dict (no JSON parsing, no wrapper-drop); a text answer
+                # — structured outputs included — goes through the tolerant JSON parser.
                 message = result.result.message
-                tool_block = next((b for b in message.content if isinstance(b, ToolUseBlock)), None)
-                if tool_block is not None:
-                    parsed = dict(tool_block.input) if isinstance(tool_block.input, dict) else tool_block.input
-                    record = {"id": original_id, "response": parsed}
+                refused = refusal_of(message)
+                parsed_tool = tool_input(message)
+                text = message_text(message)
+                if refused is not None or (parsed_tool is None and text is None):
+                    # NO RECORD: a decline or an answer with no text is not an answer. Leaving the prompt unanswered
+                    # is what makes the stage re-ask it once and then fail naming it, instead of passing on "".
+                    unanswered += 1
+                    logger.warning(
+                        "No answer for %s: stop_reason=%s%s",
+                        original_id,
+                        getattr(message, "stop_reason", None),
+                        f" (refusal category: {refused.category})" if refused is not None else "",
+                    )
+                    continue
+                if parsed_tool is not None:
+                    record = {"id": original_id, "response": parsed_tool}
                 else:
-                    block = message.content[0]
-                    text = block.text if isinstance(block, TextBlock) else ""
                     try:
-                        parsed = _parse_response_text(text)
-                        record = {"id": original_id, "response": parsed}
+                        record = {"id": original_id, "response": _parse_response_text(text or "")}
                     except (json.JSONDecodeError, Exception) as e:
                         logger.warning("Failed to parse response for %s: %s", original_id, e)
                         record = {"id": original_id, "response": text}
@@ -327,7 +331,7 @@ def retrieve_batch(
                 if errors <= 3:
                     print(f"  [error] {original_id}: {result.result.type} — {detail}")
 
-    logger.info("Wrote %d responses to %s (%d errors)", written, output_path, errors)
+    logger.info("Wrote %d responses to %s (%d errors, %d unanswered)", written, output_path, errors, unanswered)
     print(f"Done: {written} responses written to {output_path}")
     if errors:
         print(f"  {errors} requests failed (errored/canceled/expired)")

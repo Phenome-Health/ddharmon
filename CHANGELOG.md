@@ -12,6 +12,17 @@ paused run on exactly the partition they reviewed. Also changes the default clus
 
 ### Added
 
+- **Claude Sonnet 5.5 and Claude Haiku 5.5** (`claude-sonnet-5-5`, `claude-haiku-5-5`) join the model registry as
+  selectable models, ahead of their benchmark (`ModelInfo.selectable`; `validated` still marks only the
+  benchmarked default, Claude Sonnet 4.6, which stays `DEFAULT_MODEL`). Each registry entry now carries the
+  model's request rules (`accepts_temperature`, `forced_tool_choice`, `thinking_type`, `effort`) and its published
+  price (`input_per_mtok`, `output_per_mtok`). New `ddharmon.llm.params.message_params` builds the one Messages
+  API request per model that both `batch.submit_batch` and `AnthropicClient.complete_request` send: `temperature`
+  only where accepted, structured outputs (`output_config.format`, via `structured_output_schema`) where a forced
+  tool call is rejected, and minimal thinking on the 5.5 models (Sonnet 5.5 `between_tools`, Haiku 5.5 `effort:
+  low`) so a run costs and behaves like the validated default. Claude Opus 5.5 replaces Opus 4.8 as the listed
+  (not selectable) Opus.
+
 - **Reviewer group overrides** (`ddharmon.harmonization.overrides`). `GroupOverrides` holds a reviewer's
   regrouping — member moves (`"cohort:var" -> group id | None`) and `ReviewerGroup`s they formed, which may
   pull members from several clusters. `harmonize_leanb(group_overrides=...)` applies it after the split and
@@ -68,6 +79,12 @@ paused run on exactly the partition they reviewed. Also changes the default clus
 
 ### Changed
 
+- **Anthropic SDK 1.x supported** (`anthropic>=0.39.0,<2`). SDK 1.x removed `temperature` from `Messages.create`,
+  so every synchronous call raised `TypeError` on a fresh install; arguments the installed SDK does not accept now
+  travel in `extra_body`. Realized cost prices a registry model from the registry first, so a model newer than the
+  installed LiteLLM price map is no longer priced at an older sibling's rate (Haiku 5.5 was priced as Haiku 4.5,
+  10x too high); the built-in Opus fallback rate is the current generation's ($5/$25).
+
 - **`harmonize_leanb` clusters cohort variables only by default** (`cluster_with_catalog=False`). The CDE
   catalog is still required in `embedded_dicts` and is used for retrieval exactly as before, but its rows no
   longer enter UMAP+HDBSCAN, outlier recovery or chunking. No stage ever used a catalog row as a group member,
@@ -82,6 +99,12 @@ paused run on exactly the partition they reviewed. Also changes the default clus
   returns `[]` when preparation was switched off.
 
 ### Fixed
+
+- **Answers are read by block type, and a declined request stays unanswered.** `retrieve_batch` read `content[0]`
+  as the answer, which on a model that thinks first is a `thinking` block, so the answer was recorded as an empty
+  string. A `stop_reason: "refusal"` (or an answer with no text) now writes no record, so the stage re-asks it
+  once and then fails naming it; the synchronous path raises `ddharmon.llm.params.RefusalError` with the refusal
+  category.
 
 - **Repeated variable names no longer drop rows.** The CSV parser used to keep only the last row for a
   repeated `variable_name`. Later occurrences now get a unique `<name>__2`, `<name>__3`, … identity, keep the
