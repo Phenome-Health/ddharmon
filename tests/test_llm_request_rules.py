@@ -85,6 +85,15 @@ class TestRegistry:
         assert (model_info(SONNET_55).input_per_mtok, model_info(SONNET_55).output_per_mtok) == (2.0, 10.0)
         assert (model_info(HAIKU_55).input_per_mtok, model_info(HAIKU_55).output_per_mtok) == (0.10, 0.50)
 
+    def test_models_that_think_carry_headroom_for_it(self) -> None:
+        # 2026-10-15: a Claude Haiku 5.5 run's four largest split prompts came back with no answer. Replayed, each
+        # stopped on `max_tokens` at the 2,048 budget with only a thinking block — thinking is billed as output and
+        # counts against `max_tokens`, so a budget sized for the answer alone does not survive it. The validated
+        # default does not think, so its budget must not move.
+        assert model_info(SONNET_46).thinking_headroom == 0
+        for mid in (SONNET_55, HAIKU_55):
+            assert model_info(mid).thinking_headroom >= 4096, mid
+
 
 # ── one request shape per model ─────────────────────────────────────────────────────────────────────
 
@@ -127,6 +136,13 @@ class TestMessageParams:
         assert p["tool_choice"] == {"type": "tool", "name": "emit_groups"}
         assert p["output_config"] == {"effort": "low"}
         assert "thinking" not in p
+
+    def test_a_thinking_model_gets_its_headroom_on_top_of_the_answer_budget(self) -> None:
+        # The caller's budget is what the ANSWER needs; the thinking model's headroom rides on top, on every
+        # transport (submit_batch and complete_request both build their request here). Sonnet 4.6's exact request
+        # is pinned above.
+        for mid in (SONNET_55, HAIKU_55):
+            assert _params(mid)["max_tokens"] == 2048 + model_info(mid).thinking_headroom, mid
 
     def test_an_unknown_model_keeps_the_legacy_shape(self) -> None:
         # Back-compat for API callers passing ids the registry does not list.
@@ -245,6 +261,24 @@ class TestCompleteRequestOnTheRealSignature:
     def test_a_thinking_block_first_does_not_hide_the_text(self) -> None:
         client = _client_with(_msg(_thinking(), _text("answer")))
         assert client.complete_request("U", system="S", max_tokens=100, temperature=0.0, model=HAIKU_55) == "answer"
+
+    def test_complete_sends_the_headroom_too(self) -> None:
+        # The plain-text path (analysis ideas, labels) builds its own request; it must not lose the headroom.
+        client = _client_with(_msg(_thinking(), _text("ok")))
+        client._model_name = HAIKU_55
+        assert client.complete("U", max_tokens=512) == "ok"
+        assert client._client.messages.calls[0]["max_tokens"] == 512 + model_info(HAIKU_55).thinking_headroom
+
+    @pytest.mark.parametrize("model", [HAIKU_55, SONNET_46])
+    def test_an_answer_cut_off_by_the_output_limit_says_so(self, model: str) -> None:
+        # What the Haiku 5.5 run saw as "Anthropic response contained no text content": the budget ran out before
+        # the answer began. Name the cause, so the next one is not a replay away from diagnosis.
+        client = _client_with(_msg(_thinking(), stop_reason="max_tokens"))
+        with pytest.raises(ValueError, match="output limit"):
+            client.complete_request("U", system="S", max_tokens=100, temperature=0.0, model=model)
+        tool = {"type": "object", "properties": {"ok": {"type": "boolean"}}}
+        with pytest.raises(ValueError, match="output limit"):
+            client.complete_request("U", system="S", max_tokens=100, temperature=0.0, model=model, tool_schema=tool)
 
     def test_a_refusal_raises_naming_its_category(self) -> None:
         from ddharmon.llm.params import RefusalError

@@ -11,6 +11,8 @@ from ddharmon.llm.params import (
     for_installed_sdk,
     message_params,
     message_text,
+    output_budget,
+    output_limit_error,
     refusal_of,
     thinking_params,
     tool_input,
@@ -171,7 +173,7 @@ class AnthropicClient(BaseLLMClient):
         messages = [{"role": "user", "content": prompt}]
         kwargs: dict = {
             "model": self._model_name,
-            "max_tokens": max_tokens,
+            "max_tokens": output_budget(self._model_name, max_tokens),
             "messages": messages,
         }
         if system:
@@ -187,7 +189,10 @@ class AnthropicClient(BaseLLMClient):
         refused = refusal_of(response)
         if refused is not None:
             raise refused
-        return _message_text(response)
+        text = message_text(response)  # by block type: a 5.x model's thinking block comes first
+        if text is None:
+            raise output_limit_error(response) or ValueError("Anthropic response contained no text content")
+        return text
 
     def complete_request(
         self,
@@ -228,11 +233,13 @@ class AnthropicClient(BaseLLMClient):
         if tool_schema and not uses_structured_output(params):
             answer = tool_input(response)
             if answer is None:
-                raise ValueError("Anthropic response to a forced tool call contained no tool_use block")
+                raise output_limit_error(response) or ValueError(
+                    "Anthropic response to a forced tool call contained no tool_use block"
+                )
             return answer
         text = message_text(response)
         if text is None:
-            raise ValueError("Anthropic response contained no text content")
+            raise output_limit_error(response) or ValueError("Anthropic response contained no text content")
         if tool_schema:  # structured outputs: the text IS the schema-constrained JSON — return it parsed
             return json.loads(text)
         return text

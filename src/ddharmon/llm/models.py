@@ -43,6 +43,11 @@ class ModelInfo:
     forced_tool_choice: bool = True  # False: a forced tool call 400s — structured outputs carry the schema instead
     thinking_type: str | None = None  # the `thinking.type` to send ("between_tools" = Sonnet 5.5's thinking-off)
     effort: str | None = None  # `output_config.effort` to send; None leaves the model's own default
+    # Output tokens added to every request's `max_tokens` for a model that thinks before it answers: its thinking is
+    # billed as output and counts against `max_tokens`, so a budget sized for the answer alone can run out first
+    # (Haiku 5.5's four largest split prompts stopped on `max_tokens` at 2,048 with only a thinking block, 2026-10-15).
+    # A ceiling, not a charge — only tokens the model actually writes are billed.
+    thinking_headroom: int = 0
     # Standard (non-batch) USD per million tokens. Priced from here first, so a model newer than the installed
     # LiteLLM price map is not priced at an older sibling's rate. Haiku 5.5: its <=100K-token prompt tier.
     input_per_mtok: float | None = None
@@ -56,7 +61,8 @@ class ModelInfo:
 # DEFAULT_MODEL first and the only validated entry. The 5.5 models are selectable ahead of their benchmark; the
 # rest are listed (greyed out in a picker) but not offered. Thinking is kept minimal on the 5.5 models so a run
 # costs and behaves like the validated default (Sonnet 5.5: `between_tools`; Haiku 5.5 has no thinking-off
-# setting, so `low` effort); raise them only on benchmark evidence.
+# setting, so `low` effort); raise them only on benchmark evidence. Whatever thinking remains gets
+# `thinking_headroom` on top of each request's answer budget.
 MODELS: tuple[ModelInfo, ...] = (
     ModelInfo(
         id=DEFAULT_MODEL,
@@ -76,6 +82,7 @@ MODELS: tuple[ModelInfo, ...] = (
         accepts_temperature=False,
         forced_tool_choice=False,
         thinking_type="between_tools",
+        thinking_headroom=8192,
         input_per_mtok=2.0,
         output_per_mtok=10.0,
         token_ratio=1.3,
@@ -88,6 +95,7 @@ MODELS: tuple[ModelInfo, ...] = (
         selectable=True,
         accepts_temperature=False,
         effort="low",
+        thinking_headroom=8192,
         input_per_mtok=0.10,
         output_per_mtok=0.50,
         token_ratio=1.3,
@@ -100,6 +108,7 @@ MODELS: tuple[ModelInfo, ...] = (
         accepts_temperature=False,
         forced_tool_choice=False,
         effort="low",
+        thinking_headroom=8192,
         input_per_mtok=4.0,
         output_per_mtok=20.0,
         token_ratio=1.3,

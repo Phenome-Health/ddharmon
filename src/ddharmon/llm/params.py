@@ -10,7 +10,8 @@ place — the model's entry in :mod:`ddharmon.llm.models`:
   (``output_config.format``) where it does not (Claude Sonnet 5.5): both constrain the answer to the same schema,
   so the caller gets the same dict either way.
 - ``thinking`` / ``output_config.effort`` as the registry sets them, to keep the newer models' default thinking
-  minimal (it is billed as output and, on a small ``max_tokens``, can use up the whole budget).
+  minimal (it is billed as output and, on a small ``max_tokens``, can use up the whole budget) — and the model's
+  ``thinking_headroom`` added to ``max_tokens``, so what thinking remains does not crowd out the answer.
 
 The newer models also answer with a ``thinking`` block BEFORE the text, and can decline (``stop_reason:
 "refusal"``). :func:`message_text` and :func:`refusal_of` read a response by block type rather than by position.
@@ -112,7 +113,7 @@ def message_params(
     info = model_info(model)
     accepts_temperature = info.accepts_temperature if info else True
     forced_tool = info.forced_tool_choice if info else True
-    params: dict[str, Any] = {"model": model, "max_tokens": max_tokens}
+    params: dict[str, Any] = {"model": model, "max_tokens": output_budget(model, max_tokens)}
     if accepts_temperature:
         params["temperature"] = temperature
     params["system"] = system
@@ -131,6 +132,23 @@ def message_params(
     if output_config:
         params["output_config"] = output_config
     return params
+
+
+def output_budget(model: str, max_tokens: int) -> int:
+    """``max_tokens`` for a request whose ANSWER needs ``max_tokens``: plus the model's thinking headroom, if any."""
+    info = model_info(model)
+    return max_tokens + (info.thinking_headroom if info else 0)
+
+
+def output_limit_error(message: Any) -> ValueError | None:
+    """An error naming the cause when ``message`` stopped on ``max_tokens`` — its answer is missing or cut off."""
+    if getattr(message, "stop_reason", None) != "max_tokens":
+        return None
+    used = getattr(getattr(message, "usage", None), "output_tokens", None)
+    return ValueError(
+        f"the answer hit the output limit ({used if used is not None else 'all'} output tokens, thinking included) "
+        "before it was complete"
+    )
 
 
 def thinking_params(model: str) -> dict[str, Any]:
