@@ -1185,8 +1185,8 @@ def _is_positional(distinct_values: list[str]) -> bool:
     return bare >= (len(distinct_values) + 1) // 2
 
 
-def prepare_kinds(records: list[LeanBRecord]) -> list[PromptRecord]:
-    """R2 — build a distinct-KINDS discriminator prompt for each ``qualify`` record.
+def prepare_kinds(records: list[LeanBRecord], *, model_tag: str = DEFAULT_MODEL_TAG) -> list[PromptRecord]:
+    """R2 — build a distinct-KINDS discriminator prompt for each ``qualify`` record, for the run's ``model_tag``.
 
     Only ``qualify`` groups need it (``single`` is coherent; ``split`` is already R0-flagged). Positional /
     repeating-measure groups are skipped ($0 exclusion → never flagged, and no wasted call). Reads the
@@ -1205,7 +1205,7 @@ def prepare_kinds(records: list[LeanBRecord]) -> list[PromptRecord]:
                     rec.coherence_summary, rec.coherence_axis, rec.coherence_distinct_values
                 ),
                 schema=json.dumps(KINDS_TOOL_SCHEMA),
-                model_tag=DEFAULT_MODEL_TAG,
+                model_tag=model_tag,
                 context={"group_id": rec.group_id, "cluster_id": rec.cluster_id},
                 tool_schema=KINDS_TOOL_SCHEMA,
                 tool_name=KINDS_TOOL_NAME,
@@ -2197,7 +2197,7 @@ def harmonize_leanb(
     # prepare_kinds/assemble_kinds itself; kinds_prompts is always exposed for it. Default
     # (distinct_kinds=None) leaves the shipped R0 behavior unchanged.
     if coherence is not None and result.coherence_prompts:
-        result.kinds_prompts = prepare_kinds(result.records)
+        result.kinds_prompts = prepare_kinds(result.records, model_tag=model_tag)
         if distinct_kinds is not None and result.kinds_prompts:
             assemble_kinds(result.kinds_prompts, distinct_kinds(result.kinds_prompts), result.records)
 

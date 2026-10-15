@@ -271,6 +271,15 @@ def test_prepare_kinds_selects_only_nonpositional_qualify():
     assert "milk by fat" in prompts[0].user_prompt and "whole" in prompts[0].user_prompt  # judge outputs carried
 
 
+def test_prepare_kinds_sends_the_runs_model():
+    from ddharmon.harmonization.leanb import prepare_kinds
+
+    prompts = prepare_kinds(
+        [_qualify_rec("q#g0", "milk by fat", "fat", ["whole", "skim"])], model_tag="claude-haiku-5-5"
+    )
+    assert [p.model_tag for p in prompts] == ["claude-haiku-5-5"]
+
+
 def test_assemble_kinds_flags_distinct_kinds_and_propagates():
     from ddharmon.harmonization.leanb import assemble_kinds, prepare_kinds
 
