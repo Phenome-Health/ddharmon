@@ -72,6 +72,13 @@ class TestRegistry:
             if m.selectable:
                 assert m.input_per_mtok is not None and m.output_per_mtok is not None, m.id
 
+    def test_token_ratio_marks_the_newer_tokenizer(self) -> None:
+        # The 5.x models count the same text as ~30% more tokens than the validated default (platform.claude.com,
+        # Haiku 5.5 migration guide); a cost estimate calibrated on the default scales by it.
+        assert model_info(SONNET_46).token_ratio == 1.0
+        assert model_info(SONNET_55).token_ratio == pytest.approx(1.3)
+        assert model_info(HAIKU_55).token_ratio == pytest.approx(1.3)
+
     def test_published_prices(self) -> None:
         # platform.claude.com pricing, checked 2026-10-14 (Haiku 5.5: the <=100K-token prompt tier).
         assert (model_info(SONNET_46).input_per_mtok, model_info(SONNET_46).output_per_mtok) == (3.0, 15.0)

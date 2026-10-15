@@ -47,6 +47,10 @@ class ModelInfo:
     # LiteLLM price map is not priced at an older sibling's rate. Haiku 5.5: its <=100K-token prompt tier.
     input_per_mtok: float | None = None
     output_per_mtok: float | None = None
+    # About how many tokens the same text counts as, relative to DEFAULT_MODEL's tokenizer. The 5.x models use the
+    # tokenizer introduced with Claude Opus 4.7, which counts ~30% more (Haiku 5.5 migration guide); a cost
+    # estimate calibrated on the default scales by it alongside the price.
+    token_ratio: float = 1.0
 
 
 # DEFAULT_MODEL first and the only validated entry. The 5.5 models are selectable ahead of their benchmark; the
@@ -74,6 +78,7 @@ MODELS: tuple[ModelInfo, ...] = (
         thinking_type="between_tools",
         input_per_mtok=2.0,
         output_per_mtok=10.0,
+        token_ratio=1.3,
     ),
     ModelInfo(
         id="claude-haiku-5-5",
@@ -85,6 +90,7 @@ MODELS: tuple[ModelInfo, ...] = (
         effort="low",
         input_per_mtok=0.10,
         output_per_mtok=0.50,
+        token_ratio=1.3,
     ),
     ModelInfo(
         id="claude-opus-5-5",
@@ -96,6 +102,7 @@ MODELS: tuple[ModelInfo, ...] = (
         effort="low",
         input_per_mtok=4.0,
         output_per_mtok=20.0,
+        token_ratio=1.3,
     ),
     ModelInfo(
         id="gpt-4o", label="GPT-4o", provider="openai", validated=False, input_per_mtok=2.5, output_per_mtok=10.0
