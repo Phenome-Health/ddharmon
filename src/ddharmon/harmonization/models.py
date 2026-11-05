@@ -192,6 +192,7 @@ class ConceptGroup:
     coherence_kind: str = ""  # distinct-KINDS discriminator (runs post-assign; left "" here)
     incoherent: bool = False  # HARD flag — verdict == split. Stamped by the VERDICT pass, not propagation.
     matrix_suspect: bool = False  # the $0 deterministic matrix pre-filter, stamped by prepare_coherence
+    readjudicated_from: str = ""  # if this group is a re-split child, the parent group_id it was carved from
 
 
 @dataclass

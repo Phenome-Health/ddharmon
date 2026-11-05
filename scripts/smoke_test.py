@@ -143,11 +143,81 @@ def check_public_surface() -> None:
         raise SmokeTestError(f"public surface missing from the installed wheel: {exc}") from exc
 
     params = inspect.signature(harmonize_leanb).parameters
-    for kw in ("stop_after", "concept_gate", "max_clusters"):
+    for kw in (
+        "stop_after",
+        "concept_gate",
+        "max_clusters",
+        # staged review: reviewer regrouping, Gate-1 scope, cohort-only clustering, single outlier recovery
+        "group_overrides",
+        "group_generate",
+        "assign_group_ids",
+        "cluster_with_catalog",
+        "recover_outliers",
+    ):
         if kw not in params:
             raise SmokeTestError(f"harmonize_leanb is missing the {kw!r} keyword in the installed wheel")
     if STOP_AFTER_BOUNDARIES != ("gencde",):
         raise SmokeTestError(f"STOP_AFTER_BOUNDARIES is {STOP_AFTER_BOUNDARIES!r}, expected ('gencde',)")
+    if params["cluster_with_catalog"].default is not False:
+        raise SmokeTestError("harmonize_leanb must cluster cohort variables only by default (cluster_with_catalog)")
+
+    check_staged_review_surface()
+
+
+def check_staged_review_surface() -> None:
+    """Assert the staged-review entry points a review app imports or feature-detects are in the wheel.
+
+    Each is something a consumer guards with ``getattr`` / ``inspect.signature`` and would otherwise degrade on
+    silently: reviewer group overrides, split-only re-adjudication, the substrate's replay flags, the batch
+    stage's forced-tool-call parity, the preparation master switch and repeated-name disambiguation.
+    """
+    import dataclasses
+    import inspect
+
+    from ddharmon.harmonization import (  # noqa: F401
+        DEFAULT_CLUSTER_WITH_CATALOG,
+        GATE1_SUGGEST_MIN_COSINE,
+        GroupOverrides,
+        ReviewerGroup,
+        cluster_leanb,
+        clustering_input_dicts,
+        division_overrides,
+        readjudicate_split_only,
+        replay_leanb_inputs,
+        suggest_groups,
+        suggestions_to_dict,
+    )
+    from ddharmon.harmonization.leanb import LeanBResult
+    from ddharmon.harmonization.models import ConceptGroup
+    from ddharmon.harmonization.substrate import ClusteringSubstrate
+    from ddharmon.ingestion.csv_parser import GenericCSVParser
+    from ddharmon.ingestion.preprocessor import preprocess_dictionary, preprocessing_diff  # noqa: F401
+    from ddharmon.llm.batch import _parse_response_text, resume_and_wait, retrieve_batch  # noqa: F401
+
+    if DEFAULT_CLUSTER_WITH_CATALOG is not False:
+        raise SmokeTestError("DEFAULT_CLUSTER_WITH_CATALOG must be False (cohort-only clustering)")
+    expected_fields = {
+        LeanBResult: "group_ideal_prompts",
+        ConceptGroup: "readjudicated_from",
+        ClusteringSubstrate: "clustered_with_catalog",
+    }
+    for cls, name in expected_fields.items():
+        if name not in {f.name for f in dataclasses.fields(cls)}:
+            raise SmokeTestError(f"{cls.__name__} is missing the {name!r} field in the installed wheel")
+    if "outliers_recovered" not in {f.name for f in dataclasses.fields(ClusteringSubstrate)}:
+        raise SmokeTestError("ClusteringSubstrate is missing 'outliers_recovered' in the installed wheel")
+    prep = inspect.signature(preprocess_dictionary).parameters
+    if "enabled" not in prep or prep["enabled"].default is not True:
+        raise SmokeTestError("preprocess_dictionary must take enabled= and default it to True")
+    if not hasattr(GenericCSVParser, "_disambiguate_variable_names"):
+        raise SmokeTestError("the CSV parser no longer disambiguates repeated variable names")
+    try:
+        from ddharmon.llm.anthropic_client import AnthropicClient
+    except ImportError as exc:  # the `llm` extra is optional
+        print(f"    (skipped AnthropicClient check: missing {exc.name})")
+        return
+    if not callable(getattr(AnthropicClient, "complete_request", None)):
+        raise SmokeTestError("AnthropicClient.complete_request is missing in the installed wheel")
 
 
 # --- optional deep check ---------------------------------------------------

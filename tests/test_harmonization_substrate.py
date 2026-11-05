@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from ddharmon.harmonization.substrate import (
     ClusteringSubstrate,
     build_substrate,
@@ -60,6 +62,23 @@ class TestSubstrateRoundTrip:
         assert back.outlier == sub.outlier
         assert back.min_cluster_size == sub.min_cluster_size and back.n_fields == sub.n_fields
         assert back.substrate_id == sub.substrate_id  # content id stable across the round trip
+
+    def test_a_fresh_partition_has_not_had_outlier_recovery(self):
+        assert self._substrate().outliers_recovered is False
+
+    def test_the_recovery_flag_survives_the_round_trip(self, tmp_path):
+        for flag in (True, False):
+            sub = self._substrate()
+            sub.outliers_recovered = flag
+            back = load_substrate(save_substrate(sub, tmp_path / f"sub_{flag}.json"))
+            assert back.outliers_recovered is flag
+
+    def test_a_file_written_before_the_flag_loads_as_already_recovered(self, tmp_path):
+        """Back-compat: a pre-flag file is the partition its run SHOWED, recovery included, so it
+        must replay as saved; re-recovering it would re-cluster the leftovers into a group nobody saw."""
+        p = tmp_path / "legacy.json"
+        p.write_text(json.dumps({"version": 1, "min_cluster_size": 15, "clusters": [[["A", "x"]]], "outlier": []}))
+        assert load_substrate(p).outliers_recovered is True
 
     def test_substrate_id_is_sensitive_to_partition(self):
         a = build_substrate([_cluster(0, [("A", "x")]), _cluster(1, [("B", "y")])], min_cluster_size=15)

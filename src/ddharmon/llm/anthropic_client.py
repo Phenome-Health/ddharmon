@@ -80,8 +80,11 @@ class AnthropicClient(BaseLLMClient):
         # capture never raises into a run — a missing/odd usage block just means that call isn't priced.
         self.usage_log: list = []
 
-    def _record_usage(self, response: object) -> None:
-        """Append this response's token usage to ``usage_log`` (best-effort; never raises into a run)."""
+    def _record_usage(self, response: object, *, model: str | None = None) -> None:
+        """Append this response's token usage to ``usage_log`` (best-effort; never raises into a run).
+
+        ``model`` = the model that ran when it is not this client's own (``complete_request``'s per-prompt model).
+        """
         from ddharmon.llm.cost import TokenUsage
 
         try:
@@ -90,7 +93,7 @@ class AnthropicClient(BaseLLMClient):
                 return
             self.usage_log.append(
                 TokenUsage(
-                    model=self._model_name,
+                    model=model or self._model_name,
                     input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
                     output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
                 )
@@ -166,3 +169,52 @@ class AnthropicClient(BaseLLMClient):
         response = self._client.messages.create(**kwargs)
         self._record_usage(response)
         return _message_text(response)
+
+    def complete_request(
+        self,
+        prompt: str,
+        *,
+        system: str,
+        max_tokens: int,
+        temperature: float,
+        model: str | None = None,
+        tool_schema: dict | None = None,
+        tool_name: str | None = None,
+    ) -> str | dict:
+        """Send ONE prompt exactly as ``batch.submit_batch`` would, synchronously.
+
+        Same request shape as a batch request's ``params``: the caller's ``temperature`` and per-prompt
+        ``max_tokens``, the prompt's own ``model`` (else this client's), and — when ``tool_schema`` is set — a
+        FORCED tool call whose ``input`` is returned as the structured dict, mirroring ``retrieve_batch``. With no
+        tool the response text is returned for the caller to parse. Usage is recorded against the model that
+        actually ran, so a prompt pinned to a different model than the run's is priced as that model.
+        """
+        kwargs: dict = {
+            "model": model or self._model_name,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "system": system,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if tool_schema:
+            name = tool_name or "emit"
+            kwargs["tools"] = [
+                {
+                    "name": name,
+                    "description": "Return the result as structured input conforming to the schema.",
+                    "input_schema": tool_schema,
+                }
+            ]
+            kwargs["tool_choice"] = {"type": "tool", "name": name}
+        response = self._client.messages.create(**kwargs)
+        ran = getattr(response, "model", None)
+        self._record_usage(response, model=ran if isinstance(ran, str) and ran else kwargs["model"])
+        if tool_schema:
+            block = next((b for b in response.content if getattr(b, "type", None) == "tool_use"), None)
+            if block is None:
+                raise ValueError("Anthropic response to a forced tool call contained no tool_use block")
+            return dict(block.input) if isinstance(block.input, dict) else block.input
+        parts = [b.text for b in response.content if getattr(b, "type", None) == "text"]
+        if not parts:
+            raise ValueError("Anthropic response contained no text content")
+        return "".join(parts)

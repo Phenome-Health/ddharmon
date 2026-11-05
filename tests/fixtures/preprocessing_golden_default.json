@@ -1,0 +1,134 @@
+{
+  "00": {
+    "variable_name": "00",
+    "description": "study alpha placeholder 00",
+    "question_text": null,
+    "embed_variable_name": false,
+    "embedding_text": "study alpha placeholder 00"
+  },
+  "01": {
+    "variable_name": "01",
+    "description": "study alpha placeholder 01",
+    "question_text": null,
+    "embed_variable_name": false,
+    "embedding_text": "study alpha placeholder 01"
+  },
+  "02": {
+    "variable_name": "02",
+    "description": "study alpha placeholder 02",
+    "question_text": null,
+    "embed_variable_name": false,
+    "embedding_text": "study alpha placeholder 02"
+  },
+  "03": {
+    "variable_name": "03",
+    "description": "study alpha placeholder 03",
+    "question_text": null,
+    "embed_variable_name": false,
+    "embedding_text": "study alpha placeholder 03"
+  },
+  "04": {
+    "variable_name": "04",
+    "description": "study alpha placeholder 04",
+    "question_text": null,
+    "embed_variable_name": false,
+    "embedding_text": "study alpha placeholder 04"
+  },
+  "05": {
+    "variable_name": "05",
+    "description": "study alpha placeholder 05",
+    "question_text": null,
+    "embed_variable_name": false,
+    "embedding_text": "study alpha placeholder 05"
+  },
+  "06": {
+    "variable_name": "06",
+    "description": "study alpha placeholder 06",
+    "question_text": null,
+    "embed_variable_name": false,
+    "embedding_text": "study alpha placeholder 06"
+  },
+  "07": {
+    "variable_name": "07",
+    "description": "study alpha placeholder 07",
+    "question_text": null,
+    "embed_variable_name": false,
+    "embedding_text": "study alpha placeholder 07"
+  },
+  "08": {
+    "variable_name": "08",
+    "description": "study alpha placeholder 08",
+    "question_text": null,
+    "embed_variable_name": false,
+    "embedding_text": "study alpha placeholder 08"
+  },
+  "09": {
+    "variable_name": "09",
+    "description": "study alpha placeholder 09",
+    "question_text": null,
+    "embed_variable_name": false,
+    "embedding_text": "study alpha placeholder 09"
+  },
+  "10": {
+    "variable_name": "10",
+    "description": "study alpha placeholder 10",
+    "question_text": null,
+    "embed_variable_name": false,
+    "embedding_text": "study alpha placeholder 10"
+  },
+  "11": {
+    "variable_name": "11",
+    "description": "study alpha placeholder 11",
+    "question_text": null,
+    "embed_variable_name": false,
+    "embedding_text": "study alpha placeholder 11"
+  },
+  "study_alpha_bmi_calculated": {
+    "variable_name": "study_alpha_bmi_calculated",
+    "description": "Body mass index calculated — from height and weight",
+    "question_text": null,
+    "embed_variable_name": true,
+    "embedding_text": "Body mass index calculated — from height and weight"
+  },
+  "study_alpha_curly_quote": {
+    "variable_name": "study_alpha_curly_quote",
+    "description": "The participant's \"age\" at visit",
+    "question_text": null,
+    "embed_variable_name": true,
+    "embedding_text": "The participant's \"age\" at visit"
+  },
+  "study_alpha_dedup_name": {
+    "variable_name": "study_alpha_dedup_name",
+    "description": "study_alpha_dedup_name is the field measuring grip strength",
+    "question_text": null,
+    "embed_variable_name": true,
+    "embedding_text": "study_alpha_dedup_name is the field measuring grip strength"
+  },
+  "study_alpha_echo_option": {
+    "variable_name": "study_alpha_echo_option",
+    "description": "",
+    "question_text": null,
+    "embed_variable_name": true,
+    "embedding_text": "study_alpha_echo_option"
+  },
+  "study_alpha_smoking_status": {
+    "variable_name": "study_alpha_smoking_status",
+    "description": "Do you smoke?",
+    "question_text": "Do you smoke?",
+    "embed_variable_name": true,
+    "embedding_text": "Do you smoke?"
+  },
+  "__report__": {
+    "total_fields": 17,
+    "unicode_fixed": 1,
+    "admin_text_stripped": 2,
+    "placeholders_replaced": 12,
+    "prefix_stripped": 12,
+    "prefix_value": "study_alpha_placeholder",
+    "name_deduped": 12,
+    "option_echo_cleared": 1,
+    "whitespace_fixed": 0,
+    "names_changed": 12,
+    "descriptions_changed": 16
+  }
+}

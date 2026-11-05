@@ -80,9 +80,21 @@ class Field:
     # description is assumed semantically richer.
     _embed_variable_name: bool = field(default=True, repr=False)
 
-    # Raw (pre-preprocessing) text — populated by preprocess_dictionary()
+    # Raw (pre-preparation) text — populated by preprocess_dictionary(), whether or not it changed
+    # anything. With preparation switched off (``enabled=False``) these hold the SAME strings as their live
+    # counterparts rather than a pre-mutation snapshot: "raw" means *the text before preparation*, which
+    # when preparation is skipped is simply the text. They are deliberately not left at None on that path —
+    # callers that read them (e.g. to build a lookup key out of raw_variable_name) must not start seeing
+    # None where a string has always been.
+    # They ARE still None on a dictionary that has never been through preprocess_dictionary() at all.
     raw_variable_name: str | None = field(default=None, repr=False)
     raw_description: str | None = field(default=None, repr=False)
+    #: `to_embedding_text` prefers ``question_text`` over ``description``, and preprocessing rewrites the
+    #: question (unicode repair, hygiene, whitespace) — so without the raw value the BEFORE embedding text is
+    #: unrecoverable for exactly the fields where the question is the primary text. A before/after review
+    #: needs that pair: for the name-suppression rule the description is identical on both sides and the
+    #: embedding text is the only thing that changed.
+    raw_question_text: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not self.variable_name:
