@@ -3,7 +3,7 @@
 All notable changes to ddharmon are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
-## [Unreleased]
+## [1.4.0]
 
 Adds what a **staged human review** needs from the core: a reviewer can regroup the concept groups the split
 produced, accept a proposed division of an over-merged group, scope which groups get assigned, and resume a
