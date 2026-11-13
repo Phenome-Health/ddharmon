@@ -3,14 +3,31 @@
 All notable changes to ddharmon are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
-## [1.4.0]
+## [1.4.1] — unreleased
 
-Adds what a **staged human review** needs from the core: a reviewer can regroup the concept groups the split
-produced, accept a proposed division of an over-merged group, scope which groups get assigned, and resume a
-paused run on exactly the partition they reviewed. Also changes the default clustering input (see **Changed**
-— this one alters results for existing callers) and fixes several data-loss and replay bugs.
+Patch release: the default model moves off Claude Sonnet 4.5 before that model is retired on 2026-11-30, and Claude
+Sonnet 5.5 and Claude Haiku 5.5 become selectable.
+
+### Changed
+
+- **Default model moved to `claude-sonnet-4-6`** ahead of Sonnet 4.5's 2026-11-30 retirement. `AnthropicClient()`
+  and `get_client("anthropic")` defaulted to `claude-sonnet-4-5`, so every call relying on that default would
+  have failed with a 404 once the model was retired. Callers that pass `model_name` explicitly are unaffected.
+  The harmonization stages, the Batch API fallback and the CLI's `--model` already defaulted to Sonnet 4.6, so
+  a pipeline run produces the same output as on 1.4.0.
+
+- **Anthropic SDK 1.x supported** (`anthropic>=0.39.0,<2`). SDK 1.x removed `temperature` from `Messages.create`,
+  so every synchronous call raised `TypeError` on a fresh install; arguments the installed SDK does not accept now
+  travel in `extra_body`. Realized cost prices a registry model from the registry first, so a model newer than the
+  installed LiteLLM price map is no longer priced at an older sibling's rate (Haiku 5.5 was priced as Haiku 4.5,
+  10x too high); the built-in Opus fallback rate is the current generation's ($5/$25).
 
 ### Added
+
+- **One `DEFAULT_MODEL` constant and a `ddharmon.llm.models` registry.** Every library default now reads
+  `ddharmon.llm.models.DEFAULT_MODEL`, so a future model change is a one-line edit, made only after the new
+  model has been re-run against the benchmarks. The module also exposes `ModelInfo` (`id`, `label`, `provider`,
+  `validated`), `MODELS` (the default first, and the only entry marked validated) and `model_info(model_id)`.
 
 - **Claude Sonnet 5.5 and Claude Haiku 5.5** (`claude-sonnet-5-5`, `claude-haiku-5-5`) join the model registry as
   selectable models, ahead of their benchmark (`ModelInfo.selectable`; `validated` still marks only the
@@ -22,6 +39,31 @@ paused run on exactly the partition they reviewed. Also changes the default clus
   tool call is rejected, and minimal thinking on the 5.5 models (Sonnet 5.5 `between_tools`, Haiku 5.5 `effort:
   low`) so a run costs and behaves like the validated default. Claude Opus 5.5 replaces Opus 4.8 as the listed
   (not selectable) Opus.
+
+- **`ModelInfo.token_ratio`** — the newer tokenizer's ~1.3x token count, so cost estimates for the 5.5 models are not
+  understated.
+
+### Fixed
+
+- **Answers are read by block type, and a declined request stays unanswered.** `retrieve_batch` read `content[0]`
+  as the answer, which on a model that thinks first is a `thinking` block, so the answer was recorded as an empty
+  string. A `stop_reason: "refusal"` (or an answer with no text) now writes no record, so the stage re-asks it
+  once and then fails naming it; the synchronous path raises `ddharmon.llm.params.RefusalError` with the refusal
+  category.
+
+- **Thinking models get output headroom**, and an answer cut off by the output limit is named as such instead of being
+  read as a malformed answer.
+- **The distinct-KINDS check runs on the run's model**, not the library default, so a run on a 5.5 model does not
+  silently send that sub-call to Sonnet 4.6.
+
+## [1.4.0]
+
+Adds what a **staged human review** needs from the core: a reviewer can regroup the concept groups the split
+produced, accept a proposed division of an over-merged group, scope which groups get assigned, and resume a
+paused run on exactly the partition they reviewed. Also changes the default clustering input (see **Changed**
+— this one alters results for existing callers) and fixes several data-loss and replay bugs.
+
+### Added
 
 - **Reviewer group overrides** (`ddharmon.harmonization.overrides`). `GroupOverrides` holds a reviewer's
   regrouping — member moves (`"cohort:var" -> group id | None`) and `ReviewerGroup`s they formed, which may
@@ -79,12 +121,6 @@ paused run on exactly the partition they reviewed. Also changes the default clus
 
 ### Changed
 
-- **Anthropic SDK 1.x supported** (`anthropic>=0.39.0,<2`). SDK 1.x removed `temperature` from `Messages.create`,
-  so every synchronous call raised `TypeError` on a fresh install; arguments the installed SDK does not accept now
-  travel in `extra_body`. Realized cost prices a registry model from the registry first, so a model newer than the
-  installed LiteLLM price map is no longer priced at an older sibling's rate (Haiku 5.5 was priced as Haiku 4.5,
-  10x too high); the built-in Opus fallback rate is the current generation's ($5/$25).
-
 - **`harmonize_leanb` clusters cohort variables only by default** (`cluster_with_catalog=False`). The CDE
   catalog is still required in `embedded_dicts` and is used for retrieval exactly as before, but its rows no
   longer enter UMAP+HDBSCAN, outlier recovery or chunking. No stage ever used a catalog row as a group member,
@@ -99,12 +135,6 @@ paused run on exactly the partition they reviewed. Also changes the default clus
   returns `[]` when preparation was switched off.
 
 ### Fixed
-
-- **Answers are read by block type, and a declined request stays unanswered.** `retrieve_batch` read `content[0]`
-  as the answer, which on a model that thinks first is a `thinking` block, so the answer was recorded as an empty
-  string. A `stop_reason: "refusal"` (or an answer with no text) now writes no record, so the stage re-asks it
-  once and then fails naming it; the synchronous path raises `ddharmon.llm.params.RefusalError` with the refusal
-  category.
 
 - **Repeated variable names no longer drop rows.** The CSV parser used to keep only the last row for a
   repeated `variable_name`. Later occurrences now get a unique `<name>__2`, `<name>__3`, … identity, keep the
@@ -122,25 +152,6 @@ paused run on exactly the partition they reviewed. Also changes the default clus
 - The embedding dimension is read through either sentence-transformers name
   (`get_embedding_dimension` in 6.x, `get_sentence_embedding_dimension` before), avoiding the 6.x
   deprecation path.
-
-## [1.3.1]
-
-Patch release: the default model moves off Claude Sonnet 4.5 before that model is retired on 2026-11-30.
-
-### Changed
-
-- **Default model moved to `claude-sonnet-4-6`** ahead of Sonnet 4.5's 2026-11-30 retirement. `AnthropicClient()`
-  and `get_client("anthropic")` defaulted to `claude-sonnet-4-5`, so every call relying on that default would
-  have failed with a 404 once the model was retired. Callers that pass `model_name` explicitly are unaffected.
-  The harmonization stages, the Batch API fallback and the CLI's `--model` already defaulted to Sonnet 4.6, so
-  a pipeline run produces the same output as on 1.3.0.
-
-### Added
-
-- **One `DEFAULT_MODEL` constant and a `ddharmon.llm.models` registry.** Every library default now reads
-  `ddharmon.llm.models.DEFAULT_MODEL`, so a future model change is a one-line edit, made only after the new
-  model has been re-run against the benchmarks. The module also exposes `ModelInfo` (`id`, `label`, `provider`,
-  `validated`), `MODELS` (the default first, and the only entry marked validated) and `model_info(model_id)`.
 
 ## [1.3.0]
 
