@@ -3,7 +3,7 @@
 All notable changes to ddharmon are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
-## [1.4.1] — unreleased
+## [1.4.1]
 
 Patch release: the default model moves off Claude Sonnet 4.5 before that model is retired on 2026-11-30, and Claude
 Sonnet 5.5 and Claude Haiku 5.5 become selectable.
