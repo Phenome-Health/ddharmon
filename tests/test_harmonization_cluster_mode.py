@@ -623,3 +623,37 @@ def test_a_cohort_only_run_with_no_cohort_rows_is_empty_not_a_crash(hf):
     result = harmonize_leanb([_ed(hf, CDE, _CATALOG)], generate=None)
     assert result.ideal_prompts == [] and result.substrate.clusters == []
     assert result.substrate.clustered_with_catalog is False and result.substrate.n_fields == 0
+
+
+def test_the_kinds_check_is_sent_to_the_runs_model(embedded, spy_engine, monkeypatch):
+    """A run's model reaches every stage — the distinct-KINDS check included.
+
+    Found on a live Claude Haiku 5.5 run (2026-10-15): ``prepare_kinds`` pinned ``DEFAULT_MODEL_TAG``, so its 16
+    calls went to Claude Sonnet 4.6 and cost $0.082 of the run's $0.31 — ~30x their price on the chosen model.
+    This world's groups are below the judge's minimum size, so one coherence prompt is handed in directly; what is
+    asserted is the model the kinds stage is ASKED to use.
+    """
+    import ddharmon.harmonization.leanb as leanb
+    from ddharmon.harmonization.leanb import PromptRecord, harmonize_leanb
+
+    judged = PromptRecord(
+        id="leanb:coherence:x",
+        system_prompt="",
+        user_prompt="",
+        schema="{}",
+        model_tag="claude-haiku-5-5",
+        context={"group_id": "x", "cluster_id": "x", "periphery_fids": []},
+    )
+    monkeypatch.setattr(leanb, "prepare_coherence", lambda *a, **k: [judged])
+    asked: list = []
+    real = leanb.prepare_kinds
+    monkeypatch.setattr(leanb, "prepare_kinds", lambda recs, **k: asked.append(k) or real(recs, **k))
+    log: dict = {}
+    harmonize_leanb(
+        embedded,
+        chunk_cap=_CHUNK_CAP,
+        model_tag="claude-haiku-5-5",
+        coherence=lambda prompts: {},
+        **recording_stages(log),
+    )
+    assert asked == [{"model_tag": "claude-haiku-5-5"}]

@@ -27,11 +27,13 @@ BATCH_DISCOUNT = 0.5
 # used only when the optional ``litellm`` package isn't installed (so realized cost still prices accurately
 # without a heavy dependency). LiteLLM's maintained map is PREFERRED whenever available: it auto-tracks price
 # changes across every provider. Keys are matched as case-insensitive substrings (longest match wins), so a
-# dated model id like ``claude-sonnet-4-20250514`` still resolves. Update if a provider changes these rates.
+# dated model id (family + version + date suffix) still resolves. Update if a provider changes these rates.
 _FALLBACK_RATES_PER_M: dict[str, tuple[float, float]] = {
+    # Bare family keys only: a versioned id lives in ddharmon.llm.models (whose prices are read FIRST), so these
+    # cover only an id the registry does not list. Opus: the current generation's rate (4.5 onward), not Opus 4's.
     "claude-haiku": (1.0, 5.0),
     "claude-sonnet": (3.0, 15.0),
-    "claude-opus": (15.0, 75.0),
+    "claude-opus": (5.0, 25.0),
     "gpt-4o-mini": (0.15, 0.60),
     "gpt-4o": (2.5, 10.0),
 }
@@ -85,6 +87,17 @@ def price_usage(
         return float(response_cost) * discount
     if not model:
         return 0.0
+    # THE REGISTRY FIRST. A model ddharmon offers carries its published price (ddharmon.llm.models), so a model
+    # newer than the installed LiteLLM price map is not priced at an older sibling's rate — the map priced
+    # Claude Haiku 5.5 as Haiku 4.5, ten times too high, until it learned the new id.
+    from ddharmon.llm.models import model_info
+
+    info = model_info(model.split("/", 1)[1] if model.lower().startswith("anthropic/") else model)
+    if info is not None and info.input_per_mtok is not None and info.output_per_mtok is not None:
+        usd = (
+            int(input_tokens) / 1_000_000 * info.input_per_mtok + int(output_tokens) / 1_000_000 * info.output_per_mtok
+        )
+        return usd * discount
     try:
         import litellm
 

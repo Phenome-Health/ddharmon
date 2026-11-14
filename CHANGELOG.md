@@ -3,6 +3,68 @@
 All notable changes to ddharmon are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
+## [1.4.1]
+
+Patch release: the default model moves off Claude Sonnet 4.5 before that model is retired on 2026-11-30, and Claude
+Sonnet 5.5 and Claude Haiku 5.5 become selectable.
+
+### Changed
+
+- **Default model moved to `claude-sonnet-4-6`** ahead of Sonnet 4.5's 2026-11-30 retirement. `AnthropicClient()`
+  and `get_client("anthropic")` defaulted to `claude-sonnet-4-5`, so every call relying on that default would
+  have failed with a 404 once the model was retired. Callers that pass `model_name` explicitly are unaffected.
+  The harmonization stages, the Batch API fallback and the CLI's `--model` already defaulted to Sonnet 4.6, so
+  a pipeline run produces the same output as on 1.4.0.
+
+- **Anthropic SDK 1.x supported** (`anthropic>=0.39.0,<2`). SDK 1.x removed `temperature` from `Messages.create`,
+  so every synchronous call raised `TypeError` on a fresh install; arguments the installed SDK does not accept now
+  travel in `extra_body`. Realized cost prices a registry model from the registry first, so a model newer than the
+  installed LiteLLM price map is no longer priced at an older sibling's rate (Haiku 5.5 was priced as Haiku 4.5,
+  10x too high); the built-in Opus fallback rate is the current generation's ($5/$25).
+
+### Added
+
+- **One `DEFAULT_MODEL` constant and a `ddharmon.llm.models` registry.** Every library default now reads
+  `ddharmon.llm.models.DEFAULT_MODEL`, so a future model change is a one-line edit, made only after the new
+  model has been re-run against the benchmarks. The module also exposes `ModelInfo` (`id`, `label`, `provider`,
+  `validated`), `MODELS` (the default first, and the only entry marked validated) and `model_info(model_id)`.
+
+- **Claude Sonnet 5.5 and Claude Haiku 5.5** (`claude-sonnet-5-5`, `claude-haiku-5-5`) join the model registry as
+  selectable models, ahead of their benchmark (`ModelInfo.selectable`; `validated` still marks only the
+  benchmarked default, Claude Sonnet 4.6, which stays `DEFAULT_MODEL`). Each registry entry now carries the
+  model's request rules (`accepts_temperature`, `forced_tool_choice`, `thinking_type`, `effort`) and its published
+  price (`input_per_mtok`, `output_per_mtok`). New `ddharmon.llm.params.message_params` builds the one Messages
+  API request per model that both `batch.submit_batch` and `AnthropicClient.complete_request` send: `temperature`
+  only where accepted, structured outputs (`output_config.format`, via `structured_output_schema`) where a forced
+  tool call is rejected, and minimal thinking on the 5.5 models (Sonnet 5.5 `between_tools`, Haiku 5.5 `effort:
+  low`) so a run costs and behaves like the validated default. Claude Opus 5.5 replaces Opus 4.8 as the listed
+  (not selectable) Opus.
+
+- **`ModelInfo.token_ratio`** — the newer tokenizer's ~1.3x token count, so cost estimates for the 5.5 models are not
+  understated.
+
+### Fixed
+
+- **Answers are read by block type, and a declined request stays unanswered.** `retrieve_batch` read `content[0]`
+  as the answer, which on a model that thinks first is a `thinking` block, so the answer was recorded as an empty
+  string. A `stop_reason: "refusal"` (or an answer with no text) now writes no record, so the stage re-asks it
+  once and then fails naming it; the synchronous path raises `ddharmon.llm.params.RefusalError` with the refusal
+  category.
+
+- **Thinking models get output headroom**, and an answer cut off by the output limit is named as such instead of being
+  read as a malformed answer.
+- **The distinct-KINDS check runs on the run's model**, not the library default, so a run on a 5.5 model does not
+  silently send that sub-call to Sonnet 4.6.
+
+- **A dictionary whose only text column is its question wording now loads.** `question_text` was not among the
+  columns the loader may borrow a row's required description from, so a file mapped with `question_text` alone
+  loaded zero rows. It is now the last fallback (description, then short label, then variable name, then question),
+  so every row that loaded on 1.4.0 keeps the same text. A generated row id is never used as text.
+- **Whitespace cleanup can no longer merge two variables.** Names that differed only by repeated or stray
+  whitespace became equal during preprocessing, and the later row silently replaced the earlier one. They are now
+  kept apart with the same `__N` suffix the loader gives repeated names, exposed as
+  `ddharmon.ingestion.csv_parser.disambiguate_variable_names`.
+
 ## [1.4.0]
 
 Adds what a **staged human review** needs from the core: a reviewer can regroup the concept groups the split

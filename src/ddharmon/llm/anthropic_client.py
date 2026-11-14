@@ -6,6 +6,18 @@ import json
 import logging
 
 from ddharmon.llm.base import BaseLLMClient
+from ddharmon.llm.models import DEFAULT_MODEL, model_info
+from ddharmon.llm.params import (
+    for_installed_sdk,
+    message_params,
+    message_text,
+    output_budget,
+    output_limit_error,
+    refusal_of,
+    thinking_params,
+    tool_input,
+    uses_structured_output,
+)
 from ddharmon.llm.prompts import RERANKER_SYSTEM_PROMPT, RerankerResponse, build_reranker_prompt
 
 logger = logging.getLogger(__name__)
@@ -59,10 +71,10 @@ class AnthropicClient(BaseLLMClient):
     """
 
     def __init__(
-        # Default per project decision 03-01 ("default to Claude Sonnet 4.5 for Anthropic"). The prior pin
-        # (claude-sonnet-4-20250514, Sonnet 4) retired 2026-06-15 and now 404s on a bare AnthropicClient().
         self,
-        model_name: str = "claude-sonnet-4-5",
+        # The default lives in ddharmon.llm.models — one place to bump (a stale pin 404s once its model
+        # retires; see that module for the history).
+        model_name: str = DEFAULT_MODEL,
         max_tokens: int = 2048,
         *,
         api_key: str | None = None,
@@ -161,14 +173,26 @@ class AnthropicClient(BaseLLMClient):
         messages = [{"role": "user", "content": prompt}]
         kwargs: dict = {
             "model": self._model_name,
-            "max_tokens": max_tokens,
+            "max_tokens": output_budget(self._model_name, max_tokens),
             "messages": messages,
         }
         if system:
             kwargs["system"] = system
-        response = self._client.messages.create(**kwargs)
+        # The model's own thinking/effort rules (a 5.5 model thinks by default, which a 512-token budget may not
+        # survive), on whichever SDK generation is installed.
+        kwargs.update(thinking_params(self._model_name))
+        effort = getattr(model_info(self._model_name), "effort", None)
+        if effort:
+            kwargs["output_config"] = {"effort": effort}
+        response = self._client.messages.create(**for_installed_sdk(kwargs, self._client.messages.create))
         self._record_usage(response)
-        return _message_text(response)
+        refused = refusal_of(response)
+        if refused is not None:
+            raise refused
+        text = message_text(response)  # by block type: a 5.x model's thinking block comes first
+        if text is None:
+            raise output_limit_error(response) or ValueError("Anthropic response contained no text content")
+        return text
 
     def complete_request(
         self,
@@ -189,32 +213,33 @@ class AnthropicClient(BaseLLMClient):
         tool the response text is returned for the caller to parse. Usage is recorded against the model that
         actually ran, so a prompt pinned to a different model than the run's is priced as that model.
         """
-        kwargs: dict = {
-            "model": model or self._model_name,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "system": system,
-            "messages": [{"role": "user", "content": prompt}],
-        }
-        if tool_schema:
-            name = tool_name or "emit"
-            kwargs["tools"] = [
-                {
-                    "name": name,
-                    "description": "Return the result as structured input conforming to the schema.",
-                    "input_schema": tool_schema,
-                }
-            ]
-            kwargs["tool_choice"] = {"type": "tool", "name": name}
-        response = self._client.messages.create(**kwargs)
+        # The request batch.submit_batch sends for this prompt, shaped by the model's registry entry (temperature
+        # only where accepted; a forced tool or structured outputs; the model's thinking/effort).
+        params = message_params(
+            model=model or self._model_name,
+            system=system,
+            user_prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            tool_schema=tool_schema,
+            tool_name=tool_name,
+        )
+        response = self._client.messages.create(**for_installed_sdk(params, self._client.messages.create))
         ran = getattr(response, "model", None)
-        self._record_usage(response, model=ran if isinstance(ran, str) and ran else kwargs["model"])
-        if tool_schema:
-            block = next((b for b in response.content if getattr(b, "type", None) == "tool_use"), None)
-            if block is None:
-                raise ValueError("Anthropic response to a forced tool call contained no tool_use block")
-            return dict(block.input) if isinstance(block.input, dict) else block.input
-        parts = [b.text for b in response.content if getattr(b, "type", None) == "text"]
-        if not parts:
-            raise ValueError("Anthropic response contained no text content")
-        return "".join(parts)
+        self._record_usage(response, model=ran if isinstance(ran, str) and ran else params["model"])
+        refused = refusal_of(response)
+        if refused is not None:
+            raise refused  # a decline leaves the prompt unanswered; the stage re-asks once, then names it
+        if tool_schema and not uses_structured_output(params):
+            answer = tool_input(response)
+            if answer is None:
+                raise output_limit_error(response) or ValueError(
+                    "Anthropic response to a forced tool call contained no tool_use block"
+                )
+            return answer
+        text = message_text(response)
+        if text is None:
+            raise output_limit_error(response) or ValueError("Anthropic response contained no text content")
+        if tool_schema:  # structured outputs: the text IS the schema-constrained JSON — return it parsed
+            return json.loads(text)
+        return text
