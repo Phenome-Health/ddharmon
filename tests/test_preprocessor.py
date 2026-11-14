@@ -538,6 +538,30 @@ class TestPreprocessDictionary:
         assert "bmi" in names
         assert "age" in names
 
+    def test_names_colliding_after_whitespace_cleanup_are_both_kept(self) -> None:
+        """Two names that differ only by whitespace normalise to the same name. Re-keying the dictionary on
+        the cleaned names must not last-wins collapse them: both variables survive, the repeat gets the
+        loader's unique "__N" identity, and the field count is unchanged (todo 2026-10-01: 4 CDEs vanished)."""
+        from ddharmon.ingestion.preprocessor import preprocess_dictionary
+
+        dd = self._make_dd(
+            [
+                ("smoking  status", "Current smoking status"),
+                ("smoking status", "Smoking status at baseline"),
+                ("age", "Age at enrollment"),
+            ]
+        )
+        preprocess_dictionary(dd, strip_common_prefixes=False)
+
+        assert dd.field_count == 3
+        assert sorted(f.description for f in dd.fields.values()) == [
+            "Age at enrollment",
+            "Current smoking status",
+            "Smoking status at baseline",
+        ]
+        for key, field in dd.fields.items():
+            assert key == field.variable_name
+
     def test_rekeys_dictionary(self) -> None:
         from ddharmon.ingestion.preprocessor import preprocess_dictionary
 

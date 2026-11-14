@@ -30,6 +30,7 @@ from pathlib import Path
 
 import ftfy
 
+from ddharmon.ingestion.csv_parser import disambiguate_variable_names
 from ddharmon.models.data_dictionary import DataDictionary, Field
 from ddharmon.text_hygiene import clean_field_text
 
@@ -319,6 +320,12 @@ def preprocess_dictionary(
 
     # Step 6: Whitespace normalization (always runs, no flag needed)
     report.whitespace_fixed = _normalize_whitespace(fields)
+
+    # Step 7: Never let cleanup merge two variables. Names that differ only by what the steps above
+    # removed (whitespace, prefixes, stopwords, encoding) now collide, and the re-key below would
+    # last-wins collapse them — silent data loss (4 CDEs vanished from the full catalog). Disambiguate
+    # the same way the loader does, so every source row still reaches clustering.
+    disambiguate_variable_names(fields)
 
     # Compute aggregate change counts
     for f in fields:

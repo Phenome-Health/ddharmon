@@ -56,6 +56,15 @@ Sonnet 5.5 and Claude Haiku 5.5 become selectable.
 - **The distinct-KINDS check runs on the run's model**, not the library default, so a run on a 5.5 model does not
   silently send that sub-call to Sonnet 4.6.
 
+- **A dictionary whose only text column is its question wording now loads.** `question_text` was not among the
+  columns the loader may borrow a row's required description from, so a file mapped with `question_text` alone
+  loaded zero rows. It is now the last fallback (description, then short label, then variable name, then question),
+  so every row that loaded on 1.4.0 keeps the same text. A generated row id is never used as text.
+- **Whitespace cleanup can no longer merge two variables.** Names that differed only by repeated or stray
+  whitespace became equal during preprocessing, and the later row silently replaced the earlier one. They are now
+  kept apart with the same `__N` suffix the loader gives repeated names, exposed as
+  `ddharmon.ingestion.csv_parser.disambiguate_variable_names`.
+
 ## [1.4.0]
 
 Adds what a **staged human review** needs from the core: a reviewer can regroup the concept groups the split

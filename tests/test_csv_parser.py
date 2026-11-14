@@ -136,6 +136,53 @@ class TestGenericCSVParser:
         # The real text is intact on both — the disambiguation is identity-only, not a text edit.
         assert dd.fields["vis_aid"].variable_name == "vis_aid"
 
+    def test_question_text_alone_loads_every_row(self, parser: GenericCSVParser, tmp_path: Path) -> None:
+        """A dictionary whose only text is the question wording — no name column, no description — must load
+        every row (a real user's dictionary had this shape, 2026-11-03). Before, the description slot could
+        not be filled from the question, so every row was skipped and the file loaded as zero variables."""
+        p = tmp_path / "question_only.csv"
+        p.write_text("question\nHow old are you?\nDo you currently smoke?\n")
+        dd = parser.load(p, column_map={"question": FieldRole.QUESTION_TEXT})
+
+        assert dd.field_count == 2
+        assert sorted(f.description for f in dd.fields.values()) == ["Do you currently smoke?", "How old are you?"]
+        assert all(name.startswith("_ROW_") for name in dd.fields)
+
+    def test_description_backfill_keeps_pre_1_4_1_order_with_question_last(
+        self, parser: GenericCSVParser, tmp_path: Path
+    ) -> None:
+        """With no description, the required text is borrowed short_label -> variable_name -> question_text.
+        Question is last so rows that loaded before 1.4.1 keep the same required text; a real description is
+        never overwritten, and what gets grouped on stays question_text first."""
+        csv_content = (
+            "var,desc,question,label\n"
+            "a,Real description,Asked A?,Label A\n"
+            "b,,Asked B?,Label B\n"
+            "c,,Asked C?,\n"
+            "d,,,\n"
+        )
+        p = tmp_path / "backfill.csv"
+        p.write_text(csv_content)
+        dd = parser.load(
+            p,
+            column_map={
+                "var": FieldRole.VARIABLE_NAME,
+                "desc": FieldRole.DESCRIPTION,
+                "question": FieldRole.QUESTION_TEXT,
+                "label": FieldRole.SHORT_LABEL,
+            },
+        )
+
+        assert dd.field_count == 4
+        assert dd.fields["a"].description == "Real description"  # never overwritten
+        assert dd.fields["b"].description == "Label B"  # label first, as before 1.4.1
+        assert dd.fields["c"].description == "c"  # a real name still beats the question
+        assert dd.fields["d"].description == "d"
+        # The grouped-on text puts the question first whatever the required text holds.
+        assert dd.fields["a"].to_embedding_text() == "Asked A?"
+        assert dd.fields["b"].to_embedding_text() == "Asked B?"
+        assert dd.fields["c"].to_embedding_text() == "Asked C?"
+
     def test_twinsuk_snomed_extraction(self, parser: GenericCSVParser, twinsuk_csv: Path) -> None:
         """SNOMED codes extracted from pipe-delimited format into standard_codes."""
         dd = parser.load(twinsuk_csv, cohort_name="TwinsUK", column_map=TWINSUK_MAP)

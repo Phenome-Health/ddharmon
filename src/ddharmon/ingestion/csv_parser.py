@@ -121,12 +121,19 @@ class GenericCSVParser:
             if var_name is None:
                 var_name = f"_ROW_{int(idx):05d}"  # type: ignore[arg-type]
 
-            # Get description (fall back to short_label, then variable_name)
+            # Get description (the required text every Field needs). With no description column value,
+            # borrow in the pre-1.4.1 order -- short_label -> variable_name -- and only then question_text.
+            # Question last is deliberate: it makes a dictionary whose only text is its question wording
+            # load (before 1.4.1 it loaded zero rows) while leaving the required text of every row that
+            # loaded before byte-identical. What gets GROUPED on is `to_embedding_text`, which already puts
+            # question_text first. A generated `_ROW_` id is not text, so it is never borrowed.
             description = self._get_cell_value(row, desc_col)
             if description is None:
                 description = self._get_cell_value(row, short_label_col)
             if description is None:
                 description = var_name if var_name and not var_name.startswith("_ROW_") else None
+            if description is None:
+                description = self._get_cell_value(row, question_text_col)
             # var_name is always set (synthetic _ROW_ fallback above); a None description here
             # means the row had no usable text at all — skip it (Field requires a description).
             if description is None:
@@ -213,36 +220,8 @@ class GenericCSVParser:
 
     @staticmethod
     def _disambiguate_variable_names(fields: list[Field]) -> dict[str, int]:
-        """Give every field a UNIQUE ``variable_name`` in place, so nothing is dropped when the dictionary is
-        keyed by it. The first occurrence of a name keeps it; a later one gets a ``"__N"`` suffix and keeps
-        the source name on ``short_label`` for display. Returns ``{source_name: total_occurrences}`` for the
-        names that appeared more than once — a caller / the Setup UI can surface "N variable names appear more
-        than once; they were kept as distinct variables (check they're really different)".
-        """
-        used: set[str] = set()
-        counts: dict[str, int] = {}
-        for f in fields:
-            original = f.variable_name
-            counts[original] = counts.get(original, 0) + 1
-            if original in used:
-                if f.short_label is None:
-                    f.short_label = original  # preserve what the source called it, for display
-                n = 2
-                candidate = f"{original}__{n}"
-                while candidate in used:
-                    n += 1
-                    candidate = f"{original}__{n}"
-                f.variable_name = candidate
-            used.add(f.variable_name)
-        duplicates = {name: c for name, c in counts.items() if c > 1}
-        if duplicates:
-            logger.warning(
-                "Disambiguated %d repeated variable name(s) so no row was dropped (kept as distinct "
-                "variables — check they are really different): %s",
-                len(duplicates),
-                duplicates,
-            )
-        return duplicates
+        """See :func:`disambiguate_variable_names` (kept as a method for existing callers)."""
+        return disambiguate_variable_names(fields)
 
     @staticmethod
     def _build_role_lookup(column_map: dict[str, FieldRole]) -> dict[FieldRole, str | list[str]]:
@@ -342,3 +321,39 @@ class GenericCSVParser:
         if unique_codes:
             return {"SNOMED": unique_codes}
         return {}
+
+
+def disambiguate_variable_names(fields: list[Field]) -> dict[str, int]:
+    """Give every field a UNIQUE ``variable_name`` in place, so nothing is dropped when the dictionary is
+    keyed by it. The first occurrence of a name keeps it; a later one gets a ``"__N"`` suffix and keeps
+    the source name on ``short_label`` for display. Returns ``{source_name: total_occurrences}`` for the
+    names that appeared more than once — a caller / the Setup UI can surface "N variable names appear more
+    than once; they were kept as distinct variables (check they're really different)".
+
+    Used by the loader (repeated names in the source) and by the preprocessor (names that only collide
+    after cleanup, e.g. differing by whitespace) — every re-key of ``DataDictionary.fields`` goes through it.
+    """
+    used: set[str] = set()
+    counts: dict[str, int] = {}
+    for f in fields:
+        original = f.variable_name
+        counts[original] = counts.get(original, 0) + 1
+        if original in used:
+            if f.short_label is None:
+                f.short_label = original  # preserve what the source called it, for display
+            n = 2
+            candidate = f"{original}__{n}"
+            while candidate in used:
+                n += 1
+                candidate = f"{original}__{n}"
+            f.variable_name = candidate
+        used.add(f.variable_name)
+    duplicates = {name: c for name, c in counts.items() if c > 1}
+    if duplicates:
+        logger.warning(
+            "Disambiguated %d repeated variable name(s) so no row was dropped (kept as distinct "
+            "variables — check they are really different): %s",
+            len(duplicates),
+            duplicates,
+        )
+    return duplicates
