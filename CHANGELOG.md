@@ -3,6 +3,18 @@
 All notable changes to ddharmon are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver.
 
+## [1.4.2] — unreleased
+
+### Fixed
+
+- **A dictionary that repeats its text now embeds the same way on a fresh run and on a cached replay.** Each distinct
+  uncached text is embedded once, and every variable carrying it gets that one vector, the one the cache stores. Before,
+  every row was embedded, so repeated texts came back with slightly different vectors (an encoder's output shifts with
+  the rest of its batch) while the cache kept one vector per text. A staged run's resumed leg then read different
+  vectors than its first leg had used, M2 chunking split a large cluster differently, and the run stopped on
+  partition drift. Repetitive dictionaries (dbGaP cross-reference exports, say) also embed several times faster on a
+  cold cache.
+
 ## [1.4.1]
 
 Patch release: the default model moves off Claude Sonnet 4.5 before that model is retired on 2026-11-30, and Claude

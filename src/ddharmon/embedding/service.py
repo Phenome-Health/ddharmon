@@ -256,42 +256,51 @@ def _embed_pass(
 
     Returns:
         Dict of variable_name -> embedding vector.
+
+    Each distinct uncached text is embedded ONCE, and every variable carrying it gets that one vector — the vector
+    the cache stores under its hash. A fresh run therefore returns exactly what a later cached replay will read.
+    Embedding every row instead gave repeated texts slightly different vectors (an encoder's output shifts with the
+    rest of its batch) while the cache kept one per text, so a staged run's resumed leg chunked differently and
+    stopped on partition drift.
     """
     all_hashes = list(field_hashes.values())
     cached = cache.get_many(provider.model_name, all_hashes, vector_type=vector_type)
 
     result: dict[str, NDArray[np.float32]] = {}
-    uncached_varnames: list[str] = []
-    uncached_texts: list[str] = []
-    uncached_hashes: list[str] = []
+    # hash -> the variables that share it. The hash is the cache key (sha256 of the composed text), so one hash is
+    # one text and gets one vector — the one the cache will return for it.
+    uncached: dict[str, list[str]] = {}
+    uncached_text: dict[str, str] = {}
 
     for var_name in sorted(field_texts.keys()):
         h = field_hashes[var_name]
         if h in cached:
             result[var_name] = cached[h]
         else:
-            uncached_varnames.append(var_name)
-            uncached_texts.append(field_texts[var_name])
-            uncached_hashes.append(h)
+            uncached.setdefault(h, []).append(var_name)
+            uncached_text.setdefault(h, field_texts[var_name])
 
     cached_count = len(result)
-    new_count = len(uncached_varnames)
+    new_count = sum(len(names) for names in uncached.values())
 
     logger.info(
-        "%s embeddings: %d cached, %d new",
+        "%s embeddings: %d cached, %d new (%d distinct texts)",
         vector_type,
         cached_count,
         new_count,
+        len(uncached),
     )
 
-    if uncached_texts:
-        new_vectors = provider.embed(uncached_texts)
+    if uncached:
+        hashes = list(uncached)
+        new_vectors = provider.embed([uncached_text[h] for h in hashes])
         new_items: list[tuple[str, NDArray[np.float32]]] = []
 
-        for i, var_name in enumerate(uncached_varnames):
+        for i, h in enumerate(hashes):
             vec = new_vectors[i]
-            result[var_name] = vec
-            new_items.append((uncached_hashes[i], vec))
+            for var_name in uncached[h]:
+                result[var_name] = vec
+            new_items.append((h, vec))
 
         cache.put_many(provider.model_name, new_items, vector_type=vector_type)
 

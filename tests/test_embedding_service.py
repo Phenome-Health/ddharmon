@@ -517,3 +517,83 @@ class TestReproducibility:
         fp2 = hashlib.md5(r2.get_all_vectors().tobytes()).hexdigest()
         assert fp1 == fp2
         assert r1.get_variable_names() == sorted(names)
+
+
+class BatchJitterProvider:
+    """Embeds like a real encoder on a CPU: a stable vector per text, nudged by the text's POSITION in the batch.
+
+    A transformer run over a padded batch returns the same text with float-level differences depending on what else
+    is in the batch. That is enough to change a tie-sensitive step downstream (M2 chunking's average-linkage
+    bisection) when a dictionary repeats its text. Seeded by sha256, so it is stable across processes.
+    """
+
+    def __init__(self, dimension: int = 16) -> None:
+        self._dimension = dimension
+        self.embedded_texts: list[str] = []
+
+    @property
+    def model_name(self) -> str:
+        return "batch-jitter"
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
+    def embed(self, texts: list[str]) -> NDArray[np.float32]:
+        self.embedded_texts.extend(texts)
+        out = np.zeros((len(texts), self._dimension), dtype=np.float32)
+        for i, t in enumerate(texts):
+            seed = int(hashlib.sha256(t.encode()).hexdigest()[:8], 16)
+            vec = np.random.default_rng(seed).standard_normal(self._dimension).astype(np.float32)
+            vec[0] += np.float32(1e-4) * i  # the batch-position effect
+            out[i] = vec / np.linalg.norm(vec)
+        return out
+
+
+def _make_repetitive_dictionary() -> DataDictionary:
+    """Seven variables, three distinct texts: the shape of a dbGaP cross-reference export."""
+    texts = {
+        "v1": "Gender of participant",
+        "v2": "WEIGHT (lbs)",
+        "v3": "Gender of participant",
+        "v4": "Age at enrollment",
+        "v5": "WEIGHT (lbs)",
+        "v6": "Gender of participant",
+        "v7": "WEIGHT (lbs)",
+    }
+    return DataDictionary(
+        name="repetitive", fields={k: Field(variable_name=k, description=v) for k, v in texts.items()}
+    )
+
+
+class TestRepeatedTextsEmbedOnce:
+    """A dictionary that repeats its text must embed identically on a fresh run and on a cached replay.
+
+    Before the fix every uncached ROW was embedded, so repeated texts got slightly different vectors on the first
+    run while the cache kept one vector per text. A staged run's resumed leg read that one vector for every copy,
+    chunked a cluster differently, and stopped on partition drift (prod run d86758d1, 2026-11-25).
+    """
+
+    def test_repeated_texts_share_one_vector_on_a_fresh_embed(self, tmp_path: Path) -> None:
+        result = embed_dictionary(_make_repetitive_dictionary(), provider=BatchJitterProvider(), cache_dir=tmp_path)
+
+        for group in (["v1", "v3", "v6"], ["v2", "v5", "v7"]):
+            first = result.embeddings[group[0]]
+            for var in group[1:]:
+                np.testing.assert_array_equal(result.embeddings[var], first, err_msg=f"{var} vs {group[0]}")
+
+    def test_a_cached_replay_returns_exactly_the_vectors_the_fresh_embed_used(self, tmp_path: Path) -> None:
+        dd = _make_repetitive_dictionary()
+        fresh = embed_dictionary(dd, provider=BatchJitterProvider(), cache_dir=tmp_path)
+        replay_provider = BatchJitterProvider()
+        replay = embed_dictionary(dd, provider=replay_provider, cache_dir=tmp_path)
+
+        assert replay_provider.embedded_texts == [], "the replay must be served entirely from the cache"
+        assert fresh.get_variable_names() == replay.get_variable_names()
+        np.testing.assert_array_equal(fresh.get_all_vectors(), replay.get_all_vectors())
+
+    def test_each_distinct_uncached_text_is_embedded_once(self, tmp_path: Path) -> None:
+        provider = BatchJitterProvider()
+        embed_dictionary(_make_repetitive_dictionary(), provider=provider, cache_dir=tmp_path)
+
+        assert sorted(provider.embedded_texts) == ["Age at enrollment", "Gender of participant", "WEIGHT (lbs)"]
