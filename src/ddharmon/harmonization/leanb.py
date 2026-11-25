@@ -741,6 +741,7 @@ def assemble_leanb(
                 cosine=round(float(cands[j].get("cos", 0.0)), 4),
                 is_chosen=des is not None and cands[j]["designation"] == des,
                 llm_suggested=j == llm_top,
+                candidate_number=j + 1,
             )
             for pos, j in enumerate(cand_order)
         ]
@@ -2331,13 +2332,23 @@ def _candidate_index(raw: object) -> int | None:
 
 
 def _parse_ranking(raw: object, n: int) -> list[int]:
+    """The model's best-first candidate numbers (1-based in the prompt) as 0-based indices, deduped and in range.
+
+    Accepts a JSON list (``[2, 4, 1]``, ``["2", "4"]``) and the same list as TEXT (``"[2, 4, 1]"`` / ``"2, 4, 1"``):
+    Claude 5.5 under structured outputs returns ``ranking`` as a string, which a list-only parser dropped, losing
+    the ranking and, when ``cde_id`` is null, the pick itself.
+    """
+    if isinstance(raw, list):
+        tokens = [m.group() for x in raw if (m := re.search(r"\d+", str(x)))]
+    elif isinstance(raw, str):
+        tokens = re.findall(r"\d+", raw)
+    else:
+        tokens = []
     out: list[int] = []
-    for x in raw if isinstance(raw, list) else []:
-        m = re.search(r"\d+", str(x))
-        if m:
-            i = int(m.group()) - 1
-            if 0 <= i < n and i not in out:
-                out.append(i)
+    for tok in tokens:
+        i = int(tok) - 1
+        if 0 <= i < n and i not in out:
+            out.append(i)
     return out
 
 

@@ -1450,3 +1450,56 @@ def test_max_clusters_caps_split_units_largest_first(world):
     assert len(capped.ideal_prompts) == 1
     kept = capped.ideal_prompts[0]
     assert len(kept.context["members"]) == 3  # the larger unit survived, not merely the first one
+
+
+# ── the model's ranking, however it arrives (prod run d86758d1, 2026-11-25) ─────────────────────────────────────────
+
+
+def _ranked_group_rec(cosines: list[float]) -> PromptRecord:
+    """One group-assign record whose candidates sit in RETRIEVAL order — the order the prompt numbers them 1..k."""
+    cands = [
+        {"designation": f"CDE_{i + 1}", "external_id": f"X{i + 1}", "text": f"candidate {i + 1}", "cos": cos}
+        for i, cos in enumerate(cosines)
+    ]
+    ctx = {"candidates": cands, "cluster_id": "c1", "group_idx": 0, "group_id": "c1#g0", "concept": "x", "members": []}
+    return PromptRecord(
+        id="leanb:groupassign:c1:0", system_prompt="", user_prompt="", schema="", model_tag="", context=ctx
+    )
+
+
+@pytest.mark.parametrize("ranking", [[2, 4, 1, 3], "[2, 4, 1, 3]", "2, 4, 1, 3"])
+def test_assemble_orders_candidates_by_the_models_ranking_whatever_its_json_type(ranking):
+    """Claude 5.5 answers under structured outputs returned ``ranking`` as the STRING "[2, 4, 1, 3]" (every one of
+    the 12 Gate-2 answers on prod run d86758d1). The list-only parser dropped it, so candidates fell back to
+    retrieval order and no candidate was marked as the model's top-ranked one."""
+    rec = _ranked_group_rec([0.78, 0.66, 0.72, 0.70])
+    response = {"verdict": "adopt", "cde_id": 2, "ranking": ranking, "rationale": "r"}
+    record = assemble_leanb([rec], {rec.id: response}, retrieval_floor=0.0).records[0]
+
+    assert [c.cde_id for c in record.candidates] == ["CDE_2", "CDE_4", "CDE_1", "CDE_3"]
+    assert [c.rank for c in record.candidates] == [1, 2, 3, 4]
+    assert [c.llm_suggested for c in record.candidates] == [True, False, False, False]
+
+
+def test_each_candidate_keeps_the_number_the_model_saw_it_under():
+    """The rationale cites candidates by their PROMPT number ("Candidate 2 ... Candidate 1"), which is retrieval order —
+    not the ranked position. Each candidate carries that number so a review screen can resolve the citation."""
+    rec = _ranked_group_rec([0.78, 0.66, 0.72, 0.70])
+    response = {"verdict": "adopt", "cde_id": 2, "ranking": "[2, 4, 1, 3]", "rationale": "Candidate 2 fits"}
+    record = assemble_leanb([rec], {rec.id: response}, retrieval_floor=0.0).records[0]
+
+    assert {c.cde_id: c.candidate_number for c in record.candidates} == {"CDE_1": 1, "CDE_2": 2, "CDE_3": 3, "CDE_4": 4}
+    chosen = next(c for c in record.candidates if c.is_chosen)
+    assert chosen.candidate_number == 2
+
+
+def test_a_pick_given_only_by_a_string_ranking_still_resolves():
+    """With ``cde_id`` null the pick comes from ``ranking[0]``. A string ranking used to leave it unresolved, and the
+    retrieval floor then downgraded the adopt to novel."""
+    rec = _ranked_group_rec([0.78, 0.66, 0.72, 0.70])
+    response = {"verdict": "adopt", "cde_id": None, "ranking": "[3, 1, 2, 4]", "rationale": "r"}
+    record = assemble_leanb([rec], {rec.id: response}, retrieval_floor=0.35).records[0]
+
+    assert record.verdict == "adopt"
+    assert record.cde_id == "CDE_3"
+    assert not record.floored

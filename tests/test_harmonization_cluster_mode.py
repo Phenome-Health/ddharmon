@@ -211,6 +211,19 @@ _RESULT_PROMPT_FIELDS = (
 )
 
 
+#: Candidate fields added AFTER the golden was captured. The golden pins what existed at ``4f8eb18`` and is never
+#: regenerated, so a later ADDITIVE field is projected out here rather than baked in: ``candidate_number`` (1.4.2)
+#: is the candidate's prompt position, a new label on the same candidates, not a change to any pinned value.
+_POST_GOLDEN_CANDIDATE_FIELDS = ("candidate_number",)
+
+
+def _golden_era_record(rec: dict) -> dict:
+    for cand in rec.get("candidates") or []:
+        for key in _POST_GOLDEN_CANDIDATE_FIELDS:
+            cand.pop(key, None)
+    return rec
+
+
 def snapshot(result, log: dict) -> dict:
     """Everything a run emits: every prompt each stage was sent, every prompt on the result, the records, the
     Gate-1 concept groups and the partition the run returns (the fields that existed before the switch)."""
@@ -218,7 +231,7 @@ def snapshot(result, log: dict) -> dict:
     return {
         "stages": log,
         "result_prompts": {name: [_ser(p) for p in getattr(result, name)] for name in _RESULT_PROMPT_FIELDS},
-        "records": [asdict(r) for r in result.records],
+        "records": [_golden_era_record(asdict(r)) for r in result.records],
         "concept_groups": [asdict(g) for g in result.concept_groups],
         "substrate": {
             "clusters": [[list(k) for k in cl] for cl in sub.clusters],

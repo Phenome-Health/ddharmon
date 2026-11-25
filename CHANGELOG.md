@@ -15,6 +15,18 @@ All notable changes to ddharmon are documented here. Format loosely follows
   partition drift. Repetitive dictionaries (dbGaP cross-reference exports, say) also embed several times faster on a
   cold cache.
 
+- **The model's candidate ranking is read when it arrives as text.** Claude 5.5 under structured outputs returns
+  `ranking` as a string (`"[2, 4, 1, 3]"`), which the list-only parser dropped. Candidates then fell back to
+  retrieval order, none was marked `llm_suggested`, and a pick given only through the ranking (`cde_id` null) went
+  unresolved, so the retrieval floor downgraded the adopt or refine to novel. Runs on models that return a list
+  (Claude Sonnet 4.6, the default) are unchanged.
+
+### Added
+
+- **`CandidateCDE.candidate_number`**: the candidate's 1-based position in the assign prompt (retrieval order), the
+  number the model's rationale cites ("Candidate 2 ..."). `rank` stays the ranked position, which differs whenever the
+  model reorders. `None` on records assembled by earlier versions.
+
 ## [1.4.1]
 
 Patch release: the default model moves off Claude Sonnet 4.5 before that model is retired on 2026-11-30, and Claude

@@ -152,6 +152,10 @@ class CandidateCDE:
     cosine: float = 0.0  # dense cosine of this candidate to the group centroid
     is_chosen: bool = False  # the adopted/refined candidate for this group
     llm_suggested: bool = False  # the LLM's top-ranked candidate
+    #: 1-based position in the assign PROMPT (retrieval order): the number the model's rationale cites
+    #: ("Candidate 2 ..."). ``rank`` is the ranked position, which differs whenever the model reorders.
+    #: ``None`` on records assembled before 1.4.2.
+    candidate_number: int | None = None
 
 
 @dataclass
